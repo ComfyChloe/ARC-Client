@@ -1,0 +1,31 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+build/
+node_modules/
+jspm_packages/
+*.tsbuildinfo
+.npm
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+config*.yml
+config*.yaml
+icons/
+.github
+.vscode
