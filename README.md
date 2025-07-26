@@ -1,7 +1,7 @@
 # ARC-OSC Client Setup Guide
 
 ## Overview
-The ARC-OSC Client is a standalone Electron application that provides a dedicated interface for sending OSC data to the ARC-OSC server.
+The ARC-OSC Client is a standalone Electron application that provides a dedicated interface for sending OSC data to your ARC-OSC server via WebSocket. This solves the multi-user conflict issue by giving each user their own isolated session.
 
 ## Features
 - **User Authentication**: Secure login using your ARC-OSC server credentials
