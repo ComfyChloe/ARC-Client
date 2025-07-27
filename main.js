@@ -12,15 +12,10 @@ let vrchatService = null;
 let socket;
 let serverConfig = {
   serverUrl: 'ws://localhost:3000',
-  localOscPort: 9002,  // Use port 9002 since VRChat is blocking 9001
-  targetOscPort: 9000, // Send TO VRChat on port 9000 (where VRChat listens)
+  localOscPort: null,  // Will be dynamically assigned by the system
+  targetOscPort: 9000,
   targetOscAddress: '127.0.0.1'
 };
-
-// State tracking to prevent duplicate initializations
-let oscQueryServerInitialized = false;
-let oscUdpPortInitialized = false;
-let discoveryInitialized = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -49,102 +44,26 @@ function createWindow() {
   });
 }
 
-// Initialize OSC Query Server (to communicate with VRChat)
-function initOscQueryServer() {
-  if (oscQueryServerInitialized) {
-    console.log('OSCQuery server already initialized, skipping');
-    return;
-  }
-
-  if (oscQueryServer) {
-    oscQueryServer.stop();
-  }
-  
-  // Don't bind UDP port yet - wait for VRChat to discover us first
+// Initialize OSC UDP communication separately from OSCQuery discovery
+function initOscUDPPort() {
   if (oscUDPPort) {
     oscUDPPort.close();
-    oscUDPPort = null;
-    oscUdpPortInitialized = false;
   }
 
-  // OSCQuery server configuration - let it auto-assign the HTTP port
-  const oscQueryHostName = 'ARC-OSC-Client';
-  const serviceName = 'ARC-OSC-Client';
-
-  oscQueryServer = new OSCQueryServer({
-    // Don't specify httpPort - let the server auto-assign it
-    bindAddress: '127.0.0.1',
-    rootDescription: 'ARC-OSC Client - VRChat OSC Interface',
-    oscQueryHostName,
-    oscIp: '127.0.0.1',
-    oscPort: serverConfig.localOscPort, // This tells VRChat what port we'll listen on
-    oscTransport: 'UDP',
-    serviceName
-  });
-
-  // Add common VRChat avatar parameters that we want to monitor BEFORE starting the server
-  addVRChatParameters();
-
-  oscQueryServer.start().then((hostInfo) => {
-    oscQueryServerInitialized = true;
-    console.log(`OSC Query Server started (HTTP only for discovery):`);
-    console.log(`  - HTTP port (OSCQuery): ${hostInfo.http_port}`);
-    console.log(`  - Advertised OSC port: ${hostInfo.osc_port} (not bound yet)`);
-    console.log(`  - Service name: ${hostInfo.name}`);
-    console.log(`  - Waiting for VRChat to discover this service...`);
-    
-    // Listen for the first HTTP request from VRChat (only once)
-    oscQueryServer.once('first-request', (requestInfo) => {
-      console.log(`VRChat has discovered our service! First request from ${requestInfo.remoteAddress}`);
-      console.log('Now creating UDP port for OSC data...');
-      createOscUdpPort();
-    });
-    
-    sendToRenderer('osc-server-status', { 
-      status: 'discovering', 
-      port: hostInfo.osc_port,
-      httpPort: hostInfo.http_port,
-      serviceName: hostInfo.name,
-      message: 'Waiting for VRChat discovery'
-    });
-  }).catch((err) => {
-    console.error('OSC Query Server error:', err);
-    sendToRenderer('osc-server-status', { status: 'error', error: err.message });
-  });
-}
-
-// Create UDP port only when VRChat has discovered us and is ready to send data
-function createOscUdpPort() {
-  if (oscUdpPortInitialized || oscUDPPort) {
-    console.log('UDP port already exists, skipping creation');
-    return;
-  }
-
-  oscUdpPortInitialized = true;
-  console.log(`Creating OSC UDP port on ${serverConfig.localOscPort} (VRChat is ready to send data)`);
-
-  // Create OSC UDP port for receiving messages
+  // Create OSC UDP port for actual OSC message sending/receiving
+  // This is completely separate from the OSCQuery discovery mechanism
   oscUDPPort = new osc.UDPPort({
     localAddress: "127.0.0.1",
-    localPort: serverConfig.localOscPort,
+    // Don't specify a port - let the system assign it dynamically
     metadata: true
   });
 
   oscUDPPort.on("ready", function () {
-    console.log(`OSC UDP Server now listening on port ${serverConfig.localOscPort}`);
-    console.log(`VRChat can now send OSC data to this port`);
-    console.log(`Will send OSC messages to VRChat on ${serverConfig.targetOscAddress}:${serverConfig.targetOscPort}`);
-
-    sendToRenderer('osc-server-status', { 
-      status: 'connected', 
-      port: serverConfig.localOscPort,
-      message: 'Ready to receive OSC data from VRChat'
-    });
+    const localInfo = oscUDPPort.options;
+    console.log(`OSC UDP Server dynamically assigned to port ${localInfo.localPort}`);
     
-    // If VRChat service is available, explicitly tell it to send data to our port
-    if (vrchatService) {
-      notifyVRChatAboutOurPort(vrchatService);
-    }
+    // Update our config to track the dynamically assigned port
+    serverConfig.localOscPort = localInfo.localPort;
 
     // Send a dummy OSC message to VRChat to notify it that we are listening
     const notificationMessage = {
@@ -156,26 +75,13 @@ function createOscUdpPort() {
     };
 
     oscUDPPort.send(notificationMessage, serverConfig.targetOscAddress, serverConfig.targetOscPort);
-    console.log("Sent OSCQueryActive notification to VRChat");
-
-    // Send periodic heartbeat to VRChat to maintain connection
-    setInterval(() => {
-      try {
-        oscUDPPort.send(notificationMessage, serverConfig.targetOscAddress, serverConfig.targetOscPort);
-        console.log("Sent heartbeat to VRChat");
-      } catch (err) {
-        console.error("Error sending heartbeat to VRChat:", err);
-      }
-    }, 30000); // Every 30 seconds
+    
+    // Now that we have the actual UDP port, initialize the OSCQuery server
+    initOscQueryServerWithPort(localInfo.localPort);
   });
 
   oscUDPPort.on("message", function (oscMsg) {
-    // Special handling for voice parameter as it comes frequently
-    if (oscMsg.address === '/input/Voice') {
-      console.log('Received Voice OSC data:', oscMsg.args[0].value);
-    } else {
-      console.log('Received OSC:', oscMsg.address, oscMsg.args);
-    }
+    console.log('Received OSC:', oscMsg.address, oscMsg.args);
     
     // Extract value from OSC message
     const value = oscMsg.args && oscMsg.args.length > 0 ? oscMsg.args[0].value : null;
@@ -192,47 +98,98 @@ function createOscUdpPort() {
     // Send to renderer for UI updates
     sendToRenderer('osc-received', { address: oscMsg.address, value: value });
     
-    // Update OSC Query server value if the method exists
-    try {
-      oscQueryServer.setValue(oscMsg.address, 0, value);
-    } catch (err) {
-      // Method might not exist, try to add it
+    // Update OSC Query server value if it exists and if the method exists
+    if (oscQueryServer) {
       try {
-        let oscType = OSCTypeSimple.FLOAT;
-        if (typeof value === 'boolean') {
-          oscType = value ? OSCTypeSimple.TRUE : OSCTypeSimple.FALSE;
-        } else if (typeof value === 'string') {
-          oscType = OSCTypeSimple.STRING;
-        } else if (typeof value === 'number') {
-          oscType = Number.isInteger(value) ? OSCTypeSimple.INT : OSCTypeSimple.FLOAT;
-        }
-
-        oscQueryServer.addMethod(oscMsg.address, {
-          description: `Parameter: ${oscMsg.address}`,
-          access: OSCQAccess.READWRITE,
-          arguments: [{
-            type: oscType,
-            value: value
-          }]
-        });
-        
         oscQueryServer.setValue(oscMsg.address, 0, value);
-      } catch (addErr) {
-        console.error('Error adding OSC Query method:', addErr);
+      } catch (err) {
+        // Method might not exist, try to add it
+        try {
+          let oscType = OSCTypeSimple.FLOAT;
+          if (typeof value === 'boolean') {
+            oscType = value ? OSCTypeSimple.TRUE : OSCTypeSimple.FALSE;
+          } else if (typeof value === 'string') {
+            oscType = OSCTypeSimple.STRING;
+          } else if (typeof value === 'number') {
+            oscType = Number.isInteger(value) ? OSCTypeSimple.INT : OSCTypeSimple.FLOAT;
+          }
+
+          oscQueryServer.addMethod(oscMsg.address, {
+            description: `Parameter: ${oscMsg.address}`,
+            access: OSCQAccess.READWRITE,
+            arguments: [{
+              type: oscType,
+              value: value
+            }]
+          });
+          
+          oscQueryServer.setValue(oscMsg.address, 0, value);
+        } catch (addErr) {
+          console.error('Error adding OSC Query method:', addErr);
+        }
       }
     }
   });
 
   oscUDPPort.on("error", function (err) {
     console.error('OSC UDP Server error:', err);
-    if (err.code === 'EADDRINUSE') {
-      console.error(`Port ${serverConfig.localOscPort} is already in use. VRChat might already be using it, or another OSC application is running.`);
-      console.error('Try closing VRChat, other OSC apps, or change the localOscPort in config.');
-    }
     sendToRenderer('osc-server-status', { status: 'error', error: err.message });
   });
 
+  // Open the UDP port and let the system assign a port number
   oscUDPPort.open();
+}
+
+// Initialize OSCQuery Server using the dynamically assigned UDP port
+function initOscQueryServerWithPort(udpPort) {
+  if (oscQueryServer) {
+    oscQueryServer.stop();
+  }
+
+  const oscQueryHostName = 'ARC-OSC-Client';
+  const serviceName = 'ARC-OSC-Client';
+
+  // Create OSCQuery server with the dynamically assigned UDP port
+  oscQueryServer = new OSCQueryServer({
+    // Don't specify httpPort - let the server auto-assign it in the 11000-58000 range
+    bindAddress: '127.0.0.1',
+    rootDescription: 'ARC-OSC Client - VRChat OSC Interface',
+    oscQueryHostName,
+    oscIp: '127.0.0.1',
+    oscPort: udpPort, // Use the dynamically assigned port from the UDP server
+    oscTransport: 'UDP',
+    serviceName
+  });
+
+  // Add common VRChat avatar parameters that we want to monitor BEFORE starting the server
+  addVRChatParameters();
+
+  oscQueryServer.start().then((hostInfo) => {
+    console.log(`OSC Query Server started:`);
+    console.log(`  - HTTP port (OSCQuery): ${hostInfo.http_port}`);
+    console.log(`  - OSC port (UDP data): ${hostInfo.osc_port}`);
+    console.log(`  - Service name: ${hostInfo.name}`);
+    
+    sendToRenderer('osc-server-status', { 
+      status: 'connected', 
+      port: hostInfo.osc_port,
+      httpPort: hostInfo.http_port,
+      serviceName: hostInfo.name
+    });
+  }).catch((err) => {
+    console.error('OSC Query Server error:', err);
+    sendToRenderer('osc-server-status', { status: 'error', error: err.message });
+  });
+}
+
+// Main initialization function for OSC functionality
+function initOscQueryServer() {
+  // Start with the UDP port, which will then initialize the OSCQuery server
+  // This ensures the correct flow: 
+  // 1. Get a dynamic UDP port
+  // 2. Create OSCQuery server with that port
+  // 3. Advertise via mDNS
+  initOscUDPPort();
 }
 
 // Add common VRChat parameters to monitor
@@ -355,16 +312,10 @@ function addVRChatParameters() {
 
 // Initialize OSC Query Discovery (to find and communicate with VRChat)
 function initOscQueryDiscovery() {
-  if (discoveryInitialized) {
-    console.log('OSCQuery discovery already initialized, skipping');
-    return;
-  }
-
   if (oscQueryDiscovery) {
     oscQueryDiscovery.stop();
   }
 
-  discoveryInitialized = true;
   oscQueryDiscovery = new OSCQueryDiscovery();
 
   // Track discovered services to avoid duplicate logs
@@ -384,7 +335,17 @@ function initOscQueryDiscovery() {
     if (discoveredServices.has(key)) {
       return;
     }
-    discoveredServices.add(key);    
+    discoveredServices.add(key);
+    
+    console.log('Discovered OSC Query service:', {
+      name: service.hostInfo?.name || 'Unknown',
+      address: service.address,
+      httpPort: service.port,
+      oscPort: service.hostInfo?.oscPort,
+      oscIp: service.hostInfo?.oscIp,
+      transport: service.hostInfo?.oscTransport
+    });
+    
     // Check if this is VRChat (you might want to adjust this condition)
     if (service.hostInfo && service.hostInfo.name && 
         service.hostInfo.name.toLowerCase().includes('vrchat')) {
@@ -396,20 +357,6 @@ function initOscQueryDiscovery() {
         oscIp: service.hostInfo.oscIp
       });
       sendToRenderer('vrchat-service-found', service.hostInfo);
-      
-      // Update our target config to match VRChat's actual OSC port
-      if (service.hostInfo.oscPort !== serverConfig.targetOscPort) {
-        console.log(`Updating target OSC port from ${serverConfig.targetOscPort} to ${service.hostInfo.oscPort}`);
-        serverConfig.targetOscPort = service.hostInfo.oscPort;
-      }
-      
-      // If we have a UDP port listening, tell VRChat about it
-      if (oscUDPPort) {
-        notifyVRChatAboutOurPort(service);
-      }
-      
-      // Try to query VRChat's available parameters
-      queryVRChatParameters(service);
     }
   });
 
@@ -431,119 +378,6 @@ function initOscQueryDiscovery() {
 
   oscQueryDiscovery.start();
   console.log('OSC Query Discovery started');
-}
-
-// Explicitly tell VRChat where to send OSC data
-async function notifyVRChatAboutOurPort(service) {
-  try {
-    console.log('Explicitly telling VRChat to send data to our port...');
-    const axios = require('axios');
-    const vrcHttpPort = service.port;
-    const vrcAddress = service.address;
-    
-    // First, get VRChat's configuration to see what we're dealing with
-    const hostInfoUrl = `http://${vrcAddress}:${vrcHttpPort}/?HOST_INFO`;
-    const hostInfo = await axios.get(hostInfoUrl);
-    console.log('VRChat HOST_INFO:', hostInfo.data);
-    
-    // VRChat OSCQuery protocol requires a specific format for streaming request
-    // We need to send ?STREAMING as a URL parameter, not in the body
-    // See: https://github.com/vrchat/oscquery/issues/5
-    const streamingUrl = `http://${vrcAddress}:${vrcHttpPort}/?STREAMING=127.0.0.1:${serverConfig.localOscPort}`;
-    await axios.get(streamingUrl);
-    console.log(`Sent correct streaming request to VRChat: 127.0.0.1:${serverConfig.localOscPort}`);
-    
-    // Additionally, explicitly subscribe to voice
-    const voiceUrl = `http://${vrcAddress}:${vrcHttpPort}/input/Voice?VALUE`;
-    await axios.get(voiceUrl);
-    console.log('Explicitly subscribed to /input/Voice');
-  } catch (err) {
-    console.warn('Failed to notify VRChat about our port:', err.message);
-    if (err.response) {
-      console.warn('Response status:', err.response.status);
-      console.warn('Response data:', err.response.data);
-    }
-  }
-}
-
-// Query VRChat's OSCQuery service to see available parameters
-async function queryVRChatParameters(service) {
-  try {
-    console.log('Querying VRChat OSCQuery service for available parameters...');
-    await service.update();
-    const flatParams = service.flat();
-    console.log(`VRChat has ${flatParams.length} available OSC parameters:`);
-    
-    // Look for avatar parameters specifically
-    const avatarParams = flatParams.filter(p => p.full_path && p.full_path.startsWith('/avatar/parameters/'));
-    // Add input parameters (like /input/Voice)
-    const inputParams = flatParams.filter(p => p.full_path && p.full_path.startsWith('/input/'));
-    
-    console.log(`Found ${avatarParams.length} avatar parameters and ${inputParams.length} input parameters:`);
-    avatarParams.slice(0, 10).forEach(param => {
-      const args = param.arguments ? param.arguments.map(a => a.type).join(',') : 'no args';
-      console.log(`  ${param.full_path} (${args})`);
-    });
-
-    // Subscribe to parameters by making HTTP GET requests to ?VALUE
-    if (avatarParams.length > 0 || inputParams.length > 0) {
-      const axios = require('axios');
-      const vrcHttpPort = service.port;
-      const vrcAddress = service.address;
-      let subscribeCount = 0;
-      
-      // Combine all parameters we want to subscribe to
-      const allParamsToSubscribe = [...avatarParams, ...inputParams];
-      console.log(`Subscribing to ${allParamsToSubscribe.length} total parameters...`);
-      
-      // First explicitly subscribe to Voice if it exists
-      const voiceParam = allParamsToSubscribe.find(p => p.full_path === '/input/Voice');
-      if (voiceParam) {
-        const voiceUrl = `http://${vrcAddress}:${vrcHttpPort}/input/Voice?VALUE`;
-        axios.get(voiceUrl).then(() => {
-          console.log('Explicitly subscribed to /input/Voice - this should enable voice data');
-        }).catch(err => {
-          console.warn('Failed to subscribe to Voice parameter:', err.message);
-        });
-      }
-      
-      // Subscribe to all other parameters
-      for (const param of allParamsToSubscribe) {
-        // Skip Voice since we already handled it
-        if (param.full_path === '/input/Voice') continue;
-        
-        const url = `http://${vrcAddress}:${vrcHttpPort}${param.full_path}?VALUE`;
-        axios.get(url).then(() => {
-          subscribeCount++;
-          if (subscribeCount <= 5) {
-            console.log(`Subscribed to ${param.full_path}`);
-          }
-        }).catch(err => {
-          if (subscribeCount <= 5) {
-            console.warn(`Failed to subscribe to ${param.full_path}:`, err.message);
-          }
-        });
-      }
-      
-      // Log summary
-      if (allParamsToSubscribe.length > 5) {
-        console.log(`...and subscribed to ${allParamsToSubscribe.length - 5} more parameters.`);
-      }
-    } else {
-      console.log('No avatar parameters found - VRChat might not be in a world with an avatar loaded');
-      console.log('First 5 available parameters:');
-      flatParams.slice(0, 5).forEach(param => {
-        const args = param.arguments ? param.arguments.map(a => a.type).join(',') : 'no args';
-        console.log(`  ${param.full_path} (${args})`);
-      });
-    }
-    
-    if (flatParams.length > 10) {
-      console.log(`  ... and ${flatParams.length - 10} more parameters`);
-    }
-  } catch (err) {
-    console.warn('Could not query VRChat parameters:', err.message);
-  }
 }
 
 // Connect to ARC-OSC Server
@@ -662,16 +496,48 @@ ipcMain.handle('get-config', () => {
 });
 
 ipcMain.handle('set-config', (event, newConfig) => {
+  // Store old config for comparison
+  const oldConfig = { ...serverConfig };
+  
+  // Update config
   serverConfig = { ...serverConfig, ...newConfig };
   
-  // Reset state flags to allow re-initialization with new config
-  oscQueryServerInitialized = false;
-  oscUdpPortInitialized = false;
-  discoveryInitialized = false;
+  // Always reinitialize OSC server when config changes to ensure proper port assignment
+  if (oldConfig.targetOscPort !== serverConfig.targetOscPort || 
+      oldConfig.targetOscAddress !== serverConfig.targetOscAddress) {
+    console.log("Target OSC configuration changed, reinitializing...");
+  }
   
-  // Reinitialize connections with new config
-  initOscQueryServer();
+  // We don't need to specify localOscPort anymore - system will assign it
+  if (newConfig.localOscPort) {
+    console.log("Note: localOscPort is now automatically assigned, your manual setting will be ignored");
+  }
+  
+  // Reinitialize OSC components in the correct order
+  if (oscUDPPort) {
+    oscUDPPort.close();
+    oscUDPPort = null;
+  }
+  
+  if (oscQueryServer) {
+    oscQueryServer.stop()
+      .then(() => {
+        oscQueryServer = null;
+        // Start fresh with OSC initialization
+        initOscQueryServer();
+      })
+      .catch(err => {
+        console.error("Error stopping OSCQuery server:", err);
+        oscQueryServer = null;
+        initOscQueryServer();
+      });
+  } else {
+    initOscQueryServer();
+  }
+  
+  // Restart discovery service
   initOscQueryDiscovery();
+  
   return serverConfig;
 });
 
@@ -766,8 +632,15 @@ ipcMain.handle('get-parameters', () => {
 // App event handlers
 app.whenReady().then(() => {
   createWindow();
-  initOscQueryServer();
+  
+  // First initialize the discovery to find other OSC services (like VRChat)
   initOscQueryDiscovery();
+  
+  // Then initialize our own OSCQuery server which will:
+  // 1. Create a UDP socket with a dynamic port
+  // 2. Once the port is assigned, create the OSCQuery server
+  // 3. Advertise our service via mDNS
+  initOscQueryServer();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -777,11 +650,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  // Reset state flags
-  oscQueryServerInitialized = false;
-  oscUdpPortInitialized = false;
-  discoveryInitialized = false;
-  
   if (oscQueryServer) oscQueryServer.stop();
   if (oscQueryDiscovery) oscQueryDiscovery.stop();
   if (oscUDPPort) oscUDPPort.close();
@@ -793,11 +661,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  // Reset state flags
-  oscQueryServerInitialized = false;
-  oscUdpPortInitialized = false;
-  discoveryInitialized = false;
-  
   if (oscQueryServer) oscQueryServer.stop();
   if (oscQueryDiscovery) oscQueryDiscovery.stop();
   if (oscUDPPort) oscUDPPort.close();
