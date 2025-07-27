@@ -27,3 +27,4 @@ icons/
 .github
 .vscode
 package-lock.json
+dist/
