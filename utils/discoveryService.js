@@ -26,7 +26,9 @@ class DiscoveryService {
         txtvers: '1',
         oscport: oscPort.toString(),
         oscip: '127.0.0.1',
-        osctransport: 'UDP'
+        osctransport: 'UDP',
+        osc_receive: 'HTTP', // Indicate we receive via HTTP (OSCQuery)
+        osc_send: 'UDP'      // Indicate we send via UDP
       }
     });
 

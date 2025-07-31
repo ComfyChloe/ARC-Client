@@ -67,12 +67,12 @@ function setupEventListeners() {
         }
     });
     window.electronAPI.onOscReceived((data) => {
-        addLog(`OSC Received: ${data.address} = ${data.value}`);
+        addLog(`OSC Received via OSCQuery: ${data.address} = ${data.value}`);
     });
     window.electronAPI.onOscServerStatus((data) => {
         updateOscStatus(data.status, data.port);
-        if (data.status === 'connected') {
-            addLog(`OSC Server listening on port ${data.port}`);
+        if (data.status === 'ready') {
+            addLog(`OSC Query server ready on HTTP port ${data.httpPort}, OSC sending to port 9000`);
         } else if (data.status === 'error') {
             addLog(`OSC Server error: ${data.error}`, 'error');
         }
@@ -136,9 +136,9 @@ function updateOscStatus(status, port) {
     const text = document.getElementById('osc-status-text');
     indicator.className = 'status-indicator';
     switch (status) {
-        case 'connected':
+        case 'ready':
             indicator.classList.add('status-connected');
-            text.textContent = `OSC Server :${port}`;
+            text.textContent = `OSC Ready (Send to :9000)`;
             break;
         case 'error':
             indicator.classList.add('status-disconnected');

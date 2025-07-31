@@ -3,64 +3,30 @@ const osc = require('osc');
 class OscUdpService {
   constructor() {
     this.oscUDPPort = null;
-    this.assignedOscPort = null;
     this.targetOscPort = 9000;
     this.targetOscAddress = '127.0.0.1';
   }
 
-  findAvailablePort(startPort, callback) {
-    const server = require('net').createServer();
-    
-    server.listen(startPort, '127.0.0.1', () => {
-      server.once('close', () => {
-        callback(startPort);
-      });
-      server.close();
-    });
-    
-    server.on('error', () => {
-      // Port is busy, try next one
-      this.findAvailablePort(startPort + 1, callback);
-    });
-  }
-
-  createOscUDPPort(port, onReady, onMessage, onError) {
+  // Initialize OSC UDP service for sending only (no receiving)
+  initializeForSendingOnly(onReady) {
     if (this.oscUDPPort) {
       this.oscUDPPort.close();
     }
 
-    this.assignedOscPort = port;
-    
-    // Create OSC UDP port for receiving messages
+    // Create OSC UDP port for sending messages only
     this.oscUDPPort = new osc.UDPPort({
       localAddress: "127.0.0.1",
-      localPort: port,
+      localPort: 0, // Use any available port for sending
       metadata: true
     });
 
     this.oscUDPPort.on("ready", () => {
-      console.log(`OSC UDP Server listening on port ${port}`);
-      if (onReady) onReady(port);
-    });
-
-    this.oscUDPPort.on("message", (oscMsg) => {
-      console.log('Received OSC:', oscMsg.address, oscMsg.args);
-      
-      // Extract value from OSC message
-      const value = oscMsg.args && oscMsg.args.length > 0 ? oscMsg.args[0].value : null;
-      
-      if (onMessage) {
-        onMessage({
-          address: oscMsg.address,
-          value: value,
-          type: oscMsg.args && oscMsg.args.length > 0 ? oscMsg.args[0].type : 'f'
-        });
-      }
+      console.log(`OSC UDP Sender ready - will send to ${this.targetOscAddress}:${this.targetOscPort}`);
+      if (onReady) onReady();
     });
 
     this.oscUDPPort.on("error", (err) => {
-      console.error('OSC UDP Server error:', err);
-      if (onError) onError(err);
+      console.error('OSC UDP Sender error:', err);
     });
 
     this.oscUDPPort.open();
@@ -103,10 +69,6 @@ class OscUdpService {
   setTargetConfig(address, port) {
     this.targetOscAddress = address;
     this.targetOscPort = port;
-  }
-
-  getAssignedPort() {
-    return this.assignedOscPort;
   }
 
   close() {

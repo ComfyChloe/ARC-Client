@@ -47,10 +47,24 @@ function initOscQueryServer() {
   debug.info('Initializing OSC Query Server...');
   debug.clearOldLogs(); // Clear previous session logs
   oscUdpService.setTargetConfig(serverConfig.targetOscAddress, serverConfig.targetOscPort);
+  
   oscQueryService.on('sendOsc', (data) => {
     debug.debug('Sending OSC to VRChat', data);
     oscUdpService.sendOscToVRChat(data.address, data.value);
   });
+  
+  oscQueryService.on('dataReceived', (data) => {
+    debug.oscMessageReceived(data.address, data.value, data.type);
+    // Forward to server via WebSocket
+    webSocketService.sendOscMessage(data);
+    // Send to renderer for UI updates
+    sendToRenderer('osc-received', { 
+      address: data.address, 
+      value: data.value,
+      stats: debug.getStats()
+    });
+  });
+  
   oscQueryService.on('error', (err) => {
     debug.error('OSC Query Service error', err);
     sendToRenderer('osc-server-status', { status: 'error', error: err.message });
@@ -62,48 +76,22 @@ function initOscQueryServer() {
     const { httpPort, oscPort } = ports;
     debug.oscServiceStarted(httpPort, oscPort);
     serverConfig.localOscPort = oscPort;
-    oscUdpService.createOscUDPPort(
-      oscPort,
-      (port) => {
-        debug.info(`OSC UDP listener ready on port ${port} - waiting for VRChat data...`);
-        discoveryService.startBonjourAdvertisement(httpPort, oscPort);
-        discoveryService.startVRChatDiscovery((vrchatService) => {
-          debug.vrchatServiceFound(vrchatService, 'Bonjour/HTTP discovery');
-          sendToRenderer('vrchat-service-found', vrchatService);
-        });
-        sendToRenderer('osc-server-status', { 
-          status: 'ready', 
-          port: oscPort,
-          httpPort: httpPort,
-          message: 'Waiting for VRChat to discover and send data...'
-        });
-        // Set up connection timeout check
-        setTimeout(() => {
-          debug.connectionTimeout();
-          const stats = debug.getStats();
-          sendToRenderer('debug-stats', stats);
-        }, 10000); // Check after 10 seconds
-      },
-      // onMessage callback - This is where VRChat's OSC data will arrive
-      (oscData) => {
-        debug.oscMessageReceived(oscData.address, oscData.value, oscData.type);
-        // Update OSC Query data structure
-        oscQueryService.updateOscQueryParameter(oscData.address, oscData.value, oscData.type);
-        // Forward to server via WebSocket
-        webSocketService.sendOscMessage(oscData);
-        // Send to renderer for UI updates
-        sendToRenderer('osc-received', { 
-          address: oscData.address, 
-          value: oscData.value,
-          stats: debug.getStats()
-        });
-      },
-      // onError callback
-      (err) => {
-        debug.error('OSC UDP service error', err);
-        sendToRenderer('osc-server-status', { status: 'error', error: err.message });
-      }
-    );
+    
+    // Initialize OSC UDP service for sending only (no receiving)
+    oscUdpService.initializeForSendingOnly(() => {
+      debug.info(`OSC UDP sender ready - will send to port 9000`);
+      discoveryService.startBonjourAdvertisement(httpPort, oscPort);
+      discoveryService.startVRChatDiscovery((vrchatService) => {
+        debug.vrchatServiceFound(vrchatService, 'Bonjour/HTTP discovery');
+        sendToRenderer('vrchat-service-found', vrchatService);
+      });
+      sendToRenderer('osc-server-status', { 
+        status: 'ready', 
+        port: oscPort,
+        httpPort: httpPort,
+        message: 'OSC Query server running - receiving via HTTP, sending via UDP to port 9000'
+      });
+    });
   });
 }
 
