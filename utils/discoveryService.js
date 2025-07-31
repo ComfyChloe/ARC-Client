@@ -13,34 +13,40 @@ class DiscoveryService {
       this.bonjourService.stop();
     }
     
-    console.log('Starting Bonjour service advertisement...');
+    console.log('Starting OSCQuery mDNS advertisement...');
     
-    // Advertise our OSC Query service using proper mDNS
+    // Advertise our OSC Query service using proper mDNS according to OSCQuery spec
     this.bonjourService = bonjour.publish({
       name: 'ARC-OSC-Client',
-      type: 'oscjson',
-      protocol: 'tcp',
-      port: httpPort,
+      type: 'oscjson',           // OSCQuery service type
+      protocol: 'tcp',           // HTTP uses TCP
+      port: httpPort,            // HTTP port for OSCQuery (OS-assigned)
       host: '127.0.0.1',
       txt: {
-        txtvers: '1',
-        oscport: oscPort.toString(),
-        oscip: '127.0.0.1',
-        osctransport: 'UDP',
-        osc_receive: 'HTTP', // Indicate we receive via HTTP (OSCQuery)
-        osc_send: 'UDP'      // Indicate we send via UDP
+        txtvers: '1',                    // TXT record version
+        oscport: oscPort.toString(),     // OSC UDP port (advertised but we receive via HTTP instead)
+        oscip: '127.0.0.1',             // OSC IP address  
+        osctransport: 'UDP',            // Standard transport (but we actually receive via HTTP)
+        // Note: We advertise a UDP port for OSCQuery compliance, but we receive data via HTTP POST
+        // This keeps legacy port 9001 free while maintaining full VRChat compatibility
       }
     });
 
     this.bonjourService.on('up', () => {
-      console.log('Bonjour service published successfully');
+      console.log('OSCQuery mDNS service published successfully');
+      console.log(`  - Service name: ARC-OSC-Client`);
+      console.log(`  - HTTP port: ${httpPort} (OSCQuery server + receives OSC data via HTTP POST)`);
+      console.log(`  - Advertised OSC port: ${oscPort} (for OSCQuery compliance, but we use HTTP for receiving)`);
+      console.log(`  - Sending to VRChat: port 9000 (UDP)`);
+      console.log(`  - Legacy port 9001: kept free for other applications`);
+      console.log(`  - Available at: http://127.0.0.1:${httpPort}`);
     });
 
     this.bonjourService.on('error', (err) => {
       console.error('Bonjour service error:', err);
     });
 
-    console.log(`Published OSC Query service: ARC-OSC-Client on port ${httpPort}`);
+    console.log(`Publishing OSCQuery service: ARC-OSC-Client (HTTP: ${httpPort}, OSC-RX: ${oscPort})`);
   }
 
   updateBonjourService(httpPort, oscPort) {

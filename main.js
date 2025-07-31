@@ -48,11 +48,13 @@ function initOscQueryServer() {
   debug.clearOldLogs(); // Clear previous session logs
   oscUdpService.setTargetConfig(serverConfig.targetOscAddress, serverConfig.targetOscPort);
   
+  // Handle sending OSC to VRChat via UDP (port 9000)
   oscQueryService.on('sendOsc', (data) => {
     debug.debug('Sending OSC to VRChat', data);
     oscUdpService.sendOscToVRChat(data.address, data.value);
   });
   
+  // Handle receiving OSC data via OSCQuery HTTP
   oscQueryService.on('dataReceived', (data) => {
     debug.oscMessageReceived(data.address, data.value, data.type);
     // Forward to server via WebSocket
@@ -69,26 +71,30 @@ function initOscQueryServer() {
     debug.error('OSC Query Service error', err);
     sendToRenderer('osc-server-status', { status: 'error', error: err.message });
   });
+  
   // Set up WebSocket service event handlers
   setupWebSocketHandlers();
+  
   // Start OSC Query HTTP server with dynamic port assignment
-  oscQueryService.start((ports) => {
-    const { httpPort, oscPort } = ports;
-    debug.oscServiceStarted(httpPort, oscPort);
-    serverConfig.localOscPort = oscPort;
+  oscQueryService.start((result) => {
+    const { httpPort, oscPort } = result; // OSCQuery needs to advertise an OSC port for VRChat discovery
+    debug.info(`OSC Query HTTP server started on port ${httpPort}, advertising OSC port ${oscPort}`);
     
     // Initialize OSC UDP service for sending only (no receiving)
     oscUdpService.initializeForSendingOnly(() => {
       debug.info(`OSC UDP sender ready - will send to port 9000`);
+      
+      // Start discovery service with both HTTP and OSC ports
       discoveryService.startBonjourAdvertisement(httpPort, oscPort);
       discoveryService.startVRChatDiscovery((vrchatService) => {
         debug.vrchatServiceFound(vrchatService, 'Bonjour/HTTP discovery');
         sendToRenderer('vrchat-service-found', vrchatService);
       });
+      
       sendToRenderer('osc-server-status', { 
         status: 'ready', 
-        port: oscPort,
         httpPort: httpPort,
+        oscPort: oscPort,
         message: 'OSC Query server running - receiving via HTTP, sending via UDP to port 9000'
       });
     });
@@ -182,33 +188,40 @@ ipcMain.handle('get-debug-stats', () => {
 // OSC Query Service handlers
 ipcMain.handle('start-oscquery', async () => {
   try {
-    if (!oscQueryService) {
-      oscQueryService = new OscQueryService();
-      
-      // Set up event forwarding
-      debug.on('oscQueryRequested', (path, ip) => {
-        if (mainWindow) {
-          mainWindow.webContents.send('oscquery-request', { path, ip });
-        }
-      });
+    // Use the existing initialized service
+    if (oscQueryService && oscQueryService.getHttpPort()) {
+      // Already running
+      return {
+        httpPort: oscQueryService.getHttpPort(),
+        oscPort: oscQueryService.advertisedOscPort
+      };
     }
     
+    // Initialize if not already done
+    initOscQueryServer();
+    
     return new Promise((resolve, reject) => {
-      oscQueryService.start((result) => {
-        if (result.httpPort && result.oscPort) {
-          debug.info('OSC Query service started', result);
-          if (mainWindow) {
-            mainWindow.webContents.send('oscquery-status', {
-              status: 'started',
-              httpPort: result.httpPort,
-              udpPort: result.oscPort
-            });
+      // Set up a one-time listener for when the service starts
+      const onReady = () => {
+        resolve({
+          httpPort: oscQueryService.getHttpPort(),
+          oscPort: oscQueryService.advertisedOscPort
+        });
+      };
+      
+      // Check if already running
+      if (oscQueryService.getHttpPort()) {
+        onReady();
+      } else {
+        // Wait for startup
+        setTimeout(() => {
+          if (oscQueryService.getHttpPort()) {
+            onReady();
+          } else {
+            reject(new Error('Failed to start OSC Query service'));
           }
-          resolve(result);
-        } else {
-          reject(new Error('Failed to start OSC Query service'));
-        }
-      });
+        }, 2000);
+      }
     });
   } catch (error) {
     debug.error('Error starting OSC Query service', error);
@@ -249,6 +262,9 @@ ipcMain.handle('stop-oscquery', async () => {
 // App event handlers
 app.whenReady().then(() => {
   createWindow();
+  
+  // Initialize OSC Query server on startup
+  initOscQueryServer();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

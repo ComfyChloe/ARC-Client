@@ -3,25 +3,29 @@ const osc = require('osc');
 class OscUdpService {
   constructor() {
     this.oscUDPPort = null;
-    this.targetOscPort = 9000;
+    this.targetOscPort = 9000; // VRChat standard receiving port
     this.targetOscAddress = '127.0.0.1';
+    
+    // This service is SEND-ONLY to port 9000 (VRChat)
+    // We receive OSC data via OSCQuery HTTP POST instead of UDP
+    // This keeps legacy port 9001 free for other applications
   }
 
-  // Initialize OSC UDP service for sending only (no receiving)
+  // Initialize OSC UDP service for sending to VRChat (port 9000)
   initializeForSendingOnly(onReady) {
     if (this.oscUDPPort) {
       this.oscUDPPort.close();
     }
 
-    // Create OSC UDP port for sending messages only
+    // Create OSC UDP port for sending messages to VRChat
     this.oscUDPPort = new osc.UDPPort({
       localAddress: "127.0.0.1",
-      localPort: 0, // Use any available port for sending
+      localPort: 0, // Use any available port for sending (OS-assigned)
       metadata: true
     });
 
     this.oscUDPPort.on("ready", () => {
-      console.log(`OSC UDP Sender ready - will send to ${this.targetOscAddress}:${this.targetOscPort}`);
+      console.log(`OSC UDP Sender ready - will send to VRChat at ${this.targetOscAddress}:${this.targetOscPort}`);
       if (onReady) onReady();
     });
 

@@ -67,12 +67,12 @@ function setupEventListeners() {
         }
     });
     window.electronAPI.onOscReceived((data) => {
-        addLog(`OSC Received via OSCQuery: ${data.address} = ${data.value}`);
+        addLog(`Received via OSCQuery HTTP: ${data.address} = ${data.value}`);
     });
     window.electronAPI.onOscServerStatus((data) => {
-        updateOscStatus(data.status, data.port);
+        updateOscStatus(data.status, data.httpPort, data.oscPort);
         if (data.status === 'ready') {
-            addLog(`OSC Query server ready on HTTP port ${data.httpPort}, OSC sending to port 9000`);
+            addLog(`OSC System Ready - Sending to VRChat:9000, Receiving via OSCQuery HTTP:${data.httpPort}`);
         } else if (data.status === 'error') {
             addLog(`OSC Server error: ${data.error}`, 'error');
         }
@@ -131,14 +131,14 @@ function updateServerStatus(status) {
     }
     updateUI();
 }
-function updateOscStatus(status, port) {
+function updateOscStatus(status, httpPort, oscPort) {
     const indicator = document.getElementById('osc-status');
     const text = document.getElementById('osc-status-text');
     indicator.className = 'status-indicator';
     switch (status) {
         case 'ready':
             indicator.classList.add('status-connected');
-            text.textContent = `OSC Ready (Send to :9000)`;
+            text.textContent = `OSC Ready - Send:9000, Receive:HTTP:${httpPort}`;
             break;
         case 'error':
             indicator.classList.add('status-disconnected');
@@ -146,7 +146,7 @@ function updateOscStatus(status, port) {
             break;
         default:
             indicator.classList.add('status-disconnected');
-            text.textContent = 'OSC Server Off';
+            text.textContent = 'OSC Offline';
     }
 }
 // Update OSC Query status indicator
