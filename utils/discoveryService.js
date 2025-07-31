@@ -131,7 +131,7 @@ class DiscoveryService {
   }
 
   scanForVRChatHTTP(onVRChatFound) {
-    const commonPorts = [9000, 9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010];
+    const vrchatQueryPorts = [9000, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010];
     let foundVRChat = false;
     
     const checkPort = (port, index) => {
@@ -186,7 +186,7 @@ class DiscoveryService {
       }, index * 100); // Stagger requests
     };
     
-    commonPorts.forEach(checkPort);
+    vrchatQueryPorts.forEach(checkPort);
   }
 
   stop() {
