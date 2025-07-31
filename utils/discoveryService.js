@@ -18,7 +18,7 @@ class DiscoveryService {
     // Advertise our OSC Query service using proper mDNS according to OSCQuery spec
     this.bonjourService = bonjour.publish({
       name: 'ARC-OSC-Client',
-      type: 'oscjson',           // OSCQuery service type
+      type: '_oscjson._tcp',     // Correct RFC-compliant OSCQuery service type
       protocol: 'tcp',           // HTTP uses TCP
       port: httpPort,            // HTTP port for OSCQuery (OS-assigned)
       host: '127.0.0.1',
@@ -57,7 +57,7 @@ class DiscoveryService {
     console.log('Starting VRChat discovery with Bonjour...');
     
     // Browse for VRChat OSC Query services
-    this.vrchatBrowser = bonjour.find({ type: 'oscjson', protocol: 'tcp' }, (service) => {
+    this.vrchatBrowser = bonjour.find({ type: '_oscjson._tcp' }, (service) => {
       console.log('Found OSC Query service:', service);
       
       // Check if this is VRChat (look for VRChat in the name)
