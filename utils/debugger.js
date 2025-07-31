@@ -111,10 +111,9 @@ class Debugger {
   vrchatServiceFound(service, method) {
     this.info(`VRChat service discovered via ${method}`, service);
   }
-  oscServiceStarted(httpPort, oscPort) {
+  oscServiceStarted(httpPort) {
     this.info('OSC Services started', {
       httpPort: httpPort,
-      oscUdpPort: oscPort,
       message: 'Waiting for VRChat to discover and connect...'
     });
   }
