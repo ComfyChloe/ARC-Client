@@ -30,7 +30,7 @@ class OscQueryService {
     this.oscQueryData = {
       DESCRIPTION: 'ARC-OSC Client - Receives OSC via HTTP, Sends to VRChat:9000',
       FULL_PATH: '/',
-      ACCESS: ACCESS.WRITE_ONLY, // Write-only (we receive data via HTTP POST)
+      ACCESS: ACCESS.WRITE_ONLY, // We accept OSC data via HTTP POST
       CONTENTS: {}
     };
     // HOST_INFO data as required by OSCQuery spec
@@ -219,13 +219,61 @@ class OscQueryService {
     app.get('*', (req, res) => {
       debug.oscQueryRequested(req.path, req.ip || req.connection.remoteAddress);
       
+      // Handle HOST_INFO query for any path (spec says path is ignored for HOST_INFO)
+      if (req.query.HOST_INFO !== undefined) {
+        const hostInfo = {
+          ...this.hostInfo,
+          OSC_PORT: this.advertisedOscPort
+        };
+        res.json(hostInfo);
+        return;
+      }
+      
       const path = req.path;
+      
+      // Check for specific attribute queries
+      const queryKeys = Object.keys(req.query);
+      if (queryKeys.length > 0 && queryKeys[0] !== 'explorer') {
+        const attribute = queryKeys[0].toUpperCase();
+        const pathData = this.getOscQueryPath(path);
+        
+        if (!pathData) {
+          res.status(404).json({ 
+            error: 'OSC address not found',
+            path: path 
+          });
+          return;
+        }
+        
+        // Check if server supports this attribute
+        if (this.hostInfo.EXTENSIONS[attribute] === false) {
+          res.status(400).json({ 
+            error: 'Attribute not supported by server',
+            attribute: attribute 
+          });
+          return;
+        }
+        
+        // Check if attribute exists for this path
+        if (pathData[attribute] === undefined) {
+          res.status(204).end(); // No content - server received request but inappropriate
+          return;
+        }
+        
+        // Return just the requested attribute
+        const response = {};
+        response[attribute] = pathData[attribute];
+        res.json(response);
+        return;
+      }
+      
+      // Return full path data
       const pathData = this.getOscQueryPath(path);
       if (pathData) {
         res.json(pathData);
       } else {
         res.status(404).json({ 
-          error: 'Path not found',
+          error: 'OSC address not found',
           path: path
         });
       }
@@ -303,7 +351,7 @@ class OscQueryService {
         current[part] = {
           DESCRIPTION: `Container: ${part}`,
           FULL_PATH: '/' + pathParts.slice(0, i + 1).join('/'),
-          ACCESS: 0, // No access for container nodes
+          ACCESS: ACCESS.WRITE_ONLY, // Containers can accept data to sub-paths via HTTP POST
           CONTENTS: {}
         };
       }
@@ -317,7 +365,7 @@ class OscQueryService {
       current[paramName] = {
         DESCRIPTION: `OSC Parameter: ${address}`,
         FULL_PATH: address,
-        ACCESS: 3, // Read/Write
+        ACCESS: ACCESS.READ_WRITE, // Use constant instead of magic number
         TYPE: typeInfo.type,
         VALUE: [value] // OSCQuery spec requires array format
       };
@@ -394,7 +442,7 @@ class OscQueryService {
     return {
       DESCRIPTION: `Container at ${requestPath}`,
       FULL_PATH: requestPath,
-      ACCESS: 0,
+      ACCESS: ACCESS.WRITE_ONLY, // Containers can accept data to sub-paths via HTTP POST
       CONTENTS: current
     };
   }
@@ -448,7 +496,7 @@ class OscQueryService {
         current[part] = {
           DESCRIPTION: `Container: ${part}`,
           FULL_PATH: '/' + pathParts.slice(0, i + 1).join('/'),
-          ACCESS: 0, // No access for container nodes
+          ACCESS: ACCESS.WRITE_ONLY, // Containers can accept data to sub-paths via HTTP POST
           CONTENTS: {}
         };
       }
