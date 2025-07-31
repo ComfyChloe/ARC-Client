@@ -246,7 +246,7 @@
                 <h3>OSC Configuration</h3>
                 <div class="form-group">
                     <label for="local-port">Local OSC Port</label>
-                    <input type="number" id="local-port" value="9001">
+                    <input type="number" id="local-port" value="">
                 </div>
                 <div class="form-group">
                     <label for="target-port">Target OSC Port</label>
@@ -256,6 +256,23 @@
                     <label for="target-address">Target Address</label>
                     <input type="text" id="target-address" value="127.0.0.1">
                 </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>OSC Query Service</h3>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="oscquery-status"></span>
+                    <span id="oscquery-status-text">OSC Query Off</span>
+                </div>
+                <div class="form-group">
+                    <label for="oscquery-http-port">HTTP Port</label>
+                    <input type="text" id="oscquery-http-port" value="Auto-assigned" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="oscquery-udp-port">UDP Port</label>
+                    <input type="text" id="oscquery-udp-port" value="Auto-assigned" readonly>
+                </div>
+                <button class="btn btn-success" onclick="toggleOscQuery()" id="oscquery-btn">Start OSC Query</button>
             </div>
             
             <div class="sidebar-section" id="avatar-section" style="display: none;">

@@ -4,11 +4,13 @@ let currentAvatar = null;
 let parameters = {};
 let isConnected = false;
 let isAuthenticated = false;
+let oscQueryRunning = false;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     setupEventListeners();
+    updateOscQueryUI(); // Initialize OSC Query UI state
     addLog('Application initialized');
 });
 
@@ -17,7 +19,7 @@ async function loadConfig() {
     try {
         const config = await window.electronAPI.getConfig();
         document.getElementById('server-url').value = config.serverUrl;
-        document.getElementById('local-port').value = config.localOscPort;
+        document.getElementById('local-port').value = config.localOscPort || 'Auto-assigned';
         document.getElementById('target-port').value = config.targetOscPort;
         document.getElementById('target-address').value = config.targetOscAddress;
     } catch (error) {
@@ -93,6 +95,26 @@ function setupEventListeners() {
         addLog(`Server error: ${error.message}`, 'error');
     });
 
+    // OSC Query Service events
+    window.electronAPI.onOscQueryStatus((data) => {
+        updateOscQueryStatus(data.status, data.httpPort, data.udpPort);
+        if (data.status === 'started') {
+            addLog(`OSC Query started - HTTP: ${data.httpPort}, UDP: ${data.udpPort}`);
+            oscQueryRunning = true;
+        } else if (data.status === 'stopped') {
+            addLog('OSC Query service stopped');
+            oscQueryRunning = false;
+        } else if (data.status === 'error') {
+            addLog(`OSC Query error: ${data.error}`, 'error');
+            oscQueryRunning = false;
+        }
+        updateOscQueryUI();
+    });
+
+    window.electronAPI.onOscQueryRequest((data) => {
+        addLog(`OSC Query request: ${data.path} from ${data.ip}`);
+    });
+
     // Handle Enter key in password field
     document.getElementById('password').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
@@ -153,6 +175,47 @@ function updateOscStatus(status, port) {
         default:
             indicator.classList.add('status-disconnected');
             text.textContent = 'OSC Server Off';
+    }
+}
+
+// Update OSC Query status indicator
+function updateOscQueryStatus(status, httpPort, udpPort) {
+    const indicator = document.getElementById('oscquery-status');
+    const text = document.getElementById('oscquery-status-text');
+    const httpPortField = document.getElementById('oscquery-http-port');
+    const udpPortField = document.getElementById('oscquery-udp-port');
+    
+    indicator.className = 'status-indicator';
+    
+    switch (status) {
+        case 'started':
+            indicator.classList.add('status-connected');
+            text.textContent = 'OSC Query Running';
+            httpPortField.value = httpPort;
+            udpPortField.value = udpPort;
+            break;
+        case 'error':
+            indicator.classList.add('status-disconnected');
+            text.textContent = 'OSC Query Error';
+            break;
+        default:
+            indicator.classList.add('status-disconnected');
+            text.textContent = 'OSC Query Off';
+            httpPortField.value = 'Auto-assigned';
+            udpPortField.value = 'Auto-assigned';
+    }
+}
+
+// Update OSC Query UI elements
+function updateOscQueryUI() {
+    const btn = document.getElementById('oscquery-btn');
+    
+    if (oscQueryRunning) {
+        btn.textContent = 'Stop OSC Query';
+        btn.className = 'btn btn-danger';
+    } else {
+        btn.textContent = 'Start OSC Query';
+        btn.className = 'btn btn-success';
     }
 }
 
@@ -223,9 +286,12 @@ function updateParameterList() {
 // Configuration management
 async function updateConfig() {
     try {
+        const localPortValue = document.getElementById('local-port').value;
+        const localOscPort = (localPortValue === 'Auto-assigned' || localPortValue === '') ? null : parseInt(localPortValue);
+        
         const config = {
             serverUrl: document.getElementById('server-url').value,
-            localOscPort: parseInt(document.getElementById('local-port').value),
+            localOscPort: localOscPort,
             targetOscPort: parseInt(document.getElementById('target-port').value),
             targetOscAddress: document.getElementById('target-address').value
         };
@@ -335,6 +401,21 @@ async function sendOscMessage() {
         
     } catch (error) {
         addLog(`Error sending OSC: ${error.message}`, 'error');
+    }
+}
+
+// OSC Query Service toggle
+async function toggleOscQuery() {
+    try {
+        if (oscQueryRunning) {
+            await window.electronAPI.stopOscQuery();
+            addLog('Stopping OSC Query service...');
+        } else {
+            await window.electronAPI.startOscQuery();
+            addLog('Starting OSC Query service...');
+        }
+    } catch (error) {
+        addLog(`Error toggling OSC Query: ${error.message}`, 'error');
     }
 }
 

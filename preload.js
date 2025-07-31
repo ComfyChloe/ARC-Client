@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // OSC
   sendOsc: (oscData) => ipcRenderer.invoke('send-osc', oscData),
   
+  // OSC Query Service
+  startOscQuery: () => ipcRenderer.invoke('start-oscquery'),
+  stopOscQuery: () => ipcRenderer.invoke('stop-oscquery'),
+  
   // Avatar management
   getUserAvatar: () => ipcRenderer.invoke('get-user-avatar'),
   setUserAvatar: (avatarData) => ipcRenderer.invoke('set-user-avatar', avatarData),
@@ -45,6 +49,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onServerError: (callback) => {
     ipcRenderer.on('server-error', (event, error) => callback(error));
+  },
+  onOscQueryStatus: (callback) => {
+    ipcRenderer.on('oscquery-status', (event, data) => callback(data));
+  },
+  onOscQueryRequest: (callback) => {
+    ipcRenderer.on('oscquery-request', (event, data) => callback(data));
   },
   
   // Cleanup

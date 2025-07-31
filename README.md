@@ -44,13 +44,13 @@ The ARC-OSC Client is a standalone Electron application that provides a dedicate
 Configure VRChat to send OSC data to the client:
 
 1. **In VRChat**, go to Settings → OSC
-2. **Set OSC Input port** to `9001` (or whatever you configured in the client)
+2. **The client will auto-detect VRChat's OSC settings** via OSC Query protocol
 3. **Enable OSC**
 
 ### Client Configuration
 
 1. **Server URL**: Point to your ARC-OSC server (e.g., `ws://localhost:3000`)
-2. **Local OSC Port**: Port for receiving from VRChat (default: 9001)
+2. **Local OSC Port**: Auto-assigned based on VRChat's OSC Query service
 3. **Target OSC Port**: Port for sending to VRChat (default: 9000)
 4. **Target Address**: VRChat's IP address (usually 127.0.0.1)
 
