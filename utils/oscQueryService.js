@@ -10,9 +10,9 @@ class OscQueryService {
     this.httpPort = 0;
     this.assignedOscPort = null;
     this.oscQueryData = {
-      DESCRIPTION: 'ARC-OSC Client',
+      DESCRIPTION: 'ARC-OSC Client - Receives OSC data via OSCQuery HTTP',
       FULL_PATH: '/',
-      ACCESS: 0,
+      ACCESS: 2, // Write-only (we receive data)
       CONTENTS: {}
     };
     this.logDir = path.join(__dirname, '..', 'logs');
@@ -123,15 +123,25 @@ class OscQueryService {
         res.status(404).json({ error: 'Path not found' });
       }
     });
-    // POST endpoint for setting values
+    // POST endpoint for receiving OSC data via OSCQuery
     app.post('*', express.json(), (req, res) => {
       const path = req.path;
       const value = req.body.value;
+      const type = req.body.type || 'f';
+      
       if (value !== undefined) {
-        // Emit event for OSC message sending
-        this.emit('sendOsc', { address: path, value: value });
+        debug.log(`OSC data received via OSCQuery: ${path} = ${value} (${type})`);
+        
         // Update our data structure
-        this.updateOscQueryParameter(path, value);
+        this.updateOscQueryParameter(path, value, type);
+        
+        // Emit event for forwarding to WebSocket and renderer
+        this.emit('dataReceived', { 
+          address: path, 
+          value: value, 
+          type: type 
+        });
+        
         res.json({ success: true });
       } else {
         res.status(400).json({ error: 'No value provided' });
