@@ -10,7 +10,6 @@ class Debugger {
     this.oscMessageCount = 0;
     this.lastVRChatMessage = null;
     this.vrchatDetected = false;
-    this.oscQueryRequests = 0;
   }
 
   ensureLogDirectory() {
@@ -112,30 +111,12 @@ class Debugger {
     }
   }
 
-  oscQueryRequested(path, clientIP) {
-    this.oscQueryRequests++;
-    this.debug(`OSC Query request #${this.oscQueryRequests}`, {
-      path,
-      clientIP,
-      totalRequests: this.oscQueryRequests
-    });
-
-    // Check if this looks like VRChat querying us
-    if (clientIP === '127.0.0.1' && (path === '/' || path.includes('avatar'))) {
-      this.info('VRChat OSC Query discovery detected!', {
-        path,
-        requestCount: this.oscQueryRequests
-      });
-    }
-  }
-
   vrchatServiceFound(service, method) {
     this.info(`VRChat service discovered via ${method}`, service);
   }
 
-  oscServiceStarted(httpPort, oscPort) {
+  oscServiceStarted(oscPort) {
     this.info('OSC Services started', {
-      httpPort: httpPort,
       oscUdpPort: oscPort,
       message: 'Waiting for VRChat to discover and connect...'
     });
@@ -145,18 +126,12 @@ class Debugger {
     if (!this.vrchatDetected && this.oscMessageCount === 0) {
       this.warn('No VRChat connection detected', {
         uptime: Math.round((Date.now() - this.startTime) / 1000),
-        oscQueryRequests: this.oscQueryRequests,
         suggestions: [
           'Check if VRChat OSC is enabled in Settings → OSC',
           'Ensure VRChat is running and in a world',
           'Check Windows Firewall settings',
           'Verify no other OSC applications are using the same ports'
         ]
-      });
-    } else if (this.oscQueryRequests > 0 && this.oscMessageCount === 0) {
-      this.warn('VRChat discovered us but no data received', {
-        oscQueryRequests: this.oscQueryRequests,
-        suggestion: 'VRChat may need avatar parameters or world interaction to send data'
       });
     }
   }
@@ -175,7 +150,6 @@ class Debugger {
       uptime: Math.round((Date.now() - this.startTime) / 1000),
       vrchatDetected: this.vrchatDetected,
       oscMessagesReceived: this.oscMessageCount,
-      oscQueryRequests: this.oscQueryRequests,
       lastMessage: this.lastVRChatMessage
     };
   }
