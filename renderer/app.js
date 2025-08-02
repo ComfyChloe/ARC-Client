@@ -1,18 +1,13 @@
-// Application state
 let currentUser = null;
 let currentAvatar = null;
 let parameters = {};
 let isConnected = false;
 let isAuthenticated = false;
-
-// Initialize the application
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     setupEventListeners();
     addLog('Application initialized');
 });
-
-// Load configuration from electron main process
 async function loadConfig() {
     try {
         const config = await window.electronAPI.getConfig();
@@ -24,10 +19,7 @@ async function loadConfig() {
         addLog(`Error loading config: ${error.message}`, 'error');
     }
 }
-
-// Setup all event listeners
 function setupEventListeners() {
-    // Server connection events
     window.electronAPI.onServerConnection((data) => {
         updateServerStatus(data.status);
         if (data.status === 'connected') {
@@ -39,11 +31,9 @@ function setupEventListeners() {
             updateUI();
         }
     });
-
     window.electronAPI.onAuthRequired(() => {
         addLog('Authentication required');
     });
-
     window.electronAPI.onAuthSuccess((data) => {
         addLog(`Authentication successful: ${data.userId}`);
         currentUser = data.userId;
@@ -53,13 +43,11 @@ function setupEventListeners() {
         window.electronAPI.getUserAvatar();
         window.electronAPI.getParameters();
     });
-
     window.electronAPI.onAuthFailed((data) => {
         addLog(`Authentication failed: ${data.message}`, 'error');
         isAuthenticated = false;
         updateUI();
     });
-
     window.electronAPI.onUserAvatarInfo((data) => {
         currentAvatar = data.avatarId;
         parameters = data.parameters || {};
@@ -67,7 +55,6 @@ function setupEventListeners() {
         updateParameterList();
         addLog(`Avatar updated: ${data.avatarId || 'None'}`);
     });
-
     window.electronAPI.onParameterUpdate((data) => {
         if (data.name && data.value !== undefined) {
             parameters[data.name] = data.value;
@@ -75,11 +62,9 @@ function setupEventListeners() {
             addLog(`Parameter updated: ${data.name} = ${data.value}`);
         }
     });
-
     window.electronAPI.onOscReceived((data) => {
         addLog(`OSC Received: ${data.address} = ${data.value}`);
     });
-
     window.electronAPI.onOscServerStatus((data) => {
         updateOscStatus(data.status, data.port);
         if (data.status === 'connected') {
@@ -88,33 +73,24 @@ function setupEventListeners() {
             addLog(`OSC Server error: ${data.error}`, 'error');
         }
     });
-
     window.electronAPI.onServerError((error) => {
         addLog(`Server error: ${error.message}`, 'error');
     });
-
-    // Handle Enter key in password field
     document.getElementById('password').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             authenticate();
         }
     });
-
-    // Handle Enter key in OSC sender
     document.getElementById('osc-value').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             sendOscMessage();
         }
     });
 }
-
-// Update server connection status indicator
 function updateServerStatus(status) {
     const indicator = document.getElementById('server-status');
     const text = document.getElementById('server-status-text');
-    
     indicator.className = 'status-indicator';
-    
     switch (status) {
         case 'connected':
             indicator.classList.add('status-connected');
@@ -130,17 +106,12 @@ function updateServerStatus(status) {
             indicator.classList.add('status-pending');
             text.textContent = 'Connecting...';
     }
-    
     updateUI();
 }
-
-// Update OSC server status indicator
 function updateOscStatus(status, port) {
     const indicator = document.getElementById('osc-status');
     const text = document.getElementById('osc-status-text');
-    
     indicator.className = 'status-indicator';
-    
     switch (status) {
         case 'connected':
             indicator.classList.add('status-connected');
@@ -155,13 +126,10 @@ function updateOscStatus(status, port) {
             text.textContent = 'OSC Server Off';
     }
 }
-
-// Update UI elements based on connection and authentication state
 function updateUI() {
     const authBtn = document.getElementById('auth-btn');
     const authSection = document.getElementById('auth-section');
     const avatarSection = document.getElementById('avatar-section');
-    
     if (isAuthenticated && isConnected) {
         authBtn.textContent = 'Disconnect';
         authBtn.className = 'btn btn-danger';
@@ -174,8 +142,6 @@ function updateUI() {
         avatarSection.style.display = 'none';
     }
 }
-
-// Update avatar display in sidebar
 function updateAvatarDisplay() {
     const avatarId = document.getElementById('avatar-id');
     const paramCount = document.getElementById('parameter-count');
@@ -183,44 +149,32 @@ function updateAvatarDisplay() {
     avatarId.textContent = currentAvatar || 'No avatar selected';
     paramCount.textContent = `${Object.keys(parameters).length} parameters`;
 }
-
-// Update parameter list in main content
 function updateParameterList() {
     const container = document.getElementById('parameter-list');
-    
     if (Object.keys(parameters).length === 0) {
         container.innerHTML = '<p>No parameters available</p>';
         return;
     }
-    
     container.innerHTML = '';
-    
     Object.entries(parameters).forEach(([name, value]) => {
         const item = document.createElement('div');
         item.className = 'parameter-item';
-        
         const nameSpan = document.createElement('span');
         nameSpan.textContent = name;
         nameSpan.style.fontWeight = '600';
-        
         const valueSpan = document.createElement('span');
         valueSpan.textContent = value;
         valueSpan.style.fontFamily = 'monospace';
-        
         const typeSpan = document.createElement('span');
         typeSpan.textContent = typeof value;
         typeSpan.style.fontSize = '0.8em';
         typeSpan.style.color = '#666';
-        
         item.appendChild(nameSpan);
         item.appendChild(valueSpan);
         item.appendChild(typeSpan);
-        
         container.appendChild(item);
     });
 }
-
-// Configuration management
 async function updateConfig() {
     try {
         const config = {
@@ -229,15 +183,26 @@ async function updateConfig() {
             targetOscPort: parseInt(document.getElementById('target-port').value),
             targetOscAddress: document.getElementById('target-address').value
         };
-        
         await window.electronAPI.setConfig(config);
-        addLog('Configuration updated');
+        addLog('Configuration updated - OSC services will restart');
     } catch (error) {
         addLog(`Error updating config: ${error.message}`, 'error');
     }
 }
-
-// Authentication
+async function updateOscPorts() {
+    try {
+        const config = {
+            serverUrl: document.getElementById('server-url').value,
+            localOscPort: parseInt(document.getElementById('local-port').value),
+            targetOscPort: parseInt(document.getElementById('target-port').value),
+            targetOscAddress: document.getElementById('target-address').value
+        };
+        await window.electronAPI.setConfig(config);
+        addLog('OSC ports updated - OSC services will restart');
+    } catch (error) {
+        addLog(`Error updating OSC ports: ${error.message}`, 'error');
+    }
+}
 async function authenticate() {
     if (isAuthenticated && isConnected) {
         disconnect();

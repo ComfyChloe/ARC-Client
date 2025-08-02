@@ -44,7 +44,7 @@ The ARC-OSC Client is a standalone Electron application that provides a dedicate
 Configure VRChat to send OSC data to the client:
 
 1. **In VRChat**, go to Settings → OSC
-2. **Set OSC Input port** to `9001` (or whatever you configured in the client)
+2. **Configure OSC ports** to match the client settings
 3. **Enable OSC**
 
 ### Client Configuration
