@@ -244,18 +244,19 @@
             
             <div class="sidebar-section">
                 <h3>OSC Configuration</h3>
+                <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Incoming OSC</div>
                 <div class="form-group">
-                    <label for="local-port">Local OSC Port</label>
-                    <input type="number" id="local-port" value="9001">
+                    <input type="number" id="local-port" value="9001" placeholder="Local OSC Port (Incoming)">
+                </div>
+                <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Outgoing OSC</div>
+                <div class="form-group">
+                    <input type="number" id="target-port" value="9000" placeholder="Target OSC Port (Outgoing)">
                 </div>
                 <div class="form-group">
-                    <label for="target-port">Target OSC Port</label>
-                    <input type="number" id="target-port" value="9000">
-                </div>
-                <div class="form-group">
-                    <label for="target-address">Target Address</label>
+                    <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Local OSC IP</div>
                     <input type="text" id="target-address" value="127.0.0.1">
                 </div>
+                <button class="btn btn-primary" onclick="updateOscPorts()">Update OSC Ports</button>
             </div>
             
             <div class="sidebar-section" id="avatar-section" style="display: none;">
@@ -269,11 +270,11 @@
             <div class="sidebar-section" id="auth-section">
                 <h3>Authentication</h3>
                 <div class="form-group">
-                    <label for="username">Username</label>
+                    <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Username</div>
                     <input type="text" id="username">
                 </div>
                 <div class="form-group">
-                    <label for="password">Password</label>
+                    <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Password</div>
                     <input type="password" id="password">
                 </div>
                 <button class="btn btn-success" onclick="authenticate()" id="auth-btn">Connect & Login</button>
