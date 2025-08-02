@@ -26,13 +26,13 @@ function createWindow() {
     icon: path.join(__dirname, 'assets', 'icon.png'),
     title: 'ARC-OSC Client'
   });
+  mainWindow.setMenuBarVisibility(false);
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile('renderer/index.html');
   }
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });

@@ -85,12 +85,10 @@ class Debugger {
   debug(message, data = null) {
     this.log('debug', message, data);
   }
-
   // OSC-specific debugging
   oscMessageReceived(address, value, type) {
     this.oscMessageCount++;
     this.lastVRChatMessage = { address, value, type, timestamp: Date.now() };
-    
     // Only log every 10th message to avoid spam, except for important ones
     if (this.oscMessageCount % 10 === 0 || address.includes('VRCEmote') || address.includes('Voice') || this.oscMessageCount <= 5) {
       this.debug(`OSC Message #${this.oscMessageCount}`, {
@@ -100,8 +98,6 @@ class Debugger {
         totalReceived: this.oscMessageCount
       });
     }
-
-    // Check if this looks like VRChat data
     if (!this.vrchatDetected && this.isVRChatOSCMessage(address)) {
       this.vrchatDetected = true;
       this.info('VRChat OSC data flow detected!', {
@@ -110,18 +106,15 @@ class Debugger {
       });
     }
   }
-
   vrchatServiceFound(service, method) {
     this.info(`VRChat service discovered via ${method}`, service);
   }
-
   oscServiceStarted(oscPort) {
     this.info('OSC Services started', {
       oscUdpPort: oscPort,
       message: 'Waiting for VRChat to discover and connect...'
     });
   }
-
   connectionTimeout() {
     if (!this.vrchatDetected && this.oscMessageCount === 0) {
       this.warn('No VRChat connection detected', {
@@ -135,7 +128,6 @@ class Debugger {
       });
     }
   }
-
   isVRChatOSCMessage(address) {
     return address.startsWith('/avatar/') || 
            address.includes('VRC') || 
@@ -144,7 +136,6 @@ class Debugger {
            address.includes('Gesture') ||
            address.includes('Locomotion');
   }
-
   getStats() {
     return {
       uptime: Math.round((Date.now() - this.startTime) / 1000),
@@ -153,8 +144,6 @@ class Debugger {
       lastMessage: this.lastVRChatMessage
     };
   }
-
-  // Clear old logs
   clearOldLogs() {
     try {
       if (fs.existsSync(this.logFile)) {
@@ -166,5 +155,4 @@ class Debugger {
     }
   }
 }
-
 module.exports = new Debugger();
