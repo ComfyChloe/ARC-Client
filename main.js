@@ -8,7 +8,7 @@ let oscServer;
 let oscClient;
 let socket;
 let serverConfig = {
-  serverUrl: 'ws://localhost:3000',
+  serverUrl: 'wss://localhost:3000',
   localOscPort: 9001,
   targetOscPort: 9000,
   targetOscAddress: '127.0.0.1'
@@ -188,33 +188,38 @@ ipcMain.handle('disconnect-server', () => {
 });
 ipcMain.handle('authenticate', (event, credentials) => {
   if (socket && socket.connected) {
-    debug.info('Sending authentication request', { userId: credentials.userId });
+    debug.info('Sending authentication request', { username: credentials.username });
     socket.emit('authenticate', credentials);
   } else {
     debug.warn('Authentication attempted but not connected to server');
+    return { success: false, error: 'Not connected to server' };
   }
 });
 ipcMain.handle('send-osc', (event, oscData) => {
   if (socket && socket.connected) {
     debug.debug('Sending OSC message to server', oscData);
-    socket.emit('osc-message', oscData);
+    socket.emit('send-osc', oscData);
   } else {
-    debug.warn('OSC send attempted but not connected to server', oscData);
+    debug.warn('OSC send attempted but not connected to server');
+    throw new Error('Not connected to server');
   }
 });
+
 ipcMain.handle('get-user-avatar', () => {
   if (socket && socket.connected) {
     socket.emit('get-user-avatar');
   }
 });
-ipcMain.handle('set-user-avatar', (event, avatarData) => {
-  if (socket && socket.connected) {
-    socket.emit('set-user-avatar', avatarData);
-  }
-});
+
 ipcMain.handle('get-parameters', () => {
   if (socket && socket.connected) {
     socket.emit('get-parameters');
+  }
+});
+
+ipcMain.handle('set-user-avatar', (event, avatarData) => {
+  if (socket && socket.connected) {
+    socket.emit('set-user-avatar', avatarData);
   }
 });
 
@@ -260,3 +265,15 @@ app.on('before-quit', () => {
   if (oscClient) oscClient.close();
   if (socket) socket.disconnect();
 });
+if (process.argv.includes('--dev')) {
+  try {
+    require('electron-reload')(__dirname, {
+      electron: require('path').join(__dirname, 'node_modules', '.bin', 'electron'),
+      awaitWriteFinish: true,
+      ignored: /node_modules|[\/\\]\./
+    });
+    console.log('electron-reload enabled');
+  } catch (e) {
+    console.warn('electron-reload not available:', e.message);
+  }
+}
