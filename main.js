@@ -6,6 +6,7 @@ const websocketService = require('./utils/websocketService');
 let mainWindow;
 let oscServer;
 let oscClient;
+let oscEnabled = false;
 let serverConfig = {
   serverUrl: 'wss://localhost:3000',
   localOscPort: 9001,
@@ -35,12 +36,31 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (oscEnabled && oscServer) {
+      sendToRenderer('osc-server-status', { 
+        status: 'connected', 
+        port: serverConfig.localOscPort 
+      });
+    } else {
+      sendToRenderer('osc-server-status', { 
+        status: oscEnabled ? 'disconnected' : 'disabled', 
+        port: serverConfig.localOscPort 
+      });
+    }
+  });
 }
 function initOscServer() {
   if (oscServer) {
     oscServer.close();
   }
-  
+  if (!oscEnabled) {
+    sendToRenderer('osc-server-status', { 
+      status: 'disabled', 
+      port: serverConfig.localOscPort 
+    });
+    return;
+  }
   oscServer = new Server(serverConfig.localOscPort, '0.0.0.0', () => {
     console.log(`OSC Server listening on port ${serverConfig.localOscPort}`);
     debug.oscServiceStarted(serverConfig.localOscPort);
@@ -49,26 +69,20 @@ function initOscServer() {
       port: serverConfig.localOscPort 
     });
   });
-  
   oscServer.on('message', (msg) => {
     const [address, value] = msg;
     console.log('Received OSC:', address, value);
-    
     // Determine OSC message type
     const type = typeof value === 'boolean' ? 'bool' : 
                  typeof value === 'number' ? 
                    (Number.isInteger(value) ? 'int' : 'float') : 'string';
-    
-    // Log OSC message through debugger
     debug.oscMessageReceived(address, value, type);
-    
     // Forward OSC message to websocket service
     websocketService.forwardOscMessage({
       address,
       value,
       type
     });
-    
     sendToRenderer('osc-received', { address, value });
   });
   oscServer.on('error', (err) => {
@@ -81,15 +95,12 @@ function initOscClient() {
   if (oscClient) {
     oscClient.close();
   }
-
   oscClient = new Client(serverConfig.targetOscAddress, serverConfig.targetOscPort);
   console.log(`OSC Client targeting ${serverConfig.targetOscAddress}:${serverConfig.targetOscPort}`);
   debug.info('OSC Client initialized', {
     targetAddress: serverConfig.targetOscAddress,
     targetPort: serverConfig.targetOscPort
   });
-  
-  // Update websocket service with new OSC client
   websocketService.updateOscClient(oscClient);
 }
 function sendToRenderer(channel, data) {
@@ -103,16 +114,12 @@ ipcMain.handle('get-config', () => {
 ipcMain.handle('set-config', (event, newConfig) => {
   const oldConfig = { ...serverConfig };
   serverConfig = { ...serverConfig, ...newConfig };
-  
   debug.info('Configuration updated', { 
     oldConfig: oldConfig, 
     newConfig: newConfig,
     finalConfig: serverConfig 
   });
-  
-  // Update websocket service configuration
   websocketService.updateConfig(serverConfig);
-  
   initOscServer();
   initOscClient();
   return serverConfig;
@@ -129,42 +136,56 @@ ipcMain.handle('authenticate', (event, credentials) => {
 ipcMain.handle('send-osc', (event, oscData) => {
   websocketService.sendOsc(oscData);
 });
-
 ipcMain.handle('get-user-avatar', () => {
   websocketService.getUserAvatar();
 });
-
 ipcMain.handle('get-parameters', () => {
   websocketService.getParameters();
 });
-
 ipcMain.handle('set-user-avatar', (event, avatarData) => {
   websocketService.setUserAvatar(avatarData);
 });
-
-// Debug-related IPC handlers
 ipcMain.handle('get-debug-stats', () => {
   return debug.getStats();
 });
-
 ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
 });
+ipcMain.handle('enable-osc', () => {
+  oscEnabled = true;
+  debug.info('OSC Server enabled by user request');
+  initOscServer();
+  initOscClient();
+});
+ipcMain.handle('disable-osc', () => {
+  oscEnabled = false;
+  debug.info('OSC Server disabled by user request');
+  if (oscServer) {
+    oscServer.close();
+    oscServer = undefined;
+  }
+  sendToRenderer('osc-server-status', { 
+    status: 'disabled', 
+    port: serverConfig.localOscPort 
+  });
+});
 app.whenReady().then(() => {
   debug.info('ARC-OSC Client starting up');
   createWindow();
-  initOscServer();
-  initOscClient();
-  
-  // Initialize websocket service
+  if (oscEnabled) {
+    initOscServer();
+    initOscClient();
+  } else {
+    sendToRenderer('osc-server-status', { 
+      status: 'disabled', 
+      port: serverConfig.localOscPort 
+    });
+  }
   websocketService.initialize(serverConfig, sendToRenderer, oscClient);
-  
-  // Set up connection timeout check
   setTimeout(() => {
     debug.connectionTimeout();
   }, 30000); // Check after 30 seconds
-  
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -180,7 +201,6 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-
 app.on('before-quit', () => {
   debug.info('Application quit requested - cleaning up');
   if (oscServer) oscServer.close();
