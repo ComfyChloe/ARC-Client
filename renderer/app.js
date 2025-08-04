@@ -6,16 +6,17 @@ let isAuthenticated = false;
 let oscEnabled = false;
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
+    loadAppSettings();
     setupEventListeners();
     addLog('Application initialized');
 });
 async function loadConfig() {
     try {
         const config = await window.electronAPI.getConfig();
-        document.getElementById('server-url').value = config.serverUrl;
-        document.getElementById('local-port').value = config.localOscPort;
-        document.getElementById('target-port').value = config.targetOscPort;
-        document.getElementById('target-address').value = config.targetOscAddress;
+        document.getElementById('server-url-settings').value = config.serverUrl;
+        document.getElementById('local-port-settings').value = config.localOscPort;
+        document.getElementById('target-port-settings').value = config.targetOscPort;
+        document.getElementById('target-address-settings').value = config.targetOscAddress;
     } catch (error) {
         addLog(`Error loading config: ${error.message}`, 'error');
     }
@@ -195,10 +196,10 @@ function updateParameterList() {
 async function updateConfig() {
     try {
         const config = {
-            serverUrl: document.getElementById('server-url').value,
-            localOscPort: parseInt(document.getElementById('local-port').value),
-            targetOscPort: parseInt(document.getElementById('target-port').value),
-            targetOscAddress: document.getElementById('target-address').value
+            serverUrl: document.getElementById('server-url-settings').value,
+            localOscPort: parseInt(document.getElementById('local-port-settings').value),
+            targetOscPort: parseInt(document.getElementById('target-port-settings').value),
+            targetOscAddress: document.getElementById('target-address-settings').value
         };
         await window.electronAPI.setConfig(config);
         addLog('Configuration updated - OSC services will restart');
@@ -209,10 +210,10 @@ async function updateConfig() {
 async function updateOscPorts() {
     try {
         const config = {
-            serverUrl: document.getElementById('server-url').value,
-            localOscPort: parseInt(document.getElementById('local-port').value),
-            targetOscPort: parseInt(document.getElementById('target-port').value),
-            targetOscAddress: document.getElementById('target-address').value
+            serverUrl: document.getElementById('server-url-settings').value,
+            localOscPort: parseInt(document.getElementById('local-port-settings').value),
+            targetOscPort: parseInt(document.getElementById('target-port-settings').value),
+            targetOscAddress: document.getElementById('target-address-settings').value
         };
         await window.electronAPI.setConfig(config);
         addLog('OSC ports updated - OSC services will restart');
@@ -342,6 +343,49 @@ function addLog(message, type = 'info') {
 function clearLogs() {
     document.getElementById('log-container').innerHTML = '';
     addLog('Logs cleared');
+}
+function updateConfigFromSettings() {
+    return updateConfig();
+}
+function updateOscPortsFromSettings() {
+    return updateOscPorts();
+}
+function showMainView() {
+    const mainView = document.getElementById('main-view');
+    const settingsView = document.getElementById('settings-view');
+    settingsView.style.opacity = '0';
+    setTimeout(() => {
+        settingsView.style.display = 'none';
+        mainView.style.display = 'block';
+        mainView.style.opacity = '1';
+    }, 150);
+    addLog('Switched to main view');
+}
+function showSettingsView() {
+    const mainView = document.getElementById('main-view');
+    const settingsView = document.getElementById('settings-view');
+    mainView.style.opacity = '0';
+    setTimeout(() => {
+        mainView.style.display = 'none';
+        settingsView.style.display = 'block';
+        settingsView.style.opacity = '1';
+    }, 150);
+    addLog('Switched to settings view');
+}
+function updateAppSettings() {
+    const autoConnect = document.getElementById('auto-connect').value;
+    const logLevel = document.getElementById('log-level').value;
+    localStorage.setItem('autoConnect', autoConnect);
+    localStorage.setItem('logLevel', logLevel);
+    addLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}`);
+}
+function loadAppSettings() {
+    const autoConnect = localStorage.getItem('autoConnect') || 'false';
+    const logLevel = localStorage.getItem('logLevel') || 'info';
+    const autoConnectSelect = document.getElementById('auto-connect');
+    const logLevelSelect = document.getElementById('log-level');
+    if (autoConnectSelect) autoConnectSelect.value = autoConnect;
+    if (logLevelSelect) logLevelSelect.value = logLevel;
 }
 window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('server-connection');
