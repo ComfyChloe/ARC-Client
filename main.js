@@ -71,8 +71,6 @@ function initOscServer() {
   });
   oscServer.on('message', (msg) => {
     const [address, value] = msg;
-    console.log('Received OSC:', address, value);
-    // Determine OSC message type
     const type = typeof value === 'boolean' ? 'bool' : 
                  typeof value === 'number' ? 
                    (Number.isInteger(value) ? 'int' : 'float') : 'string';

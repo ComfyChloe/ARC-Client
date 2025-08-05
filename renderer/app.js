@@ -357,8 +357,11 @@ function showMainView() {
     setTimeout(() => {
         settingsView.style.display = 'none';
         mainView.style.display = 'block';
-        mainView.style.opacity = '1';
-    }, 150);
+        mainView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            mainView.style.opacity = '1';
+        });
+    }, 300);
     addLog('Switched to main view');
 }
 function showSettingsView() {
@@ -368,8 +371,11 @@ function showSettingsView() {
     setTimeout(() => {
         mainView.style.display = 'none';
         settingsView.style.display = 'block';
-        settingsView.style.opacity = '1';
-    }, 150);
+        settingsView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            settingsView.style.opacity = '1';
+        });
+    }, 300);
     addLog('Switched to settings view');
 }
 function updateAppSettings() {
