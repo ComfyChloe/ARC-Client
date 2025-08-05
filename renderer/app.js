@@ -8,6 +8,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     loadAppSettings();
     setupEventListeners();
+    const navMain = document.getElementById('nav-main');
+    const navOsc = document.getElementById('nav-osc');
+    const navSettings = document.getElementById('nav-settings');
+    navMain.classList.add('active');
+    navMain.disabled = true;
+    navOsc.classList.remove('active');
+    navOsc.disabled = false;
+    navSettings.classList.remove('active');
+    navSettings.disabled = false;
     addLog('Application initialized');
 });
 async function loadConfig() {
@@ -317,12 +326,11 @@ async function sendOscMessage() {
 }
 function showTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
+        content.style.display = tabName === content.id ? 'block' : 'none';
     });
     document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.remove('active');
     });
-    document.getElementById(tabName).classList.add('active');
     event.target.classList.add('active');
 }
 function addLog(message, type = 'info') {
@@ -352,9 +360,15 @@ function updateOscPortsFromSettings() {
 }
 function showMainView() {
     const mainView = document.getElementById('main-view');
+    const oscView = document.getElementById('osc-view');
     const settingsView = document.getElementById('settings-view');
+    const navMain = document.getElementById('nav-main');
+    const navOsc = document.getElementById('nav-osc');
+    const navSettings = document.getElementById('nav-settings');
+    oscView.style.opacity = '0';
     settingsView.style.opacity = '0';
     setTimeout(() => {
+        oscView.style.display = 'none';
         settingsView.style.display = 'none';
         mainView.style.display = 'block';
         mainView.style.opacity = '0';
@@ -362,20 +376,64 @@ function showMainView() {
             mainView.style.opacity = '1';
         });
     }, 300);
+    navMain.classList.add('active');
+    navMain.disabled = true;
+    navOsc.classList.remove('active');
+    navOsc.disabled = false;
+    navSettings.classList.remove('active');
+    navSettings.disabled = false;
     addLog('Switched to main view');
+}
+function showOscView() {
+    const mainView = document.getElementById('main-view');
+    const oscView = document.getElementById('osc-view');
+    const settingsView = document.getElementById('settings-view');
+    const navMain = document.getElementById('nav-main');
+    const navOsc = document.getElementById('nav-osc');
+    const navSettings = document.getElementById('nav-settings');
+    mainView.style.opacity = '0';
+    settingsView.style.opacity = '0';
+    setTimeout(() => {
+        mainView.style.display = 'none';
+        settingsView.style.display = 'none';
+        oscView.style.display = 'block';
+        oscView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            oscView.style.opacity = '1';
+        });
+    }, 300);
+    navMain.classList.remove('active');
+    navMain.disabled = false;
+    navOsc.classList.add('active');
+    navOsc.disabled = true;
+    navSettings.classList.remove('active');
+    navSettings.disabled = false;
+    addLog('Switched to OSC settings view');
 }
 function showSettingsView() {
     const mainView = document.getElementById('main-view');
+    const oscView = document.getElementById('osc-view');
     const settingsView = document.getElementById('settings-view');
+    const navMain = document.getElementById('nav-main');
+    const navOsc = document.getElementById('nav-osc');
+    const navSettings = document.getElementById('nav-settings');
     mainView.style.opacity = '0';
+    oscView.style.opacity = '0';
     setTimeout(() => {
         mainView.style.display = 'none';
+        oscView.style.display = 'none';
         settingsView.style.display = 'block';
         settingsView.style.opacity = '0';
         requestAnimationFrame(() => {
             settingsView.style.opacity = '1';
         });
     }, 300);
+    navMain.classList.remove('active');
+    navMain.disabled = false;
+    navOsc.classList.remove('active');
+    navOsc.disabled = false;
+    navSettings.classList.add('active');
+    navSettings.disabled = true;
     addLog('Switched to settings view');
 }
 function updateAppSettings() {
