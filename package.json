@@ -1,14 +1,19 @@
 {
-  "name": "arc-osc-client",
-  "version": "0.18",
+  "name": "ARC-OSC-Client",
+  "version": "0.0.1",
+  "author": "ComfyChloe",
   "description": "Standalone OSC Client for ARC-OSC Server",
   "main": "main.js",
   "private": false,
   "dependencies": {
-    "electron": "28.0.0",
-    "naive-ui": "2.38.1",
-    "osc": "2.4.5",
-    "socket.io-client": "4.7.4"
+    "axios": "^1.6.7",
+    "bonjour": "^3.5.0",
+    "electron": "^28.0.0",
+    "express": "^4.18.2",
+    "naive-ui": "^2.38.1",
+    "osc": "^2.4.5",
+    "socket.io-client": "^4.7.4",
+    "vue": "^3.4.21"
   },
   "scripts": {
     "start": "electron .",
@@ -17,7 +22,9 @@
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron-builder": "24.9.1"
+    "@vitejs/plugin-vue": "5.0.0",
+    "electron-builder": "24.9.1",
+    "vite": "5.0.0"
   },
   "build": {
     "appId": "com.arcrosc.oscclient",
@@ -27,9 +34,7 @@
     },
     "files": [
       "main.js",
-      "preload.js",
       "renderer/**/*",
-      "utils/**/*",
       "package.json"
     ],
     "win": {
