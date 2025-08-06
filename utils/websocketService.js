@@ -53,7 +53,12 @@ class WebSocketService {
   }
   forwardOscMessage(messageData) {
     if (this.socket && this.socket.connected) {
-      this.socket.emit('osc-message', messageData);
+      const enrichedData = {
+        ...messageData,
+        timestamp: Date.now(),
+        source: messageData.connectionId ? 'additional' : 'primary'
+      };
+      this.socket.emit('osc-message', enrichedData);
     }
   }
   getUserAvatar() {
@@ -104,6 +109,20 @@ class WebSocketService {
       if (this.oscClient && data.address) {
         this.oscClient.send(data.address, data.value);
         debug.debug('Sent OSC parameter to VRChat', { address: data.address, value: data.value });
+      }
+      
+      // If there's a specific connection target, try to send via additional connections
+      if (data.targetConnectionId && global.oscService) {
+        try {
+          global.oscService.sendMessageToConnection(data.targetConnectionId, data.address, data.value, data.type);
+          debug.debug('Sent OSC parameter to additional connection', { 
+            connectionId: data.targetConnectionId, 
+            address: data.address, 
+            value: data.value 
+          });
+        } catch (error) {
+          debug.error('Failed to send to additional connection', error);
+        }
       }
     });
     this.socket.on('user-avatar-info', (data) => {

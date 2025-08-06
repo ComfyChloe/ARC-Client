@@ -4,6 +4,8 @@ let parameters = {};
 let isConnected = false;
 let isAuthenticated = false;
 let oscEnabled = false;
+let additionalOscConnections = [];
+let maxAdditionalConnections = 10;
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     loadAppSettings();
@@ -26,6 +28,12 @@ async function loadConfig() {
         document.getElementById('local-port-settings').value = config.localOscPort;
         document.getElementById('target-port-settings').value = config.targetOscPort;
         document.getElementById('target-address-settings').value = config.targetOscAddress;
+        
+        // Load additional OSC connections
+        if (config.additionalOscConnections) {
+            additionalOscConnections = config.additionalOscConnections;
+            renderAdditionalOscConnections();
+        }
     } catch (error) {
         addLog(`Error loading config: ${error.message}`, 'error');
     }
@@ -222,7 +230,8 @@ async function updateOscPorts() {
             serverUrl: document.getElementById('server-url-settings').value,
             localOscPort: parseInt(document.getElementById('local-port-settings').value),
             targetOscPort: parseInt(document.getElementById('target-port-settings').value),
-            targetOscAddress: document.getElementById('target-address-settings').value
+            targetOscAddress: document.getElementById('target-address-settings').value,
+            additionalOscConnections: additionalOscConnections
         };
         await window.electronAPI.setConfig(config);
         addLog('OSC ports updated - OSC services will restart');
@@ -401,6 +410,8 @@ function showOscView() {
         requestAnimationFrame(() => {
             oscView.style.opacity = '1';
         });
+        // Render OSC connections when view is shown
+        renderAdditionalOscConnections();
     }, 300);
     navMain.classList.remove('active');
     navMain.disabled = false;
@@ -462,3 +473,109 @@ window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('osc-server-status');
     window.electronAPI.removeAllListeners('server-error');
 });
+function addOscConnection() {
+    if (additionalOscConnections.length >= maxAdditionalConnections) {
+        addLog(`Maximum ${maxAdditionalConnections} additional connections allowed`, 'error');
+        return;
+    }
+    
+    const newConnection = {
+        id: Date.now().toString(),
+        incomingPort: null,
+        outgoingPort: null,
+        address: '127.0.0.1',
+        enabled: true
+    };
+    
+    additionalOscConnections.push(newConnection);
+    renderAdditionalOscConnections();
+    addLog(`Added new OSC connection slot (${additionalOscConnections.length}/${maxAdditionalConnections})`);
+}
+
+function removeOscConnection(id) {
+    additionalOscConnections = additionalOscConnections.filter(conn => conn.id !== id);
+    renderAdditionalOscConnections();
+    addLog(`Removed OSC connection`);
+}
+
+function updateOscConnection(id, field, value) {
+    const connection = additionalOscConnections.find(conn => conn.id === id);
+    if (connection) {
+        if (field === 'incomingPort' || field === 'outgoingPort') {
+            connection[field] = value ? parseInt(value) : null;
+        } else {
+            connection[field] = value;
+        }
+    }
+}
+
+function renderAdditionalOscConnections() {
+    const container = document.getElementById('additional-osc-connections');
+    const addBtn = document.getElementById('add-osc-btn');
+    const countSpan = document.getElementById('connection-count');
+    
+    if (!container || !addBtn || !countSpan) {
+        console.warn('OSC connection elements not found in DOM');
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    additionalOscConnections.forEach(connection => {
+        const connectionDiv = document.createElement('div');
+        connectionDiv.className = 'osc-connection-item';
+        connectionDiv.style.cssText = `
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+        `;
+        
+        connectionDiv.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h5 style="margin: 0; color: #2c3e50;">OSC Connection ${additionalOscConnections.indexOf(connection) + 1}</h5>
+                <button class="btn btn-danger" onclick="removeOscConnection('${connection.id}')" style="padding: 5px 10px; font-size: 12px;">Remove</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 0.9em;">Incoming Port</label>
+                    <input type="number" placeholder="e.g. 9040" value="${connection.incomingPort || ''}" 
+                           onchange="updateOscConnection('${connection.id}', 'incomingPort', this.value)"
+                           style="padding: 8px; font-size: 14px;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 0.9em;">Outgoing Port</label>
+                    <input type="number" placeholder="e.g. 9041" value="${connection.outgoingPort || ''}" 
+                           onchange="updateOscConnection('${connection.id}', 'outgoingPort', this.value)"
+                           style="padding: 8px; font-size: 14px;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 0.9em;">IP Address</label>
+                    <input type="text" value="${connection.address}" 
+                           onchange="updateOscConnection('${connection.id}', 'address', this.value)"
+                           style="padding: 8px; font-size: 14px;">
+                </div>
+                <div style="display: flex; align-items: center; margin-top: 20px;">
+                    <label style="font-size: 0.9em; margin-right: 5px;">Enabled</label>
+                    <input type="checkbox" ${connection.enabled ? 'checked' : ''} 
+                           onchange="updateOscConnection('${connection.id}', 'enabled', this.checked)">
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(connectionDiv);
+    });
+    
+    // Update UI state
+    addBtn.disabled = additionalOscConnections.length >= maxAdditionalConnections;
+    countSpan.textContent = `${additionalOscConnections.length}/${maxAdditionalConnections} additional connections`;
+    
+    if (additionalOscConnections.length >= maxAdditionalConnections) {
+        addBtn.textContent = '+ Maximum Reached';
+        addBtn.className = 'btn btn-secondary';
+    } else {
+        addBtn.textContent = '+ Add OSC Connection';
+        addBtn.className = 'btn btn-success';
+    }
+}

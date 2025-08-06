@@ -3,15 +3,18 @@ const path = require('path');
 const { Client, Server } = require('node-osc');
 const debug = require('./utils/debugger');
 const websocketService = require('./utils/websocketService');
+const OscService = require('./utils/oscService');
 let mainWindow;
 let oscServer;
 let oscClient;
+let oscService;
 let oscEnabled = false;
 let serverConfig = {
   serverUrl: 'wss://localhost:3000',
   localOscPort: 9001,
   targetOscPort: 9000,
-  targetOscAddress: '127.0.0.1'
+  targetOscAddress: '127.0.0.1',
+  additionalOscConnections: []
 };
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -51,9 +54,10 @@ function createWindow() {
   });
 }
 function initOscServer() {
-  if (oscServer) {
-    oscServer.close();
+  if (oscService) {
+    oscService.stop();
   }
+  
   if (!oscEnabled) {
     sendToRenderer('osc-server-status', { 
       status: 'disabled', 
@@ -61,35 +65,77 @@ function initOscServer() {
     });
     return;
   }
-  oscServer = new Server(serverConfig.localOscPort, '0.0.0.0', () => {
-    console.log(`OSC Server listening on port ${serverConfig.localOscPort}`);
-    debug.oscServiceStarted(serverConfig.localOscPort);
+
+  oscService = new OscService();
+  
+  // Set up event listeners
+  oscService.on('ready', (config) => {
+    console.log(`OSC Server listening on port ${config.localPort}`);
+    debug.oscServiceStarted(config.localPort);
     sendToRenderer('osc-server-status', { 
       status: 'connected', 
-      port: serverConfig.localOscPort 
+      port: config.localPort 
     });
+    
+    // Log additional connections
+    if (serverConfig.additionalOscConnections.length > 0) {
+      debug.info('Additional OSC connections configured', {
+        count: serverConfig.additionalOscConnections.length,
+        connections: serverConfig.additionalOscConnections
+      });
+    }
   });
-  oscServer.on('message', (msg) => {
-    const [address, value] = msg;
-    const type = typeof value === 'boolean' ? 'bool' : 
-                 typeof value === 'number' ? 
-                   (Number.isInteger(value) ? 'int' : 'float') : 'string';
-    debug.oscMessageReceived(address, value, type);
+  
+  oscService.on('messageReceived', (data) => {
+    debug.oscMessageReceived(data.address, data.value, data.type);
+    
     // Forward OSC message to websocket service
     websocketService.forwardOscMessage({
-      address,
-      value,
-      type
+      address: data.address,
+      value: data.value,
+      type: data.type,
+      connectionId: data.connectionId
     });
-    sendToRenderer('osc-received', { address, value });
+    
+    sendToRenderer('osc-received', { 
+      address: data.address, 
+      value: data.value,
+      connectionId: data.connectionId 
+    });
   });
-  oscServer.on('error', (err) => {
+  
+  oscService.on('additionalPortReady', (data) => {
+    debug.info(`Additional OSC ${data.type} port ready`, data);
+    addLog(`Additional ${data.type} OSC port ${data.port} ready`);
+  });
+  
+  oscService.on('additionalPortError', (data) => {
+    debug.error(`Additional OSC ${data.type} port error`, data);
+    sendToRenderer('osc-server-status', { 
+      status: 'error', 
+      error: `Additional port ${data.port} error: ${data.error.message}` 
+    });
+  });
+  
+  oscService.on('error', (err) => {
     console.error('OSC Server error:', err);
-    debug.error('OSC Server error', { error: err.message, port: serverConfig.localOscPort });
+    debug.error('OSC Server error', { error: err.message });
     sendToRenderer('osc-server-status', { status: 'error', error: err.message });
   });
+  
+  // Initialize and start the service
+  if (oscService.initialize(
+    serverConfig.localOscPort, 
+    serverConfig.targetOscPort, 
+    serverConfig.targetOscAddress
+  )) {
+    oscService.setAdditionalConnections(serverConfig.additionalOscConnections);
+    oscService.start();
+  }
 }
+
 function initOscClient() {
+  // Keep existing client for backwards compatibility
   if (oscClient) {
     oscClient.close();
   }
