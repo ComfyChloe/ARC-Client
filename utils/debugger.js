@@ -72,15 +72,6 @@ class Debugger {
   }
   oscMessageReceived(address, value, type) {
     this.oscMessageCount++;
-    this.lastVRChatMessage = { address, value, type, timestamp: Date.now() };
-    if (this.oscMessageCount % 10 === 0 || address.includes('VRCEmote') || address.includes('Voice') || this.oscMessageCount <= 5) {
-      this.debug(`OSC Message #${this.oscMessageCount}`, {
-        address,
-        value,
-        type,
-        totalReceived: this.oscMessageCount
-      });
-    }
     if (!this.vrchatDetected && this.isVRChatOSCMessage(address)) {
       this.vrchatDetected = true;
       this.info('VRChat OSC data flow detected!', {

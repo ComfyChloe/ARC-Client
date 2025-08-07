@@ -10,7 +10,6 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -18,14 +17,12 @@
             height: 100vh;
             overflow: hidden;
         }
-        
         .app-container {
             display: flex;
             height: 100vh;
-            background: rgba(255, 255, 255, 0.95);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             backdrop-filter: blur(10px);
         }
-        
         .sidebar {
             width: 300px;
             background: #2c3e50;
@@ -33,23 +30,19 @@
             padding: 20px;
             overflow-y: auto;
         }
-        
         .main-content {
             flex: 1;
             padding: 20px;
             overflow-y: auto;
         }
-        
         .header {
             text-align: center;
             margin-bottom: 30px;
         }
-        
         .header h1 {
             color: #2c3e50;
             margin-bottom: 10px;
         }
-        
         .status-indicator {
             display: inline-block;
             width: 12px;
@@ -57,11 +50,9 @@
             border-radius: 50%;
             margin-right: 8px;
         }
-        
         .status-connected { background-color: #27ae60; }
         .status-disconnected { background-color: #e74c3c; }
         .status-pending { background-color: #f39c12; }
-        
         .card {
             background: white;
             border-radius: 8px;
@@ -69,18 +60,15 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        
         .form-group {
             margin-bottom: 15px;
         }
-        
         .form-group label {
             display: block;
             margin-bottom: 5px;
             font-weight: 600;
             color: #2c3e50;
         }
-        
         .form-group input, .form-group select {
             width: 100%;
             padding: 10px;
@@ -88,12 +76,10 @@
             border-radius: 5px;
             font-size: 14px;
         }
-        
         .form-group input:focus, .form-group select:focus {
             outline: none;
             border-color: #3498db;
         }
-        
         .btn {
             padding: 10px 20px;
             border: none;
@@ -103,36 +89,29 @@
             font-weight: 600;
             transition: all 0.3s ease;
         }
-        
         .btn-primary {
             background-color: #3498db;
             color: white;
         }
-        
         .btn-primary:hover {
             background-color: #2980b9;
         }
-        
         .btn-success {
             background-color: #27ae60;
             color: white;
         }
-        
         .btn-danger {
             background-color: #e74c3c;
             color: white;
         }
-        
         .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
         }
-        
         .parameter-list {
             max-height: 400px;
             overflow-y: auto;
         }
-        
         .parameter-item {
             display: flex;
             justify-content: space-between;
@@ -142,11 +121,9 @@
             border-radius: 5px;
             margin-bottom: 5px;
         }
-        
         .parameter-item:nth-child(even) {
             background-color: #f8f9fa;
         }
-        
         .log-container {
             background: #1e1e1e;
             color: #00ff00;
@@ -157,36 +134,30 @@
             height: 200px;
             overflow-y: auto;
         }
-        
         .sidebar-section {
             margin-bottom: 25px;
         }
-        
         .sidebar-section h3 {
             color: #ecf0f1;
             margin-bottom: 10px;
             padding-bottom: 5px;
             border-bottom: 2px solid #34495e;
         }
-        
         .connection-status {
             display: flex;
             align-items: center;
             margin-bottom: 10px;
         }
-        
         .avatar-info {
             background: #34495e;
             padding: 15px;
             border-radius: 5px;
             margin-top: 10px;
         }
-        
         .tabs {
             display: flex;
             margin-bottom: 20px;
         }
-        
         .tab {
             padding: 10px 20px;
             background: #ecf0f1;
@@ -195,26 +166,42 @@
             border-radius: 5px 5px 0 0;
             margin-right: 2px;
         }
-        
         .tab.active {
             background: #3498db;
             color: white;
         }
-        
         .tab-content {
             display: none;
         }
-        
         .tab-content.active {
             display: block;
         }
-        
         .osc-sender {
             display: grid;
             grid-template-columns: 2fr 1fr 1fr auto;
             gap: 10px;
             align-items: end;
             margin-bottom: 15px;
+        }
+        .view-transition {
+            transition: opacity 0.3s ease-in-out;
+        }
+        .main-content {
+            opacity: 1;
+        }
+        .navigation-section .btn {
+            transition: all 0.2s ease;
+        }
+        .navigation-section .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .navigation-section .btn.active, .navigation-section .btn:disabled {
+            background-color: #2980b9;
+            color: #ffffff;
+            cursor: default;
+            box-shadow: none;
+            opacity: 0.85;
         }
     </style>
 </head>
@@ -229,35 +216,16 @@
                 </div>
                 <div class="connection-status">
                     <span class="status-indicator status-disconnected" id="osc-status"></span>
-                    <span id="osc-status-text">OSC Server Off</span>
+                    <span id="osc-status-text">OSC Status: Off</span>
                 </div>
+                <button class="btn btn-primary" id="osc-toggle-btn" onclick="toggleOscServer()" style="width: 100%; margin-top: 10px;">Enable OSC</button>
             </div>
-            
-            <div class="sidebar-section">
-                <h3>Server Configuration</h3>
-                <div class="form-group">
-                    <label for="server-url">Server URL</label>
-                    <input type="text" id="server-url" value="ws://localhost:3000">
-                </div>
-                <button class="btn btn-primary" onclick="updateConfig()">Update Config</button>
+            <div class="sidebar-section navigation-section">
+                <h3>Navigation</h3>
+                <button class="btn btn-primary" id="nav-main" onclick="showMainView()" style="width: 100%; margin-bottom: 10px;">Main View</button>
+                <button class="btn btn-primary" id="nav-osc" onclick="showOscView()" style="width: 100%; margin-bottom: 10px;">OSC</button>
+                <button class="btn btn-primary" id="nav-settings" onclick="showSettingsView()" style="width: 100%;">Settings</button>
             </div>
-            
-            <div class="sidebar-section">
-                <h3>OSC Configuration</h3>
-                <div class="form-group">
-                    <label for="local-port">Local OSC Port</label>
-                    <input type="number" id="local-port" value="9001">
-                </div>
-                <div class="form-group">
-                    <label for="target-port">Target OSC Port</label>
-                    <input type="number" id="target-port" value="9000">
-                </div>
-                <div class="form-group">
-                    <label for="target-address">Target Address</label>
-                    <input type="text" id="target-address" value="127.0.0.1">
-                </div>
-            </div>
-            
             <div class="sidebar-section" id="avatar-section" style="display: none;">
                 <h3>Current Avatar</h3>
                 <div class="avatar-info" id="avatar-info">
@@ -265,30 +233,26 @@
                     <div id="parameter-count">0 parameters</div>
                 </div>
             </div>
-            
             <div class="sidebar-section" id="auth-section">
                 <h3>Authentication</h3>
                 <div class="form-group">
-                    <label for="username">Username</label>
+                    <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Username</div>
                     <input type="text" id="username">
                 </div>
                 <div class="form-group">
-                    <label for="password">Password</label>
+                    <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Password</div>
                     <input type="password" id="password">
                 </div>
                 <button class="btn btn-success" onclick="authenticate()" id="auth-btn">Connect & Login</button>
             </div>
         </div>
-        
-        <div class="main-content">
+        <div class="main-content view-transition" id="main-view">
             <div class="header">
                 <h1>ARC-OSC Client</h1>
                 <p>Real-time OSC communication with VRChat</p>
             </div>
-            
             <div class="tabs">
                 <button class="tab active" onclick="showTab('parameters')">Parameters</button>
-                <button class="tab" onclick="showTab('osc-sender')">OSC Sender</button>
                 <button class="tab" onclick="showTab('logs')">Logs</button>
             </div>
             
@@ -300,32 +264,6 @@
                     </div>
                 </div>
             </div>
-            
-            <div id="osc-sender" class="tab-content">
-                <div class="card">
-                    <h3>Send OSC Message</h3>
-                    <div class="osc-sender">
-                        <div class="form-group">
-                            <label for="osc-address">Address</label>
-                            <input type="text" id="osc-address" placeholder="/avatar/parameters/example">
-                        </div>
-                        <div class="form-group">
-                            <label for="osc-value">Value</label>
-                            <input type="text" id="osc-value" placeholder="1.0">
-                        </div>
-                        <div class="form-group">
-                            <label for="osc-type">Type</label>
-                            <select id="osc-type">
-                                <option value="float">Float</option>
-                                <option value="int">Integer</option>
-                                <option value="bool">Boolean</option>
-                            </select>
-                        </div>
-                        <button class="btn btn-primary" onclick="sendOscMessage()">Send</button>
-                    </div>
-                </div>
-            </div>
-            
             <div id="logs" class="tab-content">
                 <div class="card">
                     <h3>Activity Log</h3>
@@ -337,8 +275,93 @@
                 </div>
             </div>
         </div>
+        <div class="main-content view-transition" id="settings-view" style="display: none;">
+            <div class="header">
+                <h1>Settings</h1>
+                <p>Configure your ARC-OSC Client settings</p>
+            </div>
+            <div class="card">
+                <h3>Server Configuration</h3>
+                <div class="form-group">
+                    <label for="server-url-settings">WebSocket Server URL</label>
+                    <input type="text" id="server-url-settings" value="wss://localhost:3000">
+                </div>
+                <button class="btn btn-primary" onclick="updateConfigFromSettings()">Update Server Config</button>
+            </div>
+            <div class="card">
+                <h3>Application Settings</h3>
+                <div class="form-group">
+                    <label for="auto-connect">Auto-connect on startup</label>
+                    <select id="auto-connect">
+                        <option value="false">Disabled</option>
+                        <option value="true">Enabled</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="log-level">Log Level</label>
+                    <select id="log-level">
+                        <option value="info">Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="error">Error</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="updateAppSettings()">Update Application Settings</button>
+            </div>
+        </div>
+        <div class="main-content view-transition" id="osc-view" style="display: none;">
+            <div class="header">
+                <h1>OSC Settings</h1>
+                <p>Configure and test OSC communication</p>
+            </div>
+            <div class="card">
+                <h3>Send OSC Message</h3>
+                <div class="osc-sender">
+                    <div class="form-group">
+                        <label for="osc-address">Address</label>
+                        <input type="text" id="osc-address" placeholder="/avatar/parameters/example">
+                    </div>
+                    <div class="form-group">
+                        <label for="osc-value">Value</label>
+                        <input type="text" id="osc-value" placeholder="1.0">
+                    </div>
+                    <div class="form-group">
+                        <label for="osc-type">Type</label>
+                        <select id="osc-type">
+                            <option value="float">Float</option>
+                            <option value="int">Integer</option>
+                            <option value="bool">Boolean</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="sendOscMessage()">Send</button>
+                </div>
+            </div>
+            <div class="card">
+                <h3>OSC Configuration</h3>
+                <div class="form-group">
+                    <label for="local-port-settings">Primary Incoming OSC Port</label>
+                    <input type="number" id="local-port-settings" value="9001" placeholder="Local OSC Port (Incoming)">
+                </div>
+                <div class="form-group">
+                    <label for="target-port-settings">Primary Outgoing OSC Port</label>
+                    <input type="number" id="target-port-settings" value="9000" placeholder="Target OSC Port (Outgoing)">
+                </div>
+                <div class="form-group">
+                    <label for="target-address-settings">Local OSC IP Address</label>
+                    <input type="text" id="target-address-settings" value="127.0.0.1">
+                </div>
+                <div class="additional-osc-section">
+                    <h4 style="margin-top: 20px; margin-bottom: 15px;">Additional OSC Connections</h4>
+                    <div id="additional-osc-connections">
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button class="btn btn-success" onclick="addOscConnection()" id="add-osc-btn" style="margin-right: 10px;">+ Add OSC Connection</button>
+                        <span id="connection-count" style="color: #666; font-size: 0.9em;">0/10 additional connections</span>
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="updateOscPortsFromSettings()" style="margin-top: 15px;">Update OSC Configuration</button>
+            </div>
+        </div>
     </div>
-
     <script src="app.js"></script>
 </body>
 </html>

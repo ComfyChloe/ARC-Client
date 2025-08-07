@@ -1,26 +1,21 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-
-// Import utility services
-const OscQueryService = require('./utils/oscQueryService');
-const DiscoveryService = require('./utils/discoveryService');
-const OscUdpService = require('./utils/oscUdpService');
-const WebSocketService = require('./utils/websocketService');
-
+const { Client, Server } = require('node-osc');
+const debug = require('./utils/debugger');
+const websocketService = require('./utils/websocketService');
+const OscService = require('./utils/oscService');
 let mainWindow;
+let oscServer;
+let oscClient;
+let oscService;
+let oscEnabled = false;
 let serverConfig = {
-  serverUrl: 'ws://localhost:3000',
+  serverUrl: 'wss://localhost:3000',
   localOscPort: 9001,
   targetOscPort: 9000,
-  targetOscAddress: '127.0.0.1'
+  targetOscAddress: '127.0.0.1',
+  additionalOscConnections: []
 };
-
-// Service instances
-let oscQueryService = new OscQueryService();
-let discoveryService = new DiscoveryService();
-let oscUdpService = new OscUdpService();
-let webSocketService = new WebSocketService();
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -34,793 +29,209 @@ function createWindow() {
     icon: path.join(__dirname, 'assets', 'icon.png'),
     title: 'ARC-OSC Client'
   });
-
-  // Load the renderer
+  mainWindow.setMenuBarVisibility(false);
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile('renderer/index.html');
   }
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-}
-
-// Initialize OSC Query Server
-function initOscQueryServer() {
-  // Set up OSC UDP service target config
-  oscUdpService.setTargetConfig(serverConfig.targetOscAddress, serverConfig.targetOscPort);
-  
-  // Set up OSC Query service event handlers
-  oscQueryService.on('sendOsc', (data) => {
-    oscUdpService.sendOscToVRChat(data.address, data.value);
-  });
-
-  oscQueryService.on('error', (err) => {
-    sendToRenderer('osc-server-status', { status: 'error', error: err.message });
-  });
-
-  // Set up WebSocket service event handlers
-  setupWebSocketHandlers();
-
-  // Start OSC Query HTTP server
-  oscQueryService.start((httpPort) => {
-    // Start Bonjour advertisement
-    discoveryService.startBonjourAdvertisement(httpPort, serverConfig.localOscPort);
-    
-    // Start VRChat discovery
-    discoveryService.startVRChatDiscovery((vrchatService) => {
-      console.log('VRChat found, starting OSC UDP service...');
-      registerWithVRChat(vrchatService);
-      sendToRenderer('vrchat-service-found', vrchatService);
-    });
-    
-    sendToRenderer('osc-server-status', { 
-      status: 'http-ready', 
-      port: null,
-      httpPort: httpPort
-    });
-  });
-}
-
-// Setup WebSocket event handlers
-function setupWebSocketHandlers() {
-  webSocketService.on('server-connection', (data) => {
-    sendToRenderer('server-connection', data);
-  });
-
-  webSocketService.on('auth-required', () => {
-    sendToRenderer('auth-required');
-  });
-
-  webSocketService.on('auth-success', (data) => {
-    sendToRenderer('auth-success', data);
-  });
-
-  webSocketService.on('auth-failed', (data) => {
-    sendToRenderer('auth-failed', data);
-  });
-
-  webSocketService.on('parameter-update', (data) => {
-    sendToRenderer('parameter-update', data);
-    
-    // Send to VRChat via OSC UDP
-    if (data.address) {
-      oscUdpService.sendOscToVRChat(data.address, data.value);
-      oscQueryService.updateOscQueryParameter(data.address, data.value, data.type);
-    }
-  });
-
-  webSocketService.on('user-avatar-info', (data) => {
-    sendToRenderer('user-avatar-info', data);
-  });
-
-  webSocketService.on('server-error', (error) => {
-    sendToRenderer('server-error', error);
-  });
-}
-
-// Register with VRChat
-function registerWithVRChat(vrchatService) {
-  console.log('Registering with VRChat OSC Query service...');
-  
-  // Find available port and start OSC UDP server
-  oscUdpService.findAvailablePort(serverConfig.localOscPort, (port) => {
-    console.log(`Starting OSC UDP on available port: ${port}`);
-    
-    oscUdpService.createOscUDPPort(
-      port,
-      // onReady callback
-      (assignedPort) => {
-        oscQueryService.setAssignedOscPort(assignedPort);
-        discoveryService.updateBonjourService(oscQueryService.httpPort, assignedPort);
-        
-        sendToRenderer('osc-server-status', { 
-          status: 'connected', 
-          port: assignedPort,
-          httpPort: oscQueryService.httpPort
-        });
-        
-        console.log('OSC Query service fully ready - VRChat should now detect us');
-      },
-      // onMessage callback
-      (oscData) => {
-        // Update OSC Query data structure
-        oscQueryService.updateOscQueryParameter(oscData.address, oscData.value, oscData.type);
-        
-        // Forward to server via WebSocket
-        webSocketService.sendOscMessage(oscData);
-        
-        // Send to renderer for UI updates
-        sendToRenderer('osc-received', { address: oscData.address, value: oscData.value });
-      },
-      // onError callback
-      (err) => {
-        sendToRenderer('osc-server-status', { status: 'error', error: err.message });
-      }
-    );
-  });
-}
-
-function sendToRenderer(channel, data) {
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send(channel, data);
-  }
-}
-
-// IPC Handlers
-ipcMain.handle('get-config', () => {
-  return serverConfig;
-});
-
-ipcMain.handle('set-config', (event, newConfig) => {
-  serverConfig = { ...serverConfig, ...newConfig };
-  // Update OSC UDP service target config
-  oscUdpService.setTargetConfig(serverConfig.targetOscAddress, serverConfig.targetOscPort);
-  // Reinitialize connections with new config
-  initOscQueryServer();
-  return serverConfig;
-});
-
-ipcMain.handle('connect-server', () => {
-  webSocketService.connect(serverConfig.serverUrl);
-});
-
-ipcMain.handle('disconnect-server', () => {
-  webSocketService.disconnect();
-});
-
-ipcMain.handle('authenticate', (event, credentials) => {
-  webSocketService.authenticate(credentials);
-});
-
-ipcMain.handle('send-osc', (event, oscData) => {
-  // Send to server via WebSocket
-  webSocketService.sendOscMessage(oscData);
-  
-  // Send via OSC UDP to VRChat
-  oscUdpService.sendOscToVRChat(oscData.address, oscData.value);
-  oscQueryService.updateOscQueryParameter(oscData.address, oscData.value, oscData.type);
-});
-
-ipcMain.handle('get-user-avatar', () => {
-  webSocketService.getUserAvatar();
-});
-
-ipcMain.handle('set-user-avatar', (event, avatarData) => {
-  webSocketService.setUserAvatar(avatarData);
-});
-
-ipcMain.handle('get-parameters', () => {
-  webSocketService.getParameters();
-});
-
-// App event handlers
-app.whenReady().then(() => {
-  createWindow();
-  initOscQueryServer();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
-
-app.on('window-all-closed', () => {
-  discoveryService.stop();
-  oscQueryService.stop();
-  oscUdpService.close();
-  webSocketService.disconnect();
-  
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('before-quit', () => {
-  discoveryService.stop();
-  oscQueryService.stop();
-  oscUdpService.close();
-  webSocketService.disconnect();
-});
-ipcMain.handle('get-parameters', () => {
-  if (socket && socket.connected) {
-    socket.emit('get-parameters');
-  }
-});
-
-// App event handlers
-app.whenReady().then(() => {
-  createWindow();
-  initOscQueryServer();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
-
-app.on('window-all-closed', () => {
-  discoveryService.stop();
-  oscQueryService.stop();
-  oscUdpService.close();
-  if (socket) socket.disconnect();
-  
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('before-quit', () => {
-  discoveryService.stop();
-  oscQueryService.stop();
-  oscUdpService.close();
-  if (socket) socket.disconnect();
-});
-function initOscQueryDiscovery() {
-  console.log('Starting VRChat discovery with Bonjour...');
-  
-  // Browse for VRChat OSC Query services
-  vrchatBrowser = bonjour.find({ type: 'oscjson', protocol: 'tcp' }, (service) => {
-    console.log('Found OSC Query service:', service);
-    
-    // Check if this is VRChat (look for VRChat in the name)
-    if (service.name && service.name.toLowerCase().includes('vrchat')) {
-      console.log('Found VRChat OSC Query service via Bonjour:', service);
-      
-      vrchatService = {
-        address: '127.0.0.1', // Always use localhost for VRChat
-        port: service.port,
-        info: service
-      };
-      
-      // Try to get VRChat's OSC Query data, but don't fail if it doesn't work
-      getVRChatOscQueryData(vrchatService, (data) => {
-        if (data) {
-          vrchatService.oscData = data;
-          console.log('Retrieved VRChat OSC Query data');
-        }
-        
-        // Register our service with VRChat
-        registerWithVRChat(vrchatService);
-        
-        sendToRenderer('vrchat-service-found', vrchatService);
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (oscEnabled && oscServer) {
+      sendToRenderer('osc-server-status', { 
+        status: 'connected', 
+        port: serverConfig.localOscPort 
       });
-    } else if (service.name && service.name.includes('ARC-OSC-Client')) {
-      // This is our own service, ignore it
-      console.log('Ignoring our own service advertisement');
-    }
-  });
-
-  // Also try direct HTTP scanning as fallback
-  setTimeout(() => {
-    if (!vrchatService) {
-      console.log('Bonjour discovery incomplete, trying direct HTTP scan...');
-      scanForVRChatHTTP();
-    }
-  }, 3000);
-  
-  console.log('OSC Query Discovery with Bonjour started');
-}
-
-// Fallback HTTP scanning for VRChat
-function scanForVRChatHTTP() {
-  const commonPorts = [9000, 9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010];
-  let foundVRChat = false;
-  
-  const checkPort = (port, index) => {
-    setTimeout(() => {
-      if (foundVRChat || vrchatService) return;
-      
-      const testUrl = `http://127.0.0.1:${port}`;
-      
-      const req = http.get(testUrl, { 
-        timeout: 1000,
-        headers: {
-          'User-Agent': 'ARC-OSC-Client/1.0',
-          'Accept': 'application/json',
-          'Connection': 'close'
-        }
-      }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.DESCRIPTION && (
-              parsed.DESCRIPTION.toLowerCase().includes('vrchat') ||
-              parsed.DESCRIPTION.toLowerCase().includes('avatar') ||
-              (parsed.CONTENTS && parsed.CONTENTS.avatar)
-            )) {
-              foundVRChat = true;
-              vrchatService = { 
-                address: '127.0.0.1', 
-                port: port, 
-                info: { name: 'VRChat-HTTP-Scan' },
-                oscData: parsed
-              };
-              console.log('Found VRChat OSC Query service via HTTP scan:', vrchatService);
-              
-              // Register our service with VRChat
-              registerWithVRChat(vrchatService);
-              
-              sendToRenderer('vrchat-service-found', vrchatService);
-            }
-          } catch (err) {
-            // Not VRChat or invalid JSON
-          }
-        });
-      });
-      
-      req.on('error', () => {
-        // Port not responding
-      });
-      
-      req.on('timeout', () => {
-        req.destroy();
-      });
-      
-    }, index * 100); // Stagger requests
-  };
-  
-  commonPorts.forEach(checkPort);
-  
-  // If no VRChat found after 5 seconds, fall back to default port
-  setTimeout(() => {
-    if (!foundVRChat && !vrchatService) {
-      console.log('VRChat not found, using default OSC port configuration');
-      // Check if port is available before binding
-      findAvailablePort(serverConfig.localOscPort, (port) => {
-        console.log(`Using available port: ${port}`);
-        createOscUDPPort(port);
-      });
-    }
-  }, 5000);
-}
-
-// Update Bonjour service when OSC port changes
-function updateBonjourService() {
-  if (bonjourService) {
-    // Stop current service
-    bonjourService.stop();
-  }
-  
-  // Restart with updated port info
-  bonjourService = bonjour.publish({
-    name: 'ARC-OSC-Client',
-    type: 'oscjson',
-    protocol: 'tcp',
-    port: httpPort,
-    host: '127.0.0.1',
-    txt: {
-      txtvers: '1',
-      oscport: (assignedOscPort || serverConfig.localOscPort).toString(),
-      oscip: '127.0.0.1',
-      osctransport: 'UDP'
-    }
-  });
-  
-  bonjourService.on('up', () => {
-    console.log(`Bonjour service updated with OSC port: ${assignedOscPort || serverConfig.localOscPort}`);
-  });
-  
-  bonjourService.on('error', (err) => {
-    console.error('Bonjour service update error:', err);
-  });
-}
-
-// Create OSC UDP Port after finding available port
-function createOscUDPPort(port) {
-  if (oscUDPPort) {
-    oscUDPPort.close();
-  }
-
-  assignedOscPort = port;
-  
-  // Create OSC UDP port for receiving messages
-  oscUDPPort = new osc.UDPPort({
-    localAddress: "127.0.0.1",
-    localPort: port,
-    metadata: true
-  });
-
-  oscUDPPort.on("ready", function () {
-    console.log(`OSC UDP Server listening on port ${port}`);
-    
-    // Update Bonjour service with actual port
-    updateBonjourService();
-    
-    sendToRenderer('osc-server-status', { 
-      status: 'connected', 
-      port: port,
-      httpPort: httpPort
-    });
-    
-    console.log('OSC Query service fully ready - VRChat should now detect us');
-  });
-
-  oscUDPPort.on("message", function (oscMsg) {
-    console.log('Received OSC:', oscMsg.address, oscMsg.args);
-    
-    // Extract value from OSC message
-    const value = oscMsg.args && oscMsg.args.length > 0 ? oscMsg.args[0].value : null;
-    
-    // Update our OSC Query data structure
-    updateOscQueryParameter(oscMsg.address, value, oscMsg.args[0]?.type || 'f');
-    
-    // Forward to server via WebSocket
-    if (socket && socket.connected) {
-      socket.emit('osc-message', {
-        address: oscMsg.address,
-        value: value,
-        type: oscMsg.args && oscMsg.args.length > 0 ? oscMsg.args[0].type : 'f'
-      });
-    }
-    
-    // Send to renderer for UI updates
-    sendToRenderer('osc-received', { address: oscMsg.address, value: value });
-  });
-
-  oscUDPPort.on("error", function (err) {
-    console.error('OSC UDP Server error:', err);
-    sendToRenderer('osc-server-status', { status: 'error', error: err.message });
-  });
-
-  oscUDPPort.open();
-}
-
-// Update OSC Query parameter in data structure
-function updateOscQueryParameter(address, value, oscType = 'f') {
-  const pathParts = address.split('/').filter(part => part.length > 0);
-  let current = oscQueryData.CONTENTS;
-  
-  // Navigate/create the path structure
-  for (let i = 0; i < pathParts.length - 1; i++) {
-    const part = pathParts[i];
-    if (!current[part]) {
-      current[part] = {
-        DESCRIPTION: `Container: ${part}`,
-        FULL_PATH: '/' + pathParts.slice(0, i + 1).join('/'),
-        ACCESS: 0,
-        CONTENTS: {}
-      };
-    }
-    current = current[part].CONTENTS;
-  }
-  
-  // Set the final parameter
-  const paramName = pathParts[pathParts.length - 1];
-  if (paramName) {
-    let typeInfo = getTypeInfo(value, oscType);
-    
-    current[paramName] = {
-      DESCRIPTION: `Parameter: ${address}`,
-      FULL_PATH: address,
-      ACCESS: 3, // Read/Write
-      TYPE: typeInfo.type,
-      VALUE: [value]
-    };
-    
-    if (typeInfo.range) {
-      current[paramName].RANGE = typeInfo.range;
-    }
-  }
-}
-
-// Get type information for OSC Query
-function getTypeInfo(value, oscType) {
-  if (typeof value === 'boolean' || oscType === 'T' || oscType === 'F') {
-    return { type: 'T', range: [{ MIN: false, MAX: true }] };
-  } else if (typeof value === 'number') {
-    if (Number.isInteger(value) || oscType === 'i') {
-      return { type: 'i', range: [{ MIN: -2147483648, MAX: 2147483647 }] };
     } else {
-      return { type: 'f', range: [{ MIN: -1.0, MAX: 1.0 }] };
+      sendToRenderer('osc-server-status', { 
+        status: oscEnabled ? 'disconnected' : 'disabled', 
+        port: serverConfig.localOscPort 
+      });
     }
-  } else if (typeof value === 'string' || oscType === 's') {
-    return { type: 's' };
-  }
-  return { type: 'f', range: [{ MIN: -1.0, MAX: 1.0 }] };
+  });
 }
-
-// Get OSC Query data for a specific path
-function getOscQueryPath(requestPath) {
-  if (requestPath === '/') {
-    return {
-      ...oscQueryData,
-      OSC_PORT: serverConfig.localOscPort,
-      OSC_TRANSPORT: 'UDP'
-    };
+function initOscServer() {
+  if (oscService) {
+    oscService.stop();
   }
   
-  const pathParts = requestPath.split('/').filter(part => part.length > 0);
-  let current = oscQueryData.CONTENTS;
-  
-  for (const part of pathParts) {
-    if (current[part]) {
-      current = current[part];
-      if (current.CONTENTS) {
-        current = current.CONTENTS;
-      } else {
-        // This is a leaf node (parameter)
-        return current;
-      }
-    } else {
-      return null;
-    }
-  }
-  
-  return current;
-}
-
-// Send OSC message to VRChat
-function sendOscToVRChat(address, value) {
-  if (!oscUDPPort) {
-    console.warn('OSC UDP port not ready, cannot send message');
+  if (!oscEnabled) {
+    sendToRenderer('osc-server-status', { 
+      status: 'disabled', 
+      port: serverConfig.localOscPort 
+    });
     return;
   }
-  
-  try {
-    let oscType = 'f';
-    let oscValue = value;
-    
-    if (typeof value === 'boolean') {
-      oscType = value ? 'T' : 'F';
-      oscValue = value;
-    } else if (typeof value === 'string') {
-      oscType = 's';
-    } else if (typeof value === 'number') {
-      oscType = Number.isInteger(value) ? 'i' : 'f';
-    }
-    
-    const oscMessage = {
-      address: address,
-      args: [{
-        type: oscType,
-        value: oscValue
-      }]
-    };
-
-    oscUDPPort.send(oscMessage, serverConfig.targetOscAddress, serverConfig.targetOscPort);
-    console.log(`Sent OSC to VRChat: ${address} = ${value}`);
-  } catch (err) {
-    console.error('Error sending OSC to VRChat:', err);
-  }
-}
-
-// Connect to ARC-OSC Server
-function connectToServer() {
-  if (socket) {
-    socket.disconnect();
-  }
-
-  socket = io(`${serverConfig.serverUrl}/osc`, {
-    withCredentials: true,
-    transports: ['websocket', 'polling']
-  });
-
-  socket.on('connect', () => {
-    console.log('Connected to ARC-OSC Server');
-    sendToRenderer('server-connection', { status: 'connected' });
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Disconnected from ARC-OSC Server');
-    sendToRenderer('server-connection', { status: 'disconnected' });
-  });
-
-  socket.on('auth-required', () => {
-    sendToRenderer('auth-required');
-  });
-
-  socket.on('auth-success', (data) => {
-    console.log('Authentication successful:', data);
-    sendToRenderer('auth-success', data);
-  });
-
-  socket.on('auth-failed', (data) => {
-    console.log('Authentication failed:', data);
-    sendToRenderer('auth-failed', data);
-  });
-
-  socket.on('parameter-update', (data) => {
-    console.log('Parameter update:', data);
-    sendToRenderer('parameter-update', data);
-    
-    // Send to VRChat via OSC UDP only if port is ready
-    if (oscUDPPort && data.address) {
-      sendOscToVRChat(data.address, data.value);
-      
-      // Update our OSC Query data structure
-      updateOscQueryParameter(data.address, data.value, data.type);
+  oscService = new OscService();
+  oscService.on('ready', (config) => {
+    console.log(`OSC Server listening on port ${config.localPort}`);
+    debug.oscServiceStarted(config.localPort);
+    sendToRenderer('osc-server-status', { 
+      status: 'connected', 
+      port: config.localPort 
+    });
+    if (serverConfig.additionalOscConnections.length > 0) {
+      debug.info('Additional OSC connections configured', {
+        count: serverConfig.additionalOscConnections.length,
+        connections: serverConfig.additionalOscConnections
+      });
     }
   });
-
-  socket.on('user-avatar-info', (data) => {
-    console.log('User avatar info:', data);
-    sendToRenderer('user-avatar-info', data);
+  oscService.on('messageReceived', (data) => {
+    debug.oscMessageReceived(data.address, data.value, data.type);
+    websocketService.forwardOscMessage({
+      address: data.address,
+      value: data.value,
+      type: data.type,
+      connectionId: data.connectionId
+    });
+    sendToRenderer('osc-received', { 
+      address: data.address, 
+      value: data.value,
+      connectionId: data.connectionId 
+    });
   });
-
-  socket.on('error', (error) => {
-    console.error('Server error:', error);
-    sendToRenderer('server-error', error);
+  oscService.on('additionalPortReady', (data) => {
+    debug.info(`Additional OSC ${data.type} port ready`, data);
+    addLog(`Additional ${data.type} OSC port ${data.port} ready`);
   });
-
-  socket.on('heartbeat', (data) => {
-    // Respond to server heartbeat
-    socket.emit('heartbeat-response', data);
+  oscService.on('additionalPortError', (data) => {
+    debug.error(`Additional OSC ${data.type} port error`, data);
+    sendToRenderer('osc-server-status', { 
+      status: 'error', 
+      error: `Additional port ${data.port} error: ${data.error.message}` 
+    });
   });
+  oscService.on('error', (err) => {
+    console.error('OSC Server error:', err);
+    debug.error('OSC Server error', { error: err.message });
+    sendToRenderer('osc-server-status', { status: 'error', error: err.message });
+  });
+  if (oscService.initialize(
+    serverConfig.localOscPort, 
+    serverConfig.targetOscPort, 
+    serverConfig.targetOscAddress
+  )) {
+    oscService.setAdditionalConnections(serverConfig.additionalOscConnections);
+    oscService.start();
+  }
 }
-
+function initOscClient() {
+  if (oscClient) {
+    oscClient.close();
+  }
+  oscClient = new Client(serverConfig.targetOscAddress, serverConfig.targetOscPort);
+  console.log(`OSC Client targeting ${serverConfig.targetOscAddress}:${serverConfig.targetOscPort}`);
+  debug.info('OSC Client initialized', {
+    targetAddress: serverConfig.targetOscAddress,
+    targetPort: serverConfig.targetOscPort
+  });
+  websocketService.updateOscClient(oscClient);
+}
 function sendToRenderer(channel, data) {
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.send(channel, data);
   }
 }
-
-// IPC Handlers
 ipcMain.handle('get-config', () => {
   return serverConfig;
 });
-
 ipcMain.handle('set-config', (event, newConfig) => {
+  const oldConfig = { ...serverConfig };
   serverConfig = { ...serverConfig, ...newConfig };
-  // Reinitialize connections with new config
-  initOscQueryServer();
+  debug.info('Configuration updated', { 
+    oldConfig: oldConfig, 
+    newConfig: newConfig,
+    finalConfig: serverConfig 
+  });
+  websocketService.updateConfig(serverConfig);
+  initOscServer();
+  initOscClient();
   return serverConfig;
 });
-
 ipcMain.handle('connect-server', () => {
-  connectToServer();
+  websocketService.connect();
 });
-
 ipcMain.handle('disconnect-server', () => {
-  if (socket) {
-    socket.disconnect();
-  }
+  websocketService.disconnect();
 });
-
 ipcMain.handle('authenticate', (event, credentials) => {
-  if (socket && socket.connected) {
-    socket.emit('authenticate', credentials);
-  }
+  return websocketService.authenticate(credentials);
 });
-
 ipcMain.handle('send-osc', (event, oscData) => {
-  if (socket && socket.connected) {
-    socket.emit('osc-message', oscData);
-  }
-  
-  // Send via OSC UDP to VRChat only if port is ready
-  if (oscUDPPort) {
-    sendOscToVRChat(oscData.address, oscData.value);
-    
-    // Update our OSC Query data structure
-    updateOscQueryParameter(oscData.address, oscData.value, oscData.type);
-  } else {
-    console.warn('OSC UDP port not ready, message queued');
-    // Could implement a queue here if needed
-  }
+  websocketService.sendOsc(oscData);
 });
-
 ipcMain.handle('get-user-avatar', () => {
-  if (socket && socket.connected) {
-    socket.emit('get-user-avatar');
-  }
+  websocketService.getUserAvatar();
 });
-
+ipcMain.handle('get-parameters', () => {
+  websocketService.getParameters();
+});
 ipcMain.handle('set-user-avatar', (event, avatarData) => {
-  if (socket && socket.connected) {
-    socket.emit('set-user-avatar', avatarData);
-  }
+  websocketService.setUserAvatar(avatarData);
 });
-
-ipcMain.handle('get-parameters', () => {
-  if (socket && socket.connected) {
-    socket.emit('get-parameters');
-  }
+ipcMain.handle('get-debug-stats', () => {
+  return debug.getStats();
 });
-
-// App event handlers
+ipcMain.handle('clear-debug-logs', () => {
+  debug.clearOldLogs();
+  debug.info('Debug logs cleared by user request');
+});
+ipcMain.handle('enable-osc', () => {
+  oscEnabled = true;
+  debug.info('OSC Server enabled by user request');
+  initOscServer();
+  initOscClient();
+});
+ipcMain.handle('disable-osc', () => {
+  oscEnabled = false;
+  debug.info('OSC Server disabled by user request');
+  if (oscServer) {
+    oscServer.close();
+    oscServer = undefined;
+  }
+  sendToRenderer('osc-server-status', { 
+    status: 'disabled', 
+    port: serverConfig.localOscPort 
+  });
+});
 app.whenReady().then(() => {
+  debug.info('ARC-OSC Client starting up');
   createWindow();
-  // Only start HTTP server first, OSC UDP will be created after VRChat discovery
-  initOscQueryServer();
-
+  if (oscEnabled) {
+    initOscServer();
+    initOscClient();
+  } else {
+    sendToRenderer('osc-server-status', { 
+      status: 'disabled', 
+      port: serverConfig.localOscPort 
+    });
+  }
+  websocketService.initialize(serverConfig, sendToRenderer, oscClient);
+  setTimeout(() => {
+    debug.connectionTimeout();
+  }, 30000); // Check after 30 seconds
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
 });
-
 app.on('window-all-closed', () => {
-  if (bonjourService) bonjourService.stop();
-  if (vrchatBrowser) vrchatBrowser.stop();
-  if (oscQueryHttpServer) oscQueryHttpServer.close();
-  if (oscUDPPort) oscUDPPort.close();
-  if (socket) socket.disconnect();
-  bonjour.destroy();
-  
+  debug.info('Application shutting down - cleaning up connections');
+  if (oscServer) oscServer.close();
+  if (oscClient) oscClient.close();
+  websocketService.cleanup();
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
-
 app.on('before-quit', () => {
-  if (bonjourService) bonjourService.stop();
-  if (vrchatBrowser) vrchatBrowser.stop();
-  if (oscQueryHttpServer) oscQueryHttpServer.close();
-  if (oscUDPPort) oscUDPPort.close();
-  if (socket) socket.disconnect();
-  bonjour.destroy();
-});
-  if (socket && socket.connected) {
-    socket.emit('set-user-avatar', avatarData);
-  }
-});
-
-ipcMain.handle('get-parameters', () => {
-  if (socket && socket.connected) {
-    socket.emit('get-parameters');
-  }
-});
-
-// App event handlers
-app.whenReady().then(() => {
-  createWindow();
-  // Only start HTTP server first, OSC UDP will be created after VRChat discovery
-  initOscQueryServer();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
-
-app.on('window-all-closed', () => {
-  if (bonjourService) bonjourService.stop();
-  if (vrchatBrowser) vrchatBrowser.stop();
-  if (oscQueryHttpServer) oscQueryHttpServer.close();
-  if (oscUDPPort) oscUDPPort.close();
-  if (socket) socket.disconnect();
-  bonjour.destroy();
-  
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('before-quit', () => {
-  if (bonjourService) bonjourService.stop();
-  if (vrchatBrowser) vrchatBrowser.stop();
-  if (oscQueryHttpServer) oscQueryHttpServer.close();
-  if (oscUDPPort) oscUDPPort.close();
-  if (socket) socket.disconnect();
-  bonjour.destroy();
+  debug.info('Application quit requested - cleaning up');
+  if (oscServer) oscServer.close();
+  if (oscClient) oscClient.close();
+  websocketService.cleanup();
 });
