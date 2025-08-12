@@ -17,6 +17,7 @@
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
+    "electron": "^28.0.0",
     "electron-builder": "24.9.1"
   },
   "build": {
@@ -30,7 +31,11 @@
       "preload.js",
       "renderer/**/*",
       "utils/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/**"
     ],
     "win": {
       "target": "nsis",

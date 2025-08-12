@@ -4,29 +4,34 @@ const path = require('path');
 class Debugger {
   constructor() {
     const unixTimestamp = Math.floor(Date.now() / 1000);
-    this.logFile = path.join(__dirname, '..', 'logs', `${unixTimestamp}_debug.log`);
-    this.ensureLogDirectory();
+    // Use Electron's app.getPath('userData') for logs directory
+    try {
+            const electron = require('electron');
+            this.logDir = electron.app ? path.join(electron.app.getPath('userData'), 'logs') : path.join(__dirname, '..', 'logs');
+    } catch (e) {
+            this.logDir = path.join(__dirname, '..', 'logs');
+    }
+        this.logFile = path.join(this.logDir, `${unixTimestamp}_debug.log`);
+        this.ensureLogDirectory();
     this.startTime = Date.now();
     this.oscMessageCount = 0;
     this.lastVRChatMessage = null;
     this.vrchatDetected = false;
   }
   ensureLogDirectory() {
-    const logDir = path.dirname(this.logFile);
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
+        if (!fs.existsSync(this.logDir)) {
+            fs.mkdirSync(this.logDir, { recursive: true });
     }
-    this.cleanOldLogFiles();
+        this.cleanOldLogFiles();
   }
   cleanOldLogFiles() {
     try {
-      const logDir = path.dirname(this.logFile);
-      const files = fs.readdirSync(logDir);
-      const debugLogs = files.filter(f => f.match(/^\d+_debug\.log$/))
-        .map(f => ({
-          name: f,
-          path: path.join(logDir, f),
-          timestamp: parseInt(f.split('_')[0])
+            const files = fs.readdirSync(this.logDir);
+            const debugLogs = files.filter(f => f.match(/^\d+_debug\.log$/))
+                .map(f => ({
+                    name: f,
+                    path: path.join(this.logDir, f),
+                    timestamp: parseInt(f.split('_')[0])
         }))
         .sort((a, b) => b.timestamp - a.timestamp);
       if (debugLogs.length > 10) {

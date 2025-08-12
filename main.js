@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const { Client, Server } = require('node-osc');
+const { Client, Server } = require('osc');
 const debug = require('./utils/debugger');
 const websocketService = require('./utils/websocketService');
 const OscService = require('./utils/oscService');
@@ -51,6 +51,14 @@ function createWindow() {
         port: serverConfig.localOscPort 
       });
     }
+  });
+  mainWindow.webContents.on('crashed', () => {
+    dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
+    app.quit();
+  });
+  mainWindow.on('unresponsive', () => {
+    dialog.showErrorBox('Application Unresponsive', 'The application is not responding and will now close.');
+    app.quit();
   });
 }
 function initOscServer() {
@@ -295,4 +303,14 @@ app.on('before-quit', () => {
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
   websocketService.cleanup();
+});
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
+  app.quit();
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+  dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
+  app.quit();
 });
