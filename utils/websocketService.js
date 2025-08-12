@@ -58,6 +58,7 @@ class WebSocketService {
         timestamp: Date.now(),
         source: messageData.connectionId ? 'additional' : 'primary'
       };
+      // No modification to the original message data
       this.socket.emit('osc-message', enrichedData);
     }
   }

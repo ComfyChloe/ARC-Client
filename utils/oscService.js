@@ -257,7 +257,8 @@ class OscService extends EventEmitter {
       this.parameters[address] = { value, type };
       if (connectionId !== null && this.forwardFromAdditionalToPrimary && this.primaryUdpPort && this.isListening) {
         try {
-          const forwardResult = this.sendMessage(address, value, type);
+          // Forward the exact original message without reformatting
+          this.primaryUdpPort.send(oscMsg);
         } catch (forwardError) {
         }
       }
@@ -272,7 +273,7 @@ class OscService extends EventEmitter {
       this.emit('error', error);
     }
   }
-  sendMessageToConnection(connectionId, address, value, type = 'f') {
+  sendMessageToConnection(connectionId, address, value, type = 'f', rawMessage = null) {
     const portData = this.additionalPorts.get(connectionId);
     if (!portData || !portData.client) {
       this.emit('error', new Error(`Outgoing connection ${connectionId} not available for sending`));
@@ -283,7 +284,8 @@ class OscService extends EventEmitter {
       return false;
     }
     try {
-      const message = this.formatOscMessage(address, value, type);
+      // Use the raw message if provided, otherwise format a new one
+      const message = rawMessage || this.formatOscMessage(address, value, type);
       portData.client.send(message);
       this.emit('messageSent', { address, value, type, connectionId });
       return true;
@@ -297,9 +299,18 @@ class OscService extends EventEmitter {
     const outgoingConnections = this.additionalConnections.filter(conn => 
       conn.type === 'outgoing' && conn.enabled
     );
+    // Create the message once
+    const message = this.formatOscMessage(address, value, type);
     outgoingConnections.forEach(connection => {
-      if (this.sendMessageToConnection(connection.id, address, value, type)) {
-        successCount++;
+      const portData = this.additionalPorts.get(connection.id);
+      if (portData && portData.client) {
+        try {
+          portData.client.send(message);
+          this.emit('messageSent', { address, value, type, connectionId: connection.id });
+          successCount++;
+        } catch (error) {
+          this.emit('error', error);
+        }
       }
     });
     return successCount;
