@@ -82,6 +82,12 @@ function setupEventListeners() {
         addLog(`OSC Received: ${data.address} = ${data.value}`);
     });
     window.electronAPI.onOscServerStatus((data) => {
+        console.log('OSC Server status update:', data);
+        if (data.status === 'connection-ready' || data.status === 'connection-error') {
+            const statusText = data.status === 'connection-ready' ? 'Ready' : 'Error';
+            addLog(`Additional OSC ${data.type} connection (${data.name || data.connectionId}): ${statusText} on port ${data.port}`);
+            return;
+        }
         updateOscStatus(data.status, data.port);
         if (data.status === 'connected') {
             addLog(`OSC Server listening on port ${data.port}`);

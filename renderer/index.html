@@ -224,6 +224,7 @@
                 <h3>Navigation</h3>
                 <button class="btn btn-primary" id="nav-main" onclick="showMainView()" style="width: 100%; margin-bottom: 10px;">Main View</button>
                 <button class="btn btn-primary" id="nav-osc" onclick="showOscView()" style="width: 100%; margin-bottom: 10px;">OSC</button>
+                <button class="btn btn-primary" id="nav-logs" onclick="showLogsView()" style="width: 100%; margin-bottom: 10px;">Logs</button>
                 <button class="btn btn-primary" id="nav-settings" onclick="showSettingsView()" style="width: 100%;">Settings</button>
             </div>
             <div class="sidebar-section" id="avatar-section" style="display: none;">
@@ -262,16 +263,6 @@
                     <div class="parameter-list" id="parameter-list">
                         <p>Connect and authenticate to view parameters</p>
                     </div>
-                </div>
-            </div>
-            <div id="logs" class="tab-content">
-                <div class="card">
-                    <h3>Activity Log</h3>
-                    <div class="log-container" id="log-container">
-                        Welcome to ARC-OSC Client<br>
-                        Configure your settings and connect to get started<br>
-                    </div>
-                    <button class="btn btn-primary" onclick="clearLogs()" style="margin-top: 10px;">Clear Logs</button>
                 </div>
             </div>
         </div>
@@ -358,7 +349,6 @@
                     Configure additional OSC endpoints for advanced routing. Create separate incoming connections to receive OSC data from multiple sources, 
                     and outgoing connections to send data to multiple applications.
                 </p>
-                <!-- Controls top -->
                 <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>

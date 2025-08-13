@@ -1,9 +1,10 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-const { Client, Server } = require('node-osc');
+const osc = require('osc');
 const debug = require('./utils/debugger');
 const websocketService = require('./utils/websocketService');
 const OscService = require('./utils/oscService');
+const logger = require('./utils/logger');
 let mainWindow;
 let oscServer;
 let oscClient;
@@ -52,12 +53,20 @@ function createWindow() {
       });
     }
   });
+  mainWindow.webContents.on('crashed', () => {
+    dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
+    app.quit();
+  });
+  mainWindow.on('unresponsive', () => {
+    dialog.showErrorBox('Application Unresponsive', 'The application is not responding and will now close.');
+    app.quit();
+  });
 }
 function initOscServer() {
   if (oscService) {
     oscService.stop();
+    global.oscService = null;
   }
-  
   if (!oscEnabled) {
     sendToRenderer('osc-server-status', { 
       status: 'disabled', 
@@ -67,18 +76,12 @@ function initOscServer() {
   }
   oscService = new OscService();
   oscService.on('ready', (config) => {
-    console.log(`OSC Server listening on port ${config.localPort}`);
-    debug.oscServiceStarted(config.localPort);
+    debug.logOscServiceReady(config);
     sendToRenderer('osc-server-status', { 
       status: 'connected', 
       port: config.localPort 
     });
-    if (serverConfig.additionalOscConnections.length > 0) {
-      debug.info('Additional OSC connections configured', {
-        count: serverConfig.additionalOscConnections.length,
-        connections: serverConfig.additionalOscConnections
-      });
-    }
+    debug.logAdditionalConnections(serverConfig.additionalOscConnections);
   });
   oscService.on('messageReceived', (data) => {
     debug.oscMessageReceived(data.address, data.value, data.type);
@@ -88,6 +91,9 @@ function initOscServer() {
       type: data.type,
       connectionId: data.connectionId
     });
+    if (!data.connectionId && oscService) {
+      oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
+    }
     sendToRenderer('osc-received', { 
       address: data.address, 
       value: data.value,
@@ -95,8 +101,7 @@ function initOscServer() {
     });
   });
   oscService.on('additionalPortReady', (data) => {
-    const connectionName = data.name ? ` (${data.name})` : '';
-    debug.info(`Additional OSC ${data.type} connection ready${connectionName}`, data);
+    debug.logAdditionalPortReady(data);
     sendToRenderer('osc-server-status', { 
       status: 'connection-ready', 
       connectionId: data.connectionId,
@@ -107,8 +112,7 @@ function initOscServer() {
     });
   });
   oscService.on('additionalPortError', (data) => {
-    const connectionName = data.name ? ` (${data.name})` : '';
-    debug.error(`Additional OSC ${data.type} connection error${connectionName}`, data);
+    debug.logAdditionalPortError(data);
     sendToRenderer('osc-server-status', { 
       status: 'connection-error', 
       connectionId: data.connectionId,
@@ -119,9 +123,8 @@ function initOscServer() {
     });
   });
   oscService.on('error', (err) => {
-    console.error('OSC Server error:', err);
-    debug.error('OSC Server error', { error: err.message });
-    sendToRenderer('osc-server-status', { status: 'error', error: err.message });
+    const status = logger.handleOscError(err);
+    sendToRenderer('osc-server-status', status);
   });
   if (oscService.initialize(
     serverConfig.localOscPort, 
@@ -130,18 +133,22 @@ function initOscServer() {
   )) {
     oscService.setAdditionalConnections(serverConfig.additionalOscConnections);
     oscService.start();
+    global.oscService = oscService;
   }
 }
 function initOscClient() {
   if (oscClient) {
     oscClient.close();
   }
-  oscClient = new Client(serverConfig.targetOscAddress, serverConfig.targetOscPort);
-  console.log(`OSC Client targeting ${serverConfig.targetOscAddress}:${serverConfig.targetOscPort}`);
-  debug.info('OSC Client initialized', {
-    targetAddress: serverConfig.targetOscAddress,
-    targetPort: serverConfig.targetOscPort
+  oscClient = new osc.UDPPort({
+    localAddress: '0.0.0.0',
+    localPort: 0,
+    remoteAddress: serverConfig.targetOscAddress,
+    remotePort: serverConfig.targetOscPort
   });
+  oscClient.open();
+  console.log(`OSC Client targeting ${serverConfig.targetOscAddress}:${serverConfig.targetOscPort}`);
+  debug.logOscClientInit(serverConfig.targetOscAddress, serverConfig.targetOscPort);
   websocketService.updateOscClient(oscClient);
 }
 function sendToRenderer(channel, data) {
@@ -158,18 +165,9 @@ ipcMain.handle('set-config', (event, newConfig) => {
   const oldConnections = oldConfig.additionalOscConnections || [];
   const newConnections = newConfig.additionalOscConnections || [];
   if (oldConnections.length !== newConnections.length) {
-    debug.info('OSC connection count changed', { 
-      oldCount: oldConnections.length, 
-      newCount: newConnections.length,
-      incoming: newConnections.filter(c => c.type === 'incoming').length,
-      outgoing: newConnections.filter(c => c.type === 'outgoing').length
-    });
+    debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
-  debug.info('Configuration updated', { 
-    oldConfig: oldConfig, 
-    newConfig: newConfig,
-    finalConfig: serverConfig 
-  });
+  debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
   websocketService.updateConfig(serverConfig);
   initOscServer();
   initOscClient();
@@ -199,19 +197,39 @@ ipcMain.handle('set-user-avatar', (event, avatarData) => {
 ipcMain.handle('get-debug-stats', () => {
   return debug.getStats();
 });
+ipcMain.handle('get-osc-status', () => {
+  if (oscService) {
+    const status = oscService.getStatus();
+    debug.logOscServiceStatus(status);
+    return status;
+  }
+  return { error: 'OSC service not initialized' };
+});
+ipcMain.handle('set-osc-forwarding', (event, enabled) => {
+  if (oscService) {
+    oscService.setForwardingEnabled(enabled);
+    debug.logOscForwardingChange(enabled);
+    return { success: true, enabled: oscService.isForwardingEnabled() };
+  }
+  return { success: false, error: 'OSC service not initialized' };
+});
 ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
 });
 ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
-  debug.info('OSC Server enabled by user request');
+  debug.logOscServerStateChange(true);
   initOscServer();
   initOscClient();
 });
 ipcMain.handle('disable-osc', () => {
   oscEnabled = false;
-  debug.info('OSC Server disabled by user request');
+  debug.logOscServerStateChange(false);
+  if (oscService) {
+    oscService.stop();
+    global.oscService = null;
+  }
   if (oscServer) {
     oscServer.close();
     oscServer = undefined;
@@ -222,7 +240,7 @@ ipcMain.handle('disable-osc', () => {
   });
 });
 app.whenReady().then(() => {
-  debug.info('ARC-OSC Client starting up');
+  debug.logAppStartup();
   createWindow();
   if (oscEnabled) {
     initOscServer();
@@ -244,7 +262,7 @@ app.whenReady().then(() => {
   });
 });
 app.on('window-all-closed', () => {
-  debug.info('Application shutting down - cleaning up connections');
+  debug.logAppShutdown();
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
   websocketService.cleanup();
@@ -253,8 +271,18 @@ app.on('window-all-closed', () => {
   }
 });
 app.on('before-quit', () => {
-  debug.info('Application quit requested - cleaning up');
+  debug.logAppShutdown('Application quit requested');
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
   websocketService.cleanup();
+});
+process.on('uncaughtException', (error) => {
+  logger.logError(error);
+  dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
+  app.quit();
+});
+process.on('unhandledRejection', (reason) => {
+  logger.logError(reason);
+  dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
+  app.quit();
 });
