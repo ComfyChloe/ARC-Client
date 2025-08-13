@@ -85,6 +85,64 @@ class Debugger {
   vrchatServiceFound(service, method) {
     this.info(`VRChat service discovered via ${method}`, service);
   }
+  logOscClientInit(targetAddress, targetPort) {
+    this.info('OSC Client initialized', {
+      targetAddress,
+      targetPort
+    });
+  }
+  logOscServiceReady(config) {
+    const message = `OSC Server listening on port ${config.localPort}`;
+    console.log(message);
+    this.oscServiceStarted(config.localPort);
+    return message;
+  }
+  logAdditionalConnections(connections) {
+    if (connections.length > 0) {
+      this.info('Additional OSC connections configured', {
+        count: connections.length,
+        connections
+      });
+    }
+  }
+  logConnectionCountChange(oldCount, newCount, newConnections) {
+    this.info('OSC connection count changed', { 
+      oldCount, 
+      newCount,
+      incoming: newConnections.filter(c => c.type === 'incoming').length,
+      outgoing: newConnections.filter(c => c.type === 'outgoing').length
+    });
+  }
+  logConfigUpdate(oldConfig, newConfig, finalConfig) {
+    this.info('Configuration updated', { 
+      oldConfig, 
+      newConfig,
+      finalConfig 
+    });
+  }
+  logAdditionalPortReady(data) {
+    const connectionName = data.name ? ` (${data.name})` : '';
+    this.info(`Additional OSC ${data.type} connection ready${connectionName}`, data);
+  }
+  logAdditionalPortError(data) {
+    const connectionName = data.name ? ` (${data.name})` : '';
+    this.error(`Additional OSC ${data.type} connection error${connectionName}`, data);
+  }
+  logOscServiceStatus(status) {
+    this.info('OSC Service status requested', status);
+  }
+  logOscForwardingChange(enabled) {
+    this.info('OSC forwarding setting changed', { enabled });
+  }
+  logOscServerStateChange(enabled) {
+    this.info(`OSC Server ${enabled ? 'enabled' : 'disabled'} by user request`);
+  }
+  logAppStartup() {
+    this.info('ARC-OSC Client starting up');
+  }
+  logAppShutdown(reason = 'Application shutting down') {
+    this.info(`${reason} - cleaning up connections`);
+  }
   oscServiceStarted(oscPort) {
     this.info('OSC Services started', {
       oscUdpPort: oscPort,
