@@ -64,3 +64,26 @@ Configure VRChat to send OSC data to the client:
 2. **Configure connection settings** in the sidebar
 3. **Enter your ARC-OSC server credentials**
 4. **Click "Connect & Login"**
+
+## Gallery
+
+Main view
+<img width="1184" height="845" alt="image" src="https://github.com/user-attachments/assets/3ce343e9-e791-4c0c-83d0-645718087484" />
+
+
+OSC Page with 20 additional connections with soft handling
+
+<img width="1184" height="918" alt="image" src="https://github.com/user-attachments/assets/0c4c1f6a-17b2-490b-8ab2-29408c73a654" />
+
+Logs view - WIP, Currently working on improvements for future debugging
+
+<img width="1184" height="761" alt="image" src="https://github.com/user-attachments/assets/90af03c9-1569-4c54-b7ed-e6be26291476" />
+
+Settings - Basic with no additions
+
+<img width="1184" height="761" alt="image" src="https://github.com/user-attachments/assets/fdddcfa7-e368-46e1-8381-0502934444da" />
+
+
+
+
+
