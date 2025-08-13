@@ -74,6 +74,7 @@ Main view
 OSC Page with 20 additional connections with soft handling
 
 <img width="1184" height="918" alt="image" src="https://github.com/user-attachments/assets/0c4c1f6a-17b2-490b-8ab2-29408c73a654" />
+<img width="846" height="630" alt="image" src="https://github.com/user-attachments/assets/b4a0cc73-9b79-461e-a1e7-74e13fd94851" />
 
 Logs view - WIP, Currently working on improvements for future debugging
 
