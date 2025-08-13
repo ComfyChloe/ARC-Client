@@ -37,6 +37,9 @@
     "asarUnpack": [
       "node_modules/**"
     ],
+    "extraResources": [
+      "userdata"
+    ],
     "win": {
       "target": "portable",
       "icon": "assets/icon.ico"

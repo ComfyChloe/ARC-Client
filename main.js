@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+app.setPath('userData', path.join(process.cwd(), 'userdata'));
 const osc = require('osc');
 const debug = require('./utils/debugger');
 const websocketService = require('./utils/websocketService');
