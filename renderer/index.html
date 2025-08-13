@@ -224,6 +224,7 @@
                 <h3>Navigation</h3>
                 <button class="btn btn-primary" id="nav-main" onclick="showMainView()" style="width: 100%; margin-bottom: 10px;">Main View</button>
                 <button class="btn btn-primary" id="nav-osc" onclick="showOscView()" style="width: 100%; margin-bottom: 10px;">OSC</button>
+                <button class="btn btn-primary" id="nav-logs" onclick="showLogsView()" style="width: 100%; margin-bottom: 10px;">Logs</button>
                 <button class="btn btn-primary" id="nav-settings" onclick="showSettingsView()" style="width: 100%;">Settings</button>
             </div>
             <div class="sidebar-section" id="avatar-section" style="display: none;">
@@ -253,7 +254,6 @@
             </div>
             <div class="tabs">
                 <button class="tab active" onclick="showTab('parameters')">Parameters</button>
-                <button class="tab" onclick="showTab('logs')">Logs</button>
             </div>
             
             <div id="parameters" class="tab-content active">
@@ -262,18 +262,6 @@
                     <div class="parameter-list" id="parameter-list">
                         <p>Connect and authenticate to view parameters</p>
                     </div>
-                </div>
-            </div>
-            
-
-            <div id="logs" class="tab-content">
-                <div class="card">
-                    <h3>Activity Log</h3>
-                    <div class="log-container" id="log-container">
-                        Welcome to ARC-OSC Client<br>
-                        Configure your settings and connect to get started<br>
-                    </div>
-                    <button class="btn btn-primary" onclick="clearLogs()" style="margin-top: 10px;">Clear Logs</button>
                 </div>
             </div>
         </div>
@@ -312,6 +300,21 @@
             </div>
         </div>
 
+        <div class="main-content view-transition" id="logs-view" style="display: none;">
+            <div class="header">
+                <h1>Logs</h1>
+                <p>View application logs and activity</p>
+            </div>
+            <div class="card">
+                <h3>Activity Log</h3>
+                <div class="log-container" id="log-container">
+                    Welcome to ARC-OSC Client<br>
+                    Configure your settings and connect to get started<br>
+                </div>
+                <button class="btn btn-primary" onclick="clearLogs()" style="margin-top: 10px;">Clear Logs</button>
+            </div>
+        </div>
+
         <div class="main-content view-transition" id="osc-view" style="display: none;">
             <div class="header">
                 <h1>OSC Settings</h1>
@@ -333,8 +336,8 @@
                         <label for="osc-type">Type</label>
                         <select id="osc-type">
                             <option value="float">Float</option>
-                            <option value="int">Integer</option>
-                            <option value="bool">Boolean</option>
+                            <option value="int">Int</option>
+                            <option value="bool">Bool</option>
                         </select>
                     </div>
                     <button class="btn btn-primary" onclick="sendOscMessage()">Send</button>

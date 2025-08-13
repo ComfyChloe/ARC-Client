@@ -12,11 +12,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     navMain.classList.add('active');
     navMain.disabled = true;
     navOsc.classList.remove('active');
     navOsc.disabled = false;
+    navLogs.classList.remove('active');
+    navLogs.disabled = false;
     navSettings.classList.remove('active');
     navSettings.disabled = false;
     addLog('Application initialized');
@@ -389,14 +392,18 @@ function updateOscPortsFromSettings() {
 function showMainView() {
     const mainView = document.getElementById('main-view');
     const oscView = document.getElementById('osc-view');
+    const logsView = document.getElementById('logs-view');
     const settingsView = document.getElementById('settings-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     oscView.style.opacity = '0';
+    logsView.style.opacity = '0';
     settingsView.style.opacity = '0';
     setTimeout(() => {
         oscView.style.display = 'none';
+        logsView.style.display = 'none';
         settingsView.style.display = 'none';
         mainView.style.display = 'block';
         mainView.style.opacity = '0';
@@ -408,6 +415,8 @@ function showMainView() {
     navMain.disabled = true;
     navOsc.classList.remove('active');
     navOsc.disabled = false;
+    navLogs.classList.remove('active');
+    navLogs.disabled = false;
     navSettings.classList.remove('active');
     navSettings.disabled = false;
     addLog('Switched to main view');
@@ -415,14 +424,18 @@ function showMainView() {
 function showOscView() {
     const mainView = document.getElementById('main-view');
     const oscView = document.getElementById('osc-view');
+    const logsView = document.getElementById('logs-view');
     const settingsView = document.getElementById('settings-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     mainView.style.opacity = '0';
+    logsView.style.opacity = '0';
     settingsView.style.opacity = '0';
     setTimeout(() => {
         mainView.style.display = 'none';
+        logsView.style.display = 'none';
         settingsView.style.display = 'none';
         oscView.style.display = 'block';
         oscView.style.opacity = '0';
@@ -436,6 +449,8 @@ function showOscView() {
     navMain.disabled = false;
     navOsc.classList.add('active');
     navOsc.disabled = true;
+    navLogs.classList.remove('active');
+    navLogs.disabled = false;
     navSettings.classList.remove('active');
     navSettings.disabled = false;
     addLog('Switched to OSC settings view');
@@ -443,15 +458,19 @@ function showOscView() {
 function showSettingsView() {
     const mainView = document.getElementById('main-view');
     const oscView = document.getElementById('osc-view');
+    const logsView = document.getElementById('logs-view');
     const settingsView = document.getElementById('settings-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     mainView.style.opacity = '0';
     oscView.style.opacity = '0';
+    logsView.style.opacity = '0';
     setTimeout(() => {
         mainView.style.display = 'none';
         oscView.style.display = 'none';
+        logsView.style.display = 'none';
         settingsView.style.display = 'block';
         settingsView.style.opacity = '0';
         requestAnimationFrame(() => {
@@ -462,9 +481,43 @@ function showSettingsView() {
     navMain.disabled = false;
     navOsc.classList.remove('active');
     navOsc.disabled = false;
+    navLogs.classList.remove('active');
+    navLogs.disabled = false;
     navSettings.classList.add('active');
     navSettings.disabled = true;
     addLog('Switched to settings view');
+}
+function showLogsView() {
+    const mainView = document.getElementById('main-view');
+    const oscView = document.getElementById('osc-view');
+    const logsView = document.getElementById('logs-view');
+    const settingsView = document.getElementById('settings-view');
+    const navMain = document.getElementById('nav-main');
+    const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
+    const navSettings = document.getElementById('nav-settings');
+    mainView.style.opacity = '0';
+    oscView.style.opacity = '0';
+    settingsView.style.opacity = '0';
+    setTimeout(() => {
+        mainView.style.display = 'none';
+        oscView.style.display = 'none';
+        settingsView.style.display = 'none';
+        logsView.style.display = 'block';
+        logsView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            logsView.style.opacity = '1';
+        });
+    }, 300);
+    navMain.classList.remove('active');
+    navMain.disabled = false;
+    navOsc.classList.remove('active');
+    navOsc.disabled = false;
+    navLogs.classList.add('active');
+    navLogs.disabled = true;
+    navSettings.classList.remove('active');
+    navSettings.disabled = false;
+    addLog('Switched to logs view');
 }
 function updateAppSettings() {
     const autoConnect = document.getElementById('auto-connect').value;
@@ -497,7 +550,6 @@ function addOscConnection(type) {
         addLog(`Maximum ${maxAdditionalConnections} additional connections allowed`, 'error');
         return;
     }
-    
     const newConnection = {
         id: Date.now().toString(),
         type: type, // 'incoming' or 'outgoing'
@@ -506,18 +558,15 @@ function addOscConnection(type) {
         enabled: true,
         name: '' // Optional user-defined name
     };
-    
     additionalOscConnections.push(newConnection);
     renderAdditionalOscConnections();
     addLog(`Added new ${type} OSC connection slot (${additionalOscConnections.length}/${maxAdditionalConnections})`);
 }
-
 function removeOscConnection(id) {
     additionalOscConnections = additionalOscConnections.filter(conn => conn.id !== id);
     renderAdditionalOscConnections();
     addLog(`Removed OSC connection`);
 }
-
 function updateOscConnection(id, field, value) {
     const connection = additionalOscConnections.find(conn => conn.id === id);
     if (connection) {
@@ -528,7 +577,6 @@ function updateOscConnection(id, field, value) {
         }
     }
 }
-
 function renderAdditionalOscConnections() {
     const container = document.getElementById('additional-osc-connections');
     const addIncomingBtn = document.getElementById('add-incoming-btn');
