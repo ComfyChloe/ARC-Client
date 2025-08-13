@@ -105,23 +105,57 @@ class WebSocketService {
       console.log('Parameter update:', data);
       debug.debug('Parameter update received', data);
       this._sendToRenderer('parameter-update', data);
-      // Forward parameter update to OSC client if available
-      if (this.oscClient && data.address) {
-        this.oscClient.send(data.address, data.value);
-        debug.debug('Sent OSC parameter to VRChat', { address: data.address, value: data.value });
+      if (global.oscService && data.address) {
+        try {
+          const sendResult = global.oscService.sendMessage(data.address, data.value, data.type || 'f');
+          if (sendResult) {
+            debug.debug('Sent OSC parameter to VRChat via primary connection', { 
+              address: data.address, 
+              value: data.value,
+              type: data.type || 'f' 
+            });
+          } else {
+            debug.warn('Failed to send OSC parameter to VRChat - sendMessage returned false');
+          }
+        } catch (error) {
+          debug.error('Failed to send to primary OSC connection', error);
+        }
+      }
+      if (!global.oscService && this.oscClient && data.address) {
+        try {
+          this.oscClient.send(data.address, data.value);
+          debug.debug('Sent OSC parameter to VRChat via legacy client', { address: data.address, value: data.value });
+        } catch (error) {
+          debug.error('Failed to send via legacy OSC client', error);
+        }
       }
       
-      // If there's a specific connection target, try to send via additional connections
       if (data.targetConnectionId && global.oscService) {
         try {
           global.oscService.sendMessageToConnection(data.targetConnectionId, data.address, data.value, data.type);
           debug.debug('Sent OSC parameter to additional connection', { 
             connectionId: data.targetConnectionId, 
             address: data.address, 
-            value: data.value 
+            value: data.value,
+            type: data.type
           });
         } catch (error) {
           debug.error('Failed to send to additional connection', error);
+        }
+      }
+      if (!data.targetConnectionId && global.oscService) {
+        try {
+          const sentCount = global.oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
+          if (sentCount > 0) {
+            debug.debug('Broadcasted OSC parameter to outgoing connections', { 
+              address: data.address, 
+              value: data.value,
+              type: data.type,
+              sentCount 
+            });
+          }
+        } catch (error) {
+          debug.error('Failed to broadcast to outgoing connections', error);
         }
       }
     });

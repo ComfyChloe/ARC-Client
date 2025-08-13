@@ -1,6 +1,6 @@
 {
   "name": "arc-osc-client",
-  "version": "0.18",
+  "version": "0.18.2",
   "description": "Standalone OSC Client for ARC-OSC Server",
   "main": "main.js",
   "private": false,

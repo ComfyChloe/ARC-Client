@@ -74,10 +74,7 @@ class Debugger {
     this.oscMessageCount++;
     if (!this.vrchatDetected && this.isVRChatOSCMessage(address)) {
       this.vrchatDetected = true;
-      this.info('VRChat OSC data flow detected!', {
-        firstMessage: { address, value, type },
-        totalMessages: this.oscMessageCount
-      });
+      this.info('VRChat OSC data flow detected!');
     }
   }
   vrchatServiceFound(service, method) {

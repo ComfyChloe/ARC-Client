@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getParameters: () => ipcRenderer.invoke('get-parameters'),
   enableOsc: () => ipcRenderer.invoke('enable-osc'),
   disableOsc: () => ipcRenderer.invoke('disable-osc'),
+  getOscStatus: () => ipcRenderer.invoke('get-osc-status'),
+  setOscForwarding: (enabled) => ipcRenderer.invoke('set-osc-forwarding', enabled),
   // Event listeners
   onServerConnection: (callback) => {
     ipcRenderer.on('server-connection', (event, data) => callback(data));

@@ -56,8 +56,8 @@ function createWindow() {
 function initOscServer() {
   if (oscService) {
     oscService.stop();
+    global.oscService = null;
   }
-  
   if (!oscEnabled) {
     sendToRenderer('osc-server-status', { 
       status: 'disabled', 
@@ -65,10 +65,7 @@ function initOscServer() {
     });
     return;
   }
-
   oscService = new OscService();
-  
-  // Set up event listeners
   oscService.on('ready', (config) => {
     console.log(`OSC Server listening on port ${config.localPort}`);
     debug.oscServiceStarted(config.localPort);
@@ -76,8 +73,6 @@ function initOscServer() {
       status: 'connected', 
       port: config.localPort 
     });
-    
-    // Log additional connections
     if (serverConfig.additionalOscConnections.length > 0) {
       debug.info('Additional OSC connections configured', {
         count: serverConfig.additionalOscConnections.length,
@@ -85,7 +80,6 @@ function initOscServer() {
       });
     }
   });
-  
   oscService.on('messageReceived', (data) => {
     debug.oscMessageReceived(data.address, data.value, data.type);
     
@@ -96,14 +90,16 @@ function initOscServer() {
       type: data.type,
       connectionId: data.connectionId
     });
-    
+    if (!data.connectionId && oscService) {
+      oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
+    }
+
     sendToRenderer('osc-received', { 
       address: data.address, 
       value: data.value,
       connectionId: data.connectionId 
     });
   });
-  
   oscService.on('additionalPortReady', (data) => {
     const connectionName = data.name ? ` (${data.name})` : '';
     debug.info(`Additional OSC ${data.type} connection ready${connectionName}`, data);
@@ -144,6 +140,7 @@ function initOscServer() {
   )) {
     oscService.setAdditionalConnections(serverConfig.additionalOscConnections);
     oscService.start();
+    global.oscService = oscService;
   }
 }
 
@@ -220,6 +217,22 @@ ipcMain.handle('set-user-avatar', (event, avatarData) => {
 ipcMain.handle('get-debug-stats', () => {
   return debug.getStats();
 });
+ipcMain.handle('get-osc-status', () => {
+  if (oscService) {
+    const status = oscService.getStatus();
+    debug.info('OSC Service status requested', status);
+    return status;
+  }
+  return { error: 'OSC service not initialized' };
+});
+ipcMain.handle('set-osc-forwarding', (event, enabled) => {
+  if (oscService) {
+    oscService.setForwardingEnabled(enabled);
+    debug.info('OSC forwarding setting changed', { enabled });
+    return { success: true, enabled: oscService.isForwardingEnabled() };
+  }
+  return { success: false, error: 'OSC service not initialized' };
+});
 ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
@@ -233,6 +246,10 @@ ipcMain.handle('enable-osc', () => {
 ipcMain.handle('disable-osc', () => {
   oscEnabled = false;
   debug.info('OSC Server disabled by user request');
+  if (oscService) {
+    oscService.stop();
+    global.oscService = null;
+  }
   if (oscServer) {
     oscServer.close();
     oscServer = undefined;
