@@ -349,16 +349,32 @@
                     <label for="target-address-settings">Local OSC IP Address</label>
                     <input type="text" id="target-address-settings" value="127.0.0.1">
                 </div>
-                <div class="additional-osc-section">
-                    <h4 style="margin-top: 20px; margin-bottom: 15px;">Additional OSC Connections</h4>
-                    <div id="additional-osc-connections">
-                    </div>
-                    <div style="margin-top: 10px;">
-                        <button class="btn btn-success" onclick="addOscConnection()" id="add-osc-btn" style="margin-right: 10px;">+ Add OSC Connection</button>
-                        <span id="connection-count" style="color: #666; font-size: 0.9em;">0/10 additional connections</span>
+                <button class="btn btn-primary" onclick="updateOscPortsFromSettings()" style="margin-top: 15px;">Update Primary OSC Configuration</button>
+            </div>
+
+            <div class="card">
+                <h3>Additional OSC Connections</h3>
+                <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
+                    Configure additional OSC endpoints for advanced routing. Create separate incoming connections to receive OSC data from multiple sources, 
+                    and outgoing connections to send data to multiple applications.
+                </p>
+                <!-- Controls top -->
+                <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <button class="btn btn-success" onclick="addOscConnection('incoming')" id="add-incoming-btn" style="margin-right: 10px;">+ Add Incoming</button>
+                            <button class="btn btn-success" onclick="addOscConnection('outgoing')" id="add-outgoing-btn" style="margin-right: 10px;">+ Add Outgoing</button>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <span id="connection-count" style="color: #666; font-size: 0.9em;">0/20 additional connections</span>
+                            <button class="btn btn-primary" onclick="updateAdditionalOscConnections()">Update Connections</button>
+                        </div>
                     </div>
                 </div>
-                <button class="btn btn-primary" onclick="updateOscPortsFromSettings()" style="margin-top: 15px;">Update OSC Configuration</button>
+
+                <div id="additional-osc-connections">
+                    <!-- Dynamic connections -->
+                </div>
             </div>
         </div>
     </div>

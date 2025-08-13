@@ -57,87 +57,101 @@ class OscService extends EventEmitter {
   }
   setupAdditionalPorts() {
     this.additionalPorts.forEach((portData, portId) => {
-      if (portData.incoming) {
+      if (portData.server) {
         try {
-          portData.incoming.close();
+          portData.server.close();
         } catch (err) {
-          console.warn(`Error closing additional incoming port ${portId}:`, err);
+          console.warn(`Error closing additional server ${portId}:`, err);
         }
       }
-      if (portData.outgoing) {
+      if (portData.client) {
         try {
-          portData.outgoing.close();
+          portData.client.close();
         } catch (err) {
-          console.warn(`Error closing additional outgoing port ${portId}:`, err);
+          console.warn(`Error closing additional client ${portId}:`, err);
         }
       }
     });
     this.additionalPorts.clear();
     this.additionalConnections.forEach(connection => {
-      if (!connection.enabled) return;
+      if (!connection.enabled || !connection.port) return;
       const portData = {};
-      if (connection.incomingPort) {
+      if (connection.type === 'incoming') {
         try {
-          portData.incoming = new osc.UDPPort({
-            localAddress: "0.0.0.0",
-            localPort: connection.incomingPort,
+          portData.server = new osc.UDPPort({
+            localAddress: connection.address || "0.0.0.0",
+            localPort: connection.port,
             metadata: true
           });
-          portData.incoming.on("ready", () => {
+          portData.server.on("ready", () => {
             this.emit('additionalPortReady', {
               connectionId: connection.id,
               type: 'incoming',
-              port: connection.incomingPort
+              port: connection.port,
+              address: connection.address,
+              name: connection.name
             });
           });
-          portData.incoming.on("message", (oscMsg) => {
+          portData.server.on("message", (oscMsg) => {
             this.handleIncomingMessage(oscMsg, connection.id);
           });
-          portData.incoming.on("error", (error) => {
+          portData.server.on("error", (error) => {
             this.emit('additionalPortError', {
               connectionId: connection.id,
               type: 'incoming',
-              port: connection.incomingPort,
+              port: connection.port,
+              name: connection.name,
               error
             });
           });
           if (this.isListening) {
-            portData.incoming.open();
+            portData.server.open();
           }
         } catch (error) {
           this.emit('additionalPortError', {
             connectionId: connection.id,
             type: 'incoming',
-            port: connection.incomingPort,
+            port: connection.port,
+            name: connection.name,
             error
           });
         }
-      }
-      if (connection.outgoingPort) {
+      } else if (connection.type === 'outgoing') {
         try {
-          portData.outgoing = new osc.UDPPort({
+          portData.client = new osc.UDPPort({
             localAddress: "0.0.0.0",
-            localPort: 0, // System assigned port
-            remoteAddress: connection.address,
-            remotePort: connection.outgoingPort,
+            localPort: 0, // Let system assign local port
+            remoteAddress: connection.address || '127.0.0.1',
+            remotePort: connection.port,
             metadata: true
           });
-          portData.outgoing.on("error", (error) => {
+          portData.client.on("ready", () => {
+            this.emit('additionalPortReady', {
+              connectionId: connection.id,
+              type: 'outgoing',
+              port: connection.port,
+              address: connection.address,
+              name: connection.name
+            });
+          });
+          portData.client.on("error", (error) => {
             this.emit('additionalPortError', {
               connectionId: connection.id,
               type: 'outgoing',
-              port: connection.outgoingPort,
+              port: connection.port,
+              name: connection.name,
               error
             });
           });
           if (this.isListening) {
-            portData.outgoing.open();
+            portData.client.open();
           }
         } catch (error) {
           this.emit('additionalPortError', {
             connectionId: connection.id,
             type: 'outgoing',
-            port: connection.outgoingPort,
+            port: connection.port,
+            name: connection.name,
             error
           });
         }
@@ -153,18 +167,18 @@ class OscService extends EventEmitter {
     try {
       this.primaryUdpPort.open();
       this.additionalPorts.forEach((portData) => {
-        if (portData.incoming) {
+        if (portData.server) {
           try {
-            portData.incoming.open();
+            portData.server.open();
           } catch (err) {
-            console.warn('Error opening additional incoming port:', err);
+            console.warn('Error opening additional server:', err);
           }
         }
-        if (portData.outgoing) {
+        if (portData.client) {
           try {
-            portData.outgoing.open();
+            portData.client.open();
           } catch (err) {
-            console.warn('Error opening additional outgoing port:', err);
+            console.warn('Error opening additional client:', err);
           }
         }
       });
@@ -183,18 +197,18 @@ class OscService extends EventEmitter {
       }
     }
     this.additionalPorts.forEach((portData) => {
-      if (portData.incoming) {
+      if (portData.server) {
         try {
-          portData.incoming.close();
+          portData.server.close();
         } catch (err) {
-          console.warn('Error closing additional incoming port:', err);
+          console.warn('Error closing additional server:', err);
         }
       }
-      if (portData.outgoing) {
+      if (portData.client) {
         try {
-          portData.outgoing.close();
+          portData.client.close();
         } catch (err) {
-          console.warn('Error closing additional outgoing port:', err);
+          console.warn('Error closing additional client:', err);
         }
       }
     });
@@ -229,19 +243,31 @@ class OscService extends EventEmitter {
   }
   sendMessageToConnection(connectionId, address, value, type = 'f') {
     const portData = this.additionalPorts.get(connectionId);
-    if (!portData || !portData.outgoing) {
-      this.emit('error', new Error(`Additional connection ${connectionId} not available for sending`));
+    if (!portData || !portData.client) {
+      this.emit('error', new Error(`Outgoing connection ${connectionId} not available for sending`));
       return false;
     }
     try {
       const message = this.formatOscMessage(address, value, type);
-      portData.outgoing.send(message);
+      portData.client.send(message);
       this.emit('messageSent', { address, value, type, connectionId });
       return true;
     } catch (error) {
       this.emit('error', error);
       return false;
     }
+  }
+  broadcastToAllOutgoing(address, value, type = 'f') {
+    let successCount = 0;
+    const outgoingConnections = this.additionalConnections.filter(conn => 
+      conn.type === 'outgoing' && conn.enabled
+    );
+    outgoingConnections.forEach(connection => {
+      if (this.sendMessageToConnection(connection.id, address, value, type)) {
+        successCount++;
+      }
+    });
+    return successCount;
   }
   formatOscMessage(address, value, type) {
     let oscType = type;
@@ -343,7 +369,9 @@ class OscService extends EventEmitter {
       targetAddress: this.targetAddress,
       parameterCount: Object.keys(this.parameters).length,
       additionalConnections: this.additionalConnections.length,
-      activeAdditionalPorts: this.additionalPorts.size
+      activeAdditionalPorts: this.additionalPorts.size,
+      incomingConnections: this.additionalConnections.filter(c => c.type === 'incoming').length,
+      outgoingConnections: this.additionalConnections.filter(c => c.type === 'outgoing').length
     };
   }
 }

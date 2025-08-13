@@ -95,14 +95,27 @@ function initOscServer() {
     });
   });
   oscService.on('additionalPortReady', (data) => {
-    debug.info(`Additional OSC ${data.type} port ready`, data);
-    addLog(`Additional ${data.type} OSC port ${data.port} ready`);
+    const connectionName = data.name ? ` (${data.name})` : '';
+    debug.info(`Additional OSC ${data.type} connection ready${connectionName}`, data);
+    sendToRenderer('osc-server-status', { 
+      status: 'connection-ready', 
+      connectionId: data.connectionId,
+      type: data.type,
+      port: data.port,
+      address: data.address,
+      name: data.name
+    });
   });
   oscService.on('additionalPortError', (data) => {
-    debug.error(`Additional OSC ${data.type} port error`, data);
+    const connectionName = data.name ? ` (${data.name})` : '';
+    debug.error(`Additional OSC ${data.type} connection error${connectionName}`, data);
     sendToRenderer('osc-server-status', { 
-      status: 'error', 
-      error: `Additional port ${data.port} error: ${data.error.message}` 
+      status: 'connection-error', 
+      connectionId: data.connectionId,
+      type: data.type,
+      port: data.port,
+      name: data.name,
+      error: data.error.message 
     });
   });
   oscService.on('error', (err) => {
@@ -142,6 +155,16 @@ ipcMain.handle('get-config', () => {
 ipcMain.handle('set-config', (event, newConfig) => {
   const oldConfig = { ...serverConfig };
   serverConfig = { ...serverConfig, ...newConfig };
+  const oldConnections = oldConfig.additionalOscConnections || [];
+  const newConnections = newConfig.additionalOscConnections || [];
+  if (oldConnections.length !== newConnections.length) {
+    debug.info('OSC connection count changed', { 
+      oldCount: oldConnections.length, 
+      newCount: newConnections.length,
+      incoming: newConnections.filter(c => c.type === 'incoming').length,
+      outgoing: newConnections.filter(c => c.type === 'outgoing').length
+    });
+  }
   debug.info('Configuration updated', { 
     oldConfig: oldConfig, 
     newConfig: newConfig,
