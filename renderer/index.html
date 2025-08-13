@@ -197,11 +197,102 @@
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
         .navigation-section .btn.active, .navigation-section .btn:disabled {
-            background-color: #2980b9;
+            background-color: #27973a;
             color: #ffffff;
             cursor: default;
             box-shadow: none;
             opacity: 0.85;
+        }
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+        .dropdown-content {
+            position: absolute;
+            z-index: 1000;
+            width: 100%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
+        }
+        .dropdown-content button {
+            margin: 2px 0;
+            transition: all 0.2s ease;
+        }
+        .dropdown-content button:hover {
+            background-color: #3498db !important;
+        }
+        .dropdown-toggle.active {
+            background-color: #2980b9;
+        }
+        .dropdown-content.show {
+            display: block !important;
+        }
+        .tree-view {
+            width: 100%;
+        }
+        .tree-item {
+            margin-bottom: 10px;
+        }
+        .tree-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, margin 0.4s ease-out;
+            margin: 0;
+        }
+        .tree-content.expanded {
+            max-height: 500px;
+            margin-top: 5px;
+        }
+        .tree-toggle {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+            transition: all 0.4s ease;
+            font-weight: 600;
+        }
+        .tree-toggle:hover {
+            background-color: #2980b9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .tree-toggle .arrow {
+            margin-right: 10px;
+            transition: transform 0.3s ease;
+            font-size: 12px;
+        }
+        .tree-toggle.expanded .arrow {
+            transform: rotate(0deg);
+        }
+        .tree-items {
+            padding-left: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .tree-child {
+            padding: 8px 15px;
+            background-color: #385f86;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.4s ease;
+            font-weight: 500;
+            text-align: left;
+            width: 100%;
+        }
+        .tree-child:hover {
+            background-color: #3498db;
+        }
+        .tree-child.active {
+            background-color: #349727;
+            cursor: default;
         }
     </style>
 </head>
@@ -224,6 +315,18 @@
                 <h3>Navigation</h3>
                 <button class="btn btn-primary" id="nav-main" onclick="showMainView()" style="width: 100%; margin-bottom: 10px;">Main View</button>
                 <button class="btn btn-primary" id="nav-osc" onclick="showOscView()" style="width: 100%; margin-bottom: 10px;">OSC</button>
+                <div class="tree-item" style="margin-bottom: 10px;">
+                    <button class="tree-toggle" id="nav-extras" style="text-align: center; width: 100%; justify-content: center; display: flex; align-items: center;">
+                        <span class="arrow" style="">▶</span>
+                        <span style="margin: 0;">Extras</span>
+                    </button>
+                    <div class="tree-content">
+                        <div class="tree-items">
+                            <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
+                            <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
+                        </div>
+                    </div>
+                </div>
                 <button class="btn btn-primary" id="nav-logs" onclick="showLogsView()" style="width: 100%; margin-bottom: 10px;">Logs</button>
                 <button class="btn btn-primary" id="nav-settings" onclick="showSettingsView()" style="width: 100%;">Settings</button>
             </div>
@@ -297,6 +400,31 @@
                     </select>
                 </div>
                 <button class="btn btn-primary" onclick="updateAppSettings()">Update Application Settings</button>
+            </div>
+        </div>
+        <div class="main-content view-transition" id="vosk-view" style="display: none;">
+            <div class="header">
+                <h1>VOSK Voice Recognition</h1>
+                <p>Coming soon - Voice recognition for Universal control</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="Hyperate-view" style="display: none;">
+            <div class="header">
+                <h1>Hyperate intergration</h1>
+                <p>Feature Not Available (yet)</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is currently in development and will be available in a future update.
+                </p>
             </div>
         </div>
 
