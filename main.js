@@ -1,8 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+app.setPath('userData', path.join(process.cwd(), 'userdata'));
 const osc = require('osc');
 const debug = require('./utils/debugger');
-const websocketService = require('./utils/websocketService');
 const OscService = require('./utils/oscService');
 const logger = require('./utils/logger');
 let mainWindow;
@@ -11,7 +11,6 @@ let oscClient;
 let oscService;
 let oscEnabled = false;
 let serverConfig = {
-  serverUrl: 'wss://localhost:3000',
   localOscPort: 9001,
   targetOscPort: 9000,
   targetOscAddress: '127.0.0.1',
@@ -85,12 +84,6 @@ function initOscServer() {
   });
   oscService.on('messageReceived', (data) => {
     debug.oscMessageReceived(data.address, data.value, data.type);
-    websocketService.forwardOscMessage({
-      address: data.address,
-      value: data.value,
-      type: data.type,
-      connectionId: data.connectionId
-    });
     if (!data.connectionId && oscService) {
       oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
     }
@@ -149,7 +142,6 @@ function initOscClient() {
   oscClient.open();
   console.log(`OSC Client targeting ${serverConfig.targetOscAddress}:${serverConfig.targetOscPort}`);
   debug.logOscClientInit(serverConfig.targetOscAddress, serverConfig.targetOscPort);
-  websocketService.updateOscClient(oscClient);
 }
 function sendToRenderer(channel, data) {
   if (mainWindow && mainWindow.webContents) {
@@ -168,31 +160,9 @@ ipcMain.handle('set-config', (event, newConfig) => {
     debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
   debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
-  websocketService.updateConfig(serverConfig);
   initOscServer();
   initOscClient();
   return serverConfig;
-});
-ipcMain.handle('connect-server', () => {
-  websocketService.connect();
-});
-ipcMain.handle('disconnect-server', () => {
-  websocketService.disconnect();
-});
-ipcMain.handle('authenticate', (event, credentials) => {
-  return websocketService.authenticate(credentials);
-});
-ipcMain.handle('send-osc', (event, oscData) => {
-  websocketService.sendOsc(oscData);
-});
-ipcMain.handle('get-user-avatar', () => {
-  websocketService.getUserAvatar();
-});
-ipcMain.handle('get-parameters', () => {
-  websocketService.getParameters();
-});
-ipcMain.handle('set-user-avatar', (event, avatarData) => {
-  websocketService.setUserAvatar(avatarData);
 });
 ipcMain.handle('get-debug-stats', () => {
   return debug.getStats();
@@ -251,7 +221,6 @@ app.whenReady().then(() => {
       port: serverConfig.localOscPort 
     });
   }
-  websocketService.initialize(serverConfig, sendToRenderer, oscClient);
   setTimeout(() => {
     debug.connectionTimeout();
   }, 30000); // Check after 30 seconds
@@ -265,7 +234,6 @@ app.on('window-all-closed', () => {
   debug.logAppShutdown();
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
-  websocketService.cleanup();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -274,7 +242,6 @@ app.on('before-quit', () => {
   debug.logAppShutdown('Application quit requested');
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
-  websocketService.cleanup();
 });
 process.on('uncaughtException', (error) => {
   logger.logError(error);

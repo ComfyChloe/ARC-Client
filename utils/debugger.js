@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-
 class Debugger {
   constructor() {
     const unixTimestamp = Math.floor(Date.now() / 1000);
@@ -145,21 +144,9 @@ class Debugger {
   oscServiceStarted(oscPort) {
     this.info('OSC Services started', {
       oscUdpPort: oscPort,
-      message: 'Waiting for VRChat to discover and connect...'
     });
   }
   connectionTimeout() {
-    if (!this.vrchatDetected && this.oscMessageCount === 0) {
-      this.warn('No VRChat connection detected', {
-        uptime: Math.round((Date.now() - this.startTime) / 1000),
-        suggestions: [
-          'Check if VRChat OSC is enabled in Settings → OSC',
-          'Ensure VRChat is running and in a world',
-          'Check Windows Firewall settings',
-          'Verify no other OSC applications are using the same ports'
-        ]
-      });
-    }
   }
   isVRChatOSCMessage(address) {
     return address.startsWith('/avatar/') || 

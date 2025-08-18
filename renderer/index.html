@@ -4,206 +4,7 @@
     <meta charset="UTF-8">
     <title>ARC-OSC Client</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
-            height: 100vh;
-            overflow: hidden;
-        }
-        .app-container {
-            display: flex;
-            height: 100vh;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            backdrop-filter: blur(10px);
-        }
-        .sidebar {
-            width: 300px;
-            background: #2c3e50;
-            color: white;
-            padding: 20px;
-            overflow-y: auto;
-        }
-        .main-content {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .header h1 {
-            color: #2c3e50;
-            margin-bottom: 10px;
-        }
-        .status-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        .status-connected { background-color: #27ae60; }
-        .status-disconnected { background-color: #e74c3c; }
-        .status-pending { background-color: #f39c12; }
-        .card {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #ecf0f1;
-            border-radius: 5px;
-            font-size: 14px;
-        }
-        .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: #3498db;
-        }
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        .btn-primary {
-            background-color: #3498db;
-            color: white;
-        }
-        .btn-primary:hover {
-            background-color: #2980b9;
-        }
-        .btn-success {
-            background-color: #27ae60;
-            color: white;
-        }
-        .btn-danger {
-            background-color: #e74c3c;
-            color: white;
-        }
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        .parameter-list {
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        .parameter-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px;
-            border: 1px solid #ecf0f1;
-            border-radius: 5px;
-            margin-bottom: 5px;
-        }
-        .parameter-item:nth-child(even) {
-            background-color: #f8f9fa;
-        }
-        .log-container {
-            background: #1e1e1e;
-            color: #00ff00;
-            padding: 15px;
-            border-radius: 5px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            height: 200px;
-            overflow-y: auto;
-        }
-        .sidebar-section {
-            margin-bottom: 25px;
-        }
-        .sidebar-section h3 {
-            color: #ecf0f1;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 2px solid #34495e;
-        }
-        .connection-status {
-            display: flex;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .avatar-info {
-            background: #34495e;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 10px;
-        }
-        .tabs {
-            display: flex;
-            margin-bottom: 20px;
-        }
-        .tab {
-            padding: 10px 20px;
-            background: #ecf0f1;
-            border: none;
-            cursor: pointer;
-            border-radius: 5px 5px 0 0;
-            margin-right: 2px;
-        }
-        .tab.active {
-            background: #3498db;
-            color: white;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        .osc-sender {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr auto;
-            gap: 10px;
-            align-items: end;
-            margin-bottom: 15px;
-        }
-        .view-transition {
-            transition: opacity 0.3s ease-in-out;
-        }
-        .main-content {
-            opacity: 1;
-        }
-        .navigation-section .btn {
-            transition: all 0.2s ease;
-        }
-        .navigation-section .btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        }
-        .navigation-section .btn.active, .navigation-section .btn:disabled {
-            background-color: #2980b9;
-            color: #ffffff;
-            cursor: default;
-            box-shadow: none;
-            opacity: 0.85;
-        }
-    </style>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="app-container">
@@ -224,6 +25,18 @@
                 <h3>Navigation</h3>
                 <button class="btn btn-primary" id="nav-main" onclick="showMainView()" style="width: 100%; margin-bottom: 10px;">Main View</button>
                 <button class="btn btn-primary" id="nav-osc" onclick="showOscView()" style="width: 100%; margin-bottom: 10px;">OSC</button>
+                <div class="tree-item" style="margin-bottom: 10px;">
+                    <button class="tree-toggle" id="nav-extras" style="text-align: center; width: 100%; justify-content: center; display: flex; align-items: center;">
+                        <span class="arrow">▶</span>
+                        <span style="margin: 0;">Extras</span>
+                    </button>
+                    <div class="tree-content">
+                        <div class="tree-items">
+                            <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
+                            <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
+                        </div>
+                    </div>
+                </div>
                 <button class="btn btn-primary" id="nav-logs" onclick="showLogsView()" style="width: 100%; margin-bottom: 10px;">Logs</button>
                 <button class="btn btn-primary" id="nav-settings" onclick="showSettingsView()" style="width: 100%;">Settings</button>
             </div>
@@ -254,7 +67,6 @@
             </div>
             <div class="tabs">
                 <button class="tab active" onclick="showTab('parameters')">Parameters</button>
-                <button class="tab" onclick="showTab('logs')">Logs</button>
             </div>
             
             <div id="parameters" class="tab-content active">
@@ -299,6 +111,46 @@
                 <button class="btn btn-primary" onclick="updateAppSettings()">Update Application Settings</button>
             </div>
         </div>
+        <div class="main-content view-transition" id="vosk-view" style="display: none;">
+            <div class="header">
+                <h1>VOSK Voice Recognition</h1>
+                <p>Coming soon - Voice recognition for Universal control</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="Hyperate-view" style="display: none;">
+            <div class="header">
+                <h1>Hyperate intergration</h1>
+                <p>Feature Not Available (yet)</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is currently in development and will be available in a future update.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="logs-view" style="display: none;">
+            <div class="header">
+                <h1>Logs</h1>
+                <p>View application logs and activity</p>
+            </div>
+            <div class="card">
+                <h3>Activity Log</h3>
+                <div class="log-container" id="log-container">
+                    Welcome to ARC-OSC Client<br>
+                    Configure your settings and connect to get started<br>
+                </div>
+                <button class="btn btn-primary" onclick="clearLogs()" style="margin-top: 10px;">Clear Logs</button>
+            </div>
+        </div>
         <div class="main-content view-transition" id="osc-view" style="display: none;">
             <div class="header">
                 <h1>OSC Settings</h1>
@@ -319,8 +171,8 @@
                         <label for="osc-type">Type</label>
                         <select id="osc-type">
                             <option value="float">Float</option>
-                            <option value="int">Integer</option>
-                            <option value="bool">Boolean</option>
+                            <option value="int">Int</option>
+                            <option value="bool">Bool</option>
                         </select>
                     </div>
                     <button class="btn btn-primary" onclick="sendOscMessage()">Send</button>

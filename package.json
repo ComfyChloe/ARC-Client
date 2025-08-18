@@ -1,14 +1,13 @@
 {
   "name": "arc-osc-client",
-  "version": "0.19.5",
+  "version": "0.22.8",
   "author": "ComfyChloe",
-  "description": "Standalone OSC Client for ARC-OSC Server",
+  "description": "Standalone OSC Client for ARC-OSC",
   "main": "main.js",
   "private": false,
   "dependencies": {
     "naive-ui": "2.38.1",
-    "osc": "2.4.5",
-    "socket.io-client": "4.7.4"
+    "osc": "2.4.5"
   },
   "scripts": {
     "start": "electron .",
@@ -36,6 +35,9 @@
     ],
     "asarUnpack": [
       "node_modules/**"
+    ],
+    "extraResources": [
+      "userdata"
     ],
     "win": {
       "target": "portable",
