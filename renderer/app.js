@@ -1,30 +1,28 @@
-let currentUser = null;
-let currentAvatar = null;
-let parameters = {};
-let isConnected = false;
-let isAuthenticated = false;
-let oscEnabled = false;
 let additionalOscConnections = [];
-let maxAdditionalConnections = 10;
+let maxAdditionalConnections = 20;
+let oscEnabled = false;
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     loadAppSettings();
     setupEventListeners();
+    setupExtrasDropdown();
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     navMain.classList.add('active');
     navMain.disabled = true;
     navOsc.classList.remove('active');
     navOsc.disabled = false;
+    navLogs.classList.remove('active');
+    navLogs.disabled = false;
     navSettings.classList.remove('active');
     navSettings.disabled = false;
-    addLog('Application initialized');
+    debugLog('Application initialized');
 });
 async function loadConfig() {
     try {
         const config = await window.electronAPI.getConfig();
-        document.getElementById('server-url-settings').value = config.serverUrl;
         document.getElementById('local-port-settings').value = config.localOscPort;
         document.getElementById('target-port-settings').value = config.targetOscPort;
         document.getElementById('target-address-settings').value = config.targetOscAddress;
@@ -33,96 +31,27 @@ async function loadConfig() {
             renderAdditionalOscConnections();
         }
     } catch (error) {
-        addLog(`Error loading config: ${error.message}`, 'error');
+        debugLog(`Error loading config: ${error.message}`, 'error');
     }
 }
 function setupEventListeners() {
-    window.electronAPI.onServerConnection((data) => {
-        updateServerStatus(data.status);
-        if (data.status === 'connected') {
-            addLog('Connected to ARC-OSC Server');
-        } else {
-            addLog('Disconnected from ARC-OSC Server');
-            isConnected = false;
-            isAuthenticated = false;
-            updateUI();
-        }
-    });
-    window.electronAPI.onAuthRequired(() => {
-        addLog('Authentication required');
-    });
-    window.electronAPI.onAuthSuccess((data) => {
-        addLog(`Authentication successful: ${data.userId}`);
-        currentUser = data.userId;
-        isAuthenticated = true;
-        updateUI();
-        window.electronAPI.getUserAvatar();
-        window.electronAPI.getParameters();
-    });
-    window.electronAPI.onAuthFailed((data) => {
-        addLog(`Authentication failed: ${data.message}`, 'error');
-        isAuthenticated = false;
-        updateUI();
-    });
-    window.electronAPI.onUserAvatarInfo((data) => {
-        currentAvatar = data.avatarId;
-        parameters = data.parameters || {};
-        updateAvatarDisplay();
-        updateParameterList();
-        addLog(`Avatar updated: ${data.avatarId || 'None'}`);
-    });
-    window.electronAPI.onParameterUpdate((data) => {
-        if (data.name && data.value !== undefined) {
-            parameters[data.name] = data.value;
-            updateParameterList();
-            addLog(`Parameter updated: ${data.name} = ${data.value}`);
-        }
-    });
     window.electronAPI.onOscReceived((data) => {
-        addLog(`OSC Received: ${data.address} = ${data.value}`);
+        debugLog(`OSC Received: ${data.address} = ${data.value}`);
     });
     window.electronAPI.onOscServerStatus((data) => {
+        console.log('OSC Server status update:', data);
+        if (data.status === 'connection-ready' || data.status === 'connection-error') {
+            const statusText = data.status === 'connection-ready' ? 'Ready' : 'Error';
+            debugLog(`Additional OSC ${data.type} connection (${data.name || data.connectionId}): ${statusText} on port ${data.port}`);
+            return;
+        }
         updateOscStatus(data.status, data.port);
         if (data.status === 'connected') {
-            addLog(`OSC Server listening on port ${data.port}`);
+            debugLog(`OSC Server listening on port ${data.port}`);
         } else if (data.status === 'error') {
-            addLog(`OSC Server error: ${data.error}`, 'error');
+            debugLog(`OSC Server error: ${data.error}`, 'error');
         }
     });
-    window.electronAPI.onServerError((error) => {
-        addLog(`Server error: ${error.message}`, 'error');
-    });
-    document.getElementById('password').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            authenticate();
-        }
-    });
-    document.getElementById('osc-value').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            sendOscMessage();
-        }
-    });
-}
-function updateServerStatus(status) {
-    const indicator = document.getElementById('server-status');
-    const text = document.getElementById('server-status-text');
-    indicator.className = 'status-indicator';
-    switch (status) {
-        case 'connected':
-            indicator.classList.add('status-connected');
-            text.textContent = 'Connected';
-            isConnected = true;
-            break;
-        case 'disconnected':
-            indicator.classList.add('status-disconnected');
-            text.textContent = 'Disconnected';
-            isConnected = false;
-            break;
-        default:
-            indicator.classList.add('status-pending');
-            text.textContent = 'Connecting...';
-    }
-    updateUI();
 }
 function updateOscStatus(status, port) {
     const indicator = document.getElementById('osc-status');
@@ -175,38 +104,6 @@ function updateUI() {
         avatarSection.style.display = 'none';
     }
 }
-function updateAvatarDisplay() {
-    const avatarId = document.getElementById('avatar-id');
-    const paramCount = document.getElementById('parameter-count');
-    avatarId.textContent = currentAvatar || 'No avatar selected';
-    paramCount.textContent = `${Object.keys(parameters).length} parameters`;
-}
-function updateParameterList() {
-    const container = document.getElementById('parameter-list');
-    if (Object.keys(parameters).length === 0) {
-        container.innerHTML = '<p>No parameters available</p>';
-        return;
-    }
-    container.innerHTML = '';
-    Object.entries(parameters).forEach(([name, value]) => {
-        const item = document.createElement('div');
-        item.className = 'parameter-item';
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = name;
-        nameSpan.style.fontWeight = '600';
-        const valueSpan = document.createElement('span');
-        valueSpan.textContent = value;
-        valueSpan.style.fontFamily = 'monospace';
-        const typeSpan = document.createElement('span');
-        typeSpan.textContent = typeof value;
-        typeSpan.style.fontSize = '0.8em';
-        typeSpan.style.color = '#666';
-        item.appendChild(nameSpan);
-        item.appendChild(valueSpan);
-        item.appendChild(typeSpan);
-        container.appendChild(item);
-    });
-}
 async function updateConfig() {
     try {
         const config = {
@@ -216,9 +113,9 @@ async function updateConfig() {
             targetOscAddress: document.getElementById('target-address-settings').value
         };
         await window.electronAPI.setConfig(config);
-        addLog('Configuration updated - OSC services will restart');
+        debugLog('Configuration updated - OSC services will restart');
     } catch (error) {
-        addLog(`Error updating config: ${error.message}`, 'error');
+        debugLog(`Error updating config: ${error.message}`, 'error');
     }
 }
 async function updateOscPorts() {
@@ -227,26 +124,38 @@ async function updateOscPorts() {
             serverUrl: document.getElementById('server-url-settings').value,
             localOscPort: parseInt(document.getElementById('local-port-settings').value),
             targetOscPort: parseInt(document.getElementById('target-port-settings').value),
-            targetOscAddress: document.getElementById('target-address-settings').value,
-            additionalOscConnections: additionalOscConnections
+            targetOscAddress: document.getElementById('target-address-settings').value
         };
         await window.electronAPI.setConfig(config);
-        addLog('OSC ports updated - OSC services will restart');
+        debugLog('Primary OSC configuration updated - OSC services will restart');
     } catch (error) {
-        addLog(`Error updating OSC ports: ${error.message}`, 'error');
+        debugLog(`Error updating primary OSC configuration: ${error.message}`, 'error');
+    }
+}
+async function updateAdditionalOscConnections() {
+    try {
+        const currentConfig = await window.electronAPI.getConfig();
+        const updatedConfig = {
+            ...currentConfig,
+            additionalOscConnections: additionalOscConnections
+        };
+        await window.electronAPI.setConfig(updatedConfig);
+        debugLog(`Additional OSC connections updated - ${additionalOscConnections.length} connections configured`);
+    } catch (error) {
+        debugLog(`Error updating additional OSC connections: ${error.message}`, 'error');
     }
 }
 async function toggleOscServer() {
     try {
         if (oscEnabled) {
             await window.electronAPI.disableOsc();
-            addLog('OSC Server disabled');
+            debugLog('OSC Server disabled');
         } else {
             await window.electronAPI.enableOsc();
-            addLog('OSC Server enabled');
+            debugLog('OSC Server enabled');
         }
     } catch (error) {
-        addLog(`Error toggling OSC server: ${error.message}`, 'error');
+        debugLog(`Error toggling OSC server: ${error.message}`, 'error');
     }
 }
 async function authenticate() {
@@ -257,17 +166,17 @@ async function authenticate() {
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     if (!username || !password) {
-        addLog('Please enter username and password', 'error');
+        debugLog('Please enter username and password', 'error');
         return;
     }
     try {
-        addLog('Connecting to server...');
+        debugLog('Connecting to server...');
         await window.electronAPI.connectServer();
         setTimeout(async () => {
             await window.electronAPI.authenticate({ username, password });
         }, 1000);
     } catch (error) {
-        addLog(`Authentication error: ${error.message}`, 'error');
+        debugLog(`Authentication error: ${error.message}`, 'error');
     }
 }
 async function disconnect() {
@@ -288,14 +197,14 @@ async function disconnect() {
 }
 async function sendOscMessage() {
     if (!isAuthenticated) {
-        addLog('Must be authenticated to send OSC messages', 'error');
+        debugLog('Must be authenticated to send OSC messages', 'error');
         return;
     }
     const address = document.getElementById('osc-address').value;
     const value = document.getElementById('osc-value').value;
     const type = document.getElementById('osc-type').value;
     if (!address || value === '') {
-        addLog('Address and value are required', 'error');
+        debugLog('Address and value are required', 'error');
         return;
     }
     try {
@@ -322,11 +231,11 @@ async function sendOscMessage() {
             value: parsedValue,
             type
         });
-        addLog(`OSC Sent: ${address} = ${parsedValue} (${type})`);
+        debugLog(`OSC Sent: ${address} = ${parsedValue} (${type})`);
         document.getElementById('osc-address').value = '';
         document.getElementById('osc-value').value = '';
     } catch (error) {
-        addLog(`Error sending OSC: ${error.message}`, 'error');
+        debugLog(`Error sending OSC: ${error.message}`, 'error');
     }
 }
 function showTab(tabName) {
@@ -338,7 +247,7 @@ function showTab(tabName) {
     });
     event.target.classList.add('active');
 }
-function addLog(message, type = 'info') {
+function debugLog(message, type = 'info') {
     const container = document.getElementById('log-container');
     const timestamp = new Date().toLocaleTimeString();
     let color = '#00ff00'; // Default green
@@ -355,10 +264,7 @@ function addLog(message, type = 'info') {
 }
 function clearLogs() {
     document.getElementById('log-container').innerHTML = '';
-    addLog('Logs cleared');
-}
-function updateConfigFromSettings() {
-    return updateConfig();
+    debugLog('Logs cleared');
 }
 function updateOscPortsFromSettings() {
     return updateOscPorts();
@@ -366,41 +272,60 @@ function updateOscPortsFromSettings() {
 function showMainView() {
     const mainView = document.getElementById('main-view');
     const oscView = document.getElementById('osc-view');
+    const logsView = document.getElementById('logs-view');
     const settingsView = document.getElementById('settings-view');
+    const voskView = document.getElementById('vosk-view');
+    const hyperateView = document.getElementById('Hyperate-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
-    oscView.style.opacity = '0';
-    settingsView.style.opacity = '0';
+    const navVosk = document.getElementById('nav-vosk');
+    const navHyperate = document.getElementById('nav-Hyperate');
+    [oscView, logsView, settingsView, voskView, hyperateView].forEach(view => {
+        if (view) {
+            view.style.opacity = '0';
+            setTimeout(() => view.style.display = 'none', 300);
+        }
+    });
     setTimeout(() => {
-        oscView.style.display = 'none';
-        settingsView.style.display = 'none';
         mainView.style.display = 'block';
         mainView.style.opacity = '0';
         requestAnimationFrame(() => {
             mainView.style.opacity = '1';
         });
     }, 300);
+    [navOsc, navLogs, navSettings].forEach(nav => {
+        nav.classList.remove('active');
+        nav.disabled = false;
+    });
+    [navVosk, navHyperate].forEach(nav => {
+        if (nav) nav.classList.remove('active');
+    });
     navMain.classList.add('active');
     navMain.disabled = true;
-    navOsc.classList.remove('active');
-    navOsc.disabled = false;
-    navSettings.classList.remove('active');
-    navSettings.disabled = false;
-    addLog('Switched to main view');
+    debugLog('Switched to main view');
 }
 function showOscView() {
     const mainView = document.getElementById('main-view');
     const oscView = document.getElementById('osc-view');
+    const logsView = document.getElementById('logs-view');
     const settingsView = document.getElementById('settings-view');
+    const voskView = document.getElementById('vosk-view');
+    const hyperateView = document.getElementById('Hyperate-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
-    mainView.style.opacity = '0';
-    settingsView.style.opacity = '0';
+    const navVosk = document.getElementById('nav-vosk');
+    const navHyperate = document.getElementById('nav-Hyperate');
+    [mainView, logsView, settingsView, voskView, hyperateView].forEach(view => {
+        if (view) {
+            view.style.opacity = '0';
+            setTimeout(() => view.style.display = 'none', 300);
+        }
+    });
     setTimeout(() => {
-        mainView.style.display = 'none';
-        settingsView.style.display = 'none';
         oscView.style.display = 'block';
         oscView.style.opacity = '0';
         requestAnimationFrame(() => {
@@ -408,46 +333,175 @@ function showOscView() {
         });
         renderAdditionalOscConnections();
     }, 300);
-    navMain.classList.remove('active');
-    navMain.disabled = false;
+    [navMain, navLogs, navSettings].forEach(nav => {
+        nav.classList.remove('active');
+        nav.disabled = false;
+    });
+    [navVosk, navHyperate].forEach(nav => {
+        if (nav) nav.classList.remove('active');
+    });
     navOsc.classList.add('active');
     navOsc.disabled = true;
-    navSettings.classList.remove('active');
-    navSettings.disabled = false;
-    addLog('Switched to OSC settings view');
+    debugLog('Switched to OSC settings view');
 }
 function showSettingsView() {
     const mainView = document.getElementById('main-view');
     const oscView = document.getElementById('osc-view');
+    const logsView = document.getElementById('logs-view');
     const settingsView = document.getElementById('settings-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
-    mainView.style.opacity = '0';
-    oscView.style.opacity = '0';
+    const voskView = document.getElementById('vosk-view');
+    const hyperateView = document.getElementById('Hyperate-view');
+    const navVosk = document.getElementById('nav-vosk');
+    const navHyperate = document.getElementById('nav-Hyperate');
+    [mainView, oscView, logsView, voskView, hyperateView].forEach(view => {
+        if (view) {
+            view.style.opacity = '0';
+            setTimeout(() => view.style.display = 'none', 300);
+        }
+    });
     setTimeout(() => {
-        mainView.style.display = 'none';
-        oscView.style.display = 'none';
         settingsView.style.display = 'block';
         settingsView.style.opacity = '0';
         requestAnimationFrame(() => {
             settingsView.style.opacity = '1';
         });
     }, 300);
-    navMain.classList.remove('active');
-    navMain.disabled = false;
-    navOsc.classList.remove('active');
-    navOsc.disabled = false;
+    [navMain, navOsc, navLogs].forEach(nav => {
+        nav.classList.remove('active');
+        nav.disabled = false;
+    });
+    [navVosk, navHyperate].forEach(nav => {
+        if (nav) nav.classList.remove('active');
+    });
     navSettings.classList.add('active');
     navSettings.disabled = true;
-    addLog('Switched to settings view');
+    debugLog('Switched to settings view');
+}
+function showLogsView() {
+    const mainView = document.getElementById('main-view');
+    const oscView = document.getElementById('osc-view');
+    const logsView = document.getElementById('logs-view');
+    const settingsView = document.getElementById('settings-view');
+    const voskView = document.getElementById('vosk-view');
+    const hyperateView = document.getElementById('Hyperate-view');
+    const navMain = document.getElementById('nav-main');
+    const navOsc = document.getElementById('nav-osc');
+    const navLogs = document.getElementById('nav-logs');
+    const navSettings = document.getElementById('nav-settings');
+    const navVosk = document.getElementById('nav-vosk');
+    const navHyperate = document.getElementById('nav-Hyperate');
+    [mainView, oscView, settingsView, voskView, hyperateView].forEach(view => {
+        if (view) {
+            view.style.opacity = '0';
+            setTimeout(() => view.style.display = 'none', 300);
+        }
+    });
+    setTimeout(() => {
+        logsView.style.display = 'block';
+        logsView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            logsView.style.opacity = '1';
+        });
+    }, 300);
+    [navMain, navOsc, navSettings].forEach(nav => {
+        nav.classList.remove('active');
+        nav.disabled = false;
+    });
+    [navVosk, navHyperate].forEach(nav => {
+        if (nav) nav.classList.remove('active');
+    });
+    navLogs.classList.add('active');
+    navLogs.disabled = true;
+    debugLog('Switched to logs view');
+}
+function setupExtrasDropdown() {
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle.nextElementSibling;
+    let isExpanded = false;
+    treeToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isExpanded = !isExpanded;
+        treeContent.classList.toggle('expanded');
+        treeToggle.classList.toggle('expanded');
+        treeToggle.querySelector('.arrow').textContent = isExpanded ? '▼' : '▶';
+    });
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.addEventListener('click', () => {
+            treeChildren.forEach(c => c.classList.remove('active'));
+            child.classList.add('active');
+        });
+    });
+    treeContent.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+}
+function showVOSKView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-vosk', 'nav-Hyperate', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const voskView = document.getElementById('vosk-view');
+        voskView.style.display = 'block';
+        voskView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            voskView.style.opacity = '1';
+        });
+    }, 300);
+    navButtons.forEach(nav => {
+        if (nav) {
+            nav.classList.remove('active');
+            nav.disabled = false;
+        }
+    });
+    const navVOSK = document.getElementById('nav-vosk');
+    navVOSK.classList.add('active');
+    navVOSK.disabled = true;
+    debugLog('Switched to VOSK view');
+}
+function showHyperateView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-vosk', 'nav-Hyperate', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const HyperateView = document.getElementById('Hyperate-view');
+        HyperateView.style.display = 'block';
+        HyperateView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            HyperateView.style.opacity = '1';
+        });
+    }, 300);
+    navButtons.forEach(nav => {
+        if (nav) {
+            nav.classList.remove('active');
+            nav.disabled = false;
+        }
+    });
+    const navHyperate = document.getElementById('nav-Hyperate');
+    navHyperate.classList.add('active');
+    navHyperate.disabled = true;
+    debugLog('Switched to Hyperate view');
 }
 function updateAppSettings() {
     const autoConnect = document.getElementById('auto-connect').value;
     const logLevel = document.getElementById('log-level').value;
     localStorage.setItem('autoConnect', autoConnect);
     localStorage.setItem('logLevel', logLevel);
-    addLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}`);
+    debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}`);
 }
 function loadAppSettings() {
     const autoConnect = localStorage.getItem('autoConnect') || 'false';
@@ -458,41 +512,35 @@ function loadAppSettings() {
     if (logLevelSelect) logLevelSelect.value = logLevel;
 }
 window.addEventListener('beforeunload', () => {
-    window.electronAPI.removeAllListeners('server-connection');
-    window.electronAPI.removeAllListeners('auth-required');
-    window.electronAPI.removeAllListeners('auth-success');
-    window.electronAPI.removeAllListeners('auth-failed');
-    window.electronAPI.removeAllListeners('user-avatar-info');
-    window.electronAPI.removeAllListeners('parameter-update');
     window.electronAPI.removeAllListeners('osc-received');
     window.electronAPI.removeAllListeners('osc-server-status');
-    window.electronAPI.removeAllListeners('server-error');
 });
-function addOscConnection() {
+function addOscConnection(type) {
     if (additionalOscConnections.length >= maxAdditionalConnections) {
-        addLog(`Maximum ${maxAdditionalConnections} additional connections allowed`, 'error');
+        debugLog(`Maximum ${maxAdditionalConnections} additional connections allowed`, 'error');
         return;
     }
     const newConnection = {
         id: Date.now().toString(),
-        incomingPort: null,
-        outgoingPort: null,
+        type: type,
+        port: null,
         address: '127.0.0.1',
-        enabled: true
+        enabled: true,
+        name: ''
     };
     additionalOscConnections.push(newConnection);
     renderAdditionalOscConnections();
-    addLog(`Added new OSC connection slot (${additionalOscConnections.length}/${maxAdditionalConnections})`);
+    debugLog(`Added new ${type} OSC connection slot (${additionalOscConnections.length}/${maxAdditionalConnections})`);
 }
 function removeOscConnection(id) {
     additionalOscConnections = additionalOscConnections.filter(conn => conn.id !== id);
     renderAdditionalOscConnections();
-    addLog(`Removed OSC connection`);
+    debugLog(`Removed OSC connection`);
 }
 function updateOscConnection(id, field, value) {
     const connection = additionalOscConnections.find(conn => conn.id === id);
     if (connection) {
-        if (field === 'incomingPort' || field === 'outgoingPort') {
+        if (field === 'port') {
             connection[field] = value ? parseInt(value) : null;
         } else {
             connection[field] = value;
@@ -501,64 +549,146 @@ function updateOscConnection(id, field, value) {
 }
 function renderAdditionalOscConnections() {
     const container = document.getElementById('additional-osc-connections');
-    const addBtn = document.getElementById('add-osc-btn');
+    const addIncomingBtn = document.getElementById('add-incoming-btn');
+    const addOutgoingBtn = document.getElementById('add-outgoing-btn');
     const countSpan = document.getElementById('connection-count');
     
-    if (!container || !addBtn || !countSpan) {
+    if (!container || !addIncomingBtn || !addOutgoingBtn || !countSpan) {
         console.warn('OSC connection elements not found in DOM');
         return;
     }
-    container.innerHTML = '';
-    additionalOscConnections.forEach(connection => {
-        const connectionDiv = document.createElement('div');
-        connectionDiv.className = 'osc-connection-item';
-        connectionDiv.style.cssText = `
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 15px;
-            margin-bottom: 10px;
-            background-color: #f8f9fa;
-        `;
-        connectionDiv.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h5 style="margin: 0; color: #2c3e50;">OSC Connection ${additionalOscConnections.indexOf(connection) + 1}</h5>
-                <button class="btn btn-danger" onclick="removeOscConnection('${connection.id}')" style="padding: 5px 10px; font-size: 12px;">Remove</button>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end;">
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label style="font-size: 0.9em;">Incoming Port</label>
-                    <input type="number" placeholder="e.g. 9040" value="${connection.incomingPort || ''}" 
-                           onchange="updateOscConnection('${connection.id}', 'incomingPort', this.value)"
-                           style="padding: 8px; font-size: 14px;">
-                </div>
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label style="font-size: 0.9em;">Outgoing Port</label>
-                    <input type="number" placeholder="e.g. 9041" value="${connection.outgoingPort || ''}" 
-                           onchange="updateOscConnection('${connection.id}', 'outgoingPort', this.value)"
-                           style="padding: 8px; font-size: 14px;">
-                </div>
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label style="font-size: 0.9em;">IP Address</label>
-                    <input type="text" value="${connection.address}" 
-                           onchange="updateOscConnection('${connection.id}', 'address', this.value)"
-                           style="padding: 8px; font-size: 14px;">
-                </div>
-                <div style="display: flex; align-items: center; margin-top: 20px;">
-                    <label style="font-size: 0.9em; margin-right: 5px;">Enabled</label>
-                    <input type="checkbox" ${connection.enabled ? 'checked' : ''} 
-                           onchange="updateOscConnection('${connection.id}', 'enabled', this.checked)">
-                </div>
-            </div>
-        `;
-        container.appendChild(connectionDiv);
-    });
-    addBtn.disabled = additionalOscConnections.length >= maxAdditionalConnections;
-    countSpan.textContent = `${additionalOscConnections.length}/${maxAdditionalConnections} additional connections`;
-    if (additionalOscConnections.length >= maxAdditionalConnections) {
-        addBtn.textContent = '+ Maximum Reached';
-        addBtn.className = 'btn btn-secondary';
-    } else {
-        addBtn.textContent = '+ Add OSC Connection';
-        addBtn.className = 'btn btn-success';
+    if (additionalOscConnections.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999; font-style: italic; padding: 40px;">No additional connections configured</p>';
+        countSpan.textContent = '0/20 additional connections';
+        return;
     }
+    container.innerHTML = '';
+    const incomingConnections = additionalOscConnections.filter(conn => conn.type === 'incoming');
+    const outgoingConnections = additionalOscConnections.filter(conn => conn.type === 'outgoing');
+    const columnsContainer = document.createElement('div');
+    columnsContainer.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 20px;';
+    const incomingColumn = document.createElement('div');
+    incomingColumn.style.cssText = 'min-height: 100px;';
+    const outgoingColumn = document.createElement('div');
+    outgoingColumn.style.cssText = 'min-height: 100px;';
+    const incomingHeader = document.createElement('h5');
+    incomingHeader.style.cssText = 'margin: 0 0 15px 0; color: #27ae60; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #27ae60;';
+    incomingHeader.innerHTML = '📥 Incoming <span style="font-size: 0.8em; margin-left: 10px; color: #666;">(' + incomingConnections.length + ')</span>';
+    incomingColumn.appendChild(incomingHeader);
+    const outgoingHeader = document.createElement('h5');
+    outgoingHeader.style.cssText = 'margin: 0 0 15px 0; color: #e74c3c; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #e74c3c;';
+    outgoingHeader.innerHTML = '📤 Outgoing <span style="font-size: 0.8em; margin-left: 10px; color: #666;">(' + outgoingConnections.length + ')</span>';
+    outgoingColumn.appendChild(outgoingHeader);
+    if (incomingConnections.length === 0) {
+        const emptyState = document.createElement('p');
+        emptyState.style.cssText = 'text-align: center; color: #999; font-style: italic; padding: 20px; border: 2px dashed #ddd; border-radius: 5px; margin-top: 10px;';
+        emptyState.textContent = 'No incoming connections';
+        incomingColumn.appendChild(emptyState);
+    } else {
+        incomingConnections.forEach((connection, index) => {
+            incomingColumn.appendChild(createConnectionElement(connection, index + 1, 'Incoming'));
+        });
+    }
+    if (outgoingConnections.length === 0) {
+        const emptyState = document.createElement('p');
+        emptyState.style.cssText = 'text-align: center; color: #999; font-style: italic; padding: 20px; border: 2px dashed #ddd; border-radius: 5px; margin-top: 10px;';
+        emptyState.textContent = 'No outgoing connections';
+        outgoingColumn.appendChild(emptyState);
+    } else {
+        outgoingConnections.forEach((connection, index) => {
+            outgoingColumn.appendChild(createConnectionElement(connection, index + 1, 'Outgoing'));
+        });
+    }
+    columnsContainer.appendChild(incomingColumn);
+    columnsContainer.appendChild(outgoingColumn);
+    container.appendChild(columnsContainer);
+    const maxReached = additionalOscConnections.length >= maxAdditionalConnections;
+    addIncomingBtn.disabled = maxReached;
+    addOutgoingBtn.disabled = maxReached;
+    countSpan.textContent = `${additionalOscConnections.length}/${maxAdditionalConnections} additional connections`;
+    if (maxReached) {
+        addIncomingBtn.textContent = '+ Maximum Reached';
+        addIncomingBtn.className = 'btn btn-secondary';
+        addOutgoingBtn.textContent = '+ Maximum Reached';
+        addOutgoingBtn.className = 'btn btn-secondary';
+    } else {
+        addIncomingBtn.textContent = '+ Add Incoming';
+        addIncomingBtn.className = 'btn btn-success';
+        addOutgoingBtn.textContent = '+ Add Outgoing';
+        addOutgoingBtn.className = 'btn btn-success';
+    }
+}
+function createConnectionElement(connection, index, typeLabel) {
+    const connectionDiv = document.createElement('div');
+    connectionDiv.className = 'osc-connection-item';
+    connectionDiv.style.cssText = `
+        border: 1px solid ${connection.type === 'incoming' ? '#27ae60' : '#e74c3c'};
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 15px;
+        background-color: ${connection.type === 'incoming' ? '#f8fff8' : '#fff8f8'};
+        transition: box-shadow 0.2s ease;
+    `;
+    connectionDiv.onmouseenter = () => {
+        connectionDiv.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+    };
+    connectionDiv.onmouseleave = () => {
+        connectionDiv.style.boxShadow = 'none';
+    };
+    const portLabel = connection.type === 'incoming' ? 'Listen Port' : 'Target Port';
+    const addressLabel = connection.type === 'incoming' ? 'Listen Address' : 'Target Address';
+    const defaultAddress = connection.type === 'incoming' ? '0.0.0.0' : '127.0.0.1';
+    if (!connection.address) {
+        connection.address = defaultAddress;
+    }
+    const statusBadge = connection.enabled ? 
+        '<span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Enabled</span>' :
+        '<span style="background: #95a5a6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Disabled</span>';
+    connectionDiv.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+            <div style="flex: 1;">
+                <h6 style="margin: 0 0 5px 0; color: #2c3e50; font-size: 0.95em;">
+                    ${connection.name || `Connection ${index}`}
+                </h6>
+                <div style="margin-bottom: 8px;">${statusBadge}</div>
+                <small style="color: #666; font-size: 0.8em; line-height: 1.3;">
+                    ${connection.type === 'incoming' ? '🔽 Receives OSC data' : '🔼 Sends OSC data'}
+                </small>
+            </div>
+            <button class="btn btn-danger" onclick="removeOscConnection('${connection.id}')" style="padding: 4px 12px; font-size: 12px;">Remove</button>
+        </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label style="font-size: 0.85em; font-weight: 600; color: #555;">Connection Name</label>
+                <input type="text" placeholder="e.g. TouchOSC, SteamVR.." value="${connection.name || ''}" 
+                       onchange="updateOscConnection('${connection.id}', 'name', this.value)"
+                       style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label style="font-size: 0.85em; font-weight: 600; color: #555;">${portLabel}</label>
+                <input type="number" placeholder="9040" value="${connection.port || ''}" 
+                       onchange="updateOscConnection('${connection.id}', 'port', this.value)"
+                       style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;"
+                       min="1" max="65535">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 0;">
+                <label style="font-size: 0.85em; font-weight: 600; color: #555;">${addressLabel}</label>
+                <input type="text" value="${connection.address}" 
+                       onchange="updateOscConnection('${connection.id}', 'address', this.value)"
+                       style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;"
+                       placeholder="${defaultAddress}">
+            </div>
+            
+            <div style="display: flex; align-items: center; margin-top: 5px;">
+                <input type="checkbox" ${connection.enabled ? 'checked' : ''} 
+                       onchange="updateOscConnection('${connection.id}', 'enabled', this.checked)"
+                       style="margin-right: 8px; transform: scale(1.1);">
+                <label style="font-size: 0.85em; font-weight: 600; color: #555; margin: 0;">Connection Active</label>
+            </div>
+        </div>
+    `;
+    return connectionDiv;
 }

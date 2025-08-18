@@ -11,6 +11,7 @@ class OscService extends EventEmitter {
     this.targetAddress = '127.0.0.1';
     this.parameters = {};
     this.additionalConnections = [];
+    this.forwardFromAdditionalToPrimary = true;
   }
   initialize(localPort = null, targetPort = 9000, targetAddress = '127.0.0.1') {
     this.targetPort = targetPort;
@@ -53,91 +54,106 @@ class OscService extends EventEmitter {
   }
   setAdditionalConnections(connections) {
     this.additionalConnections = connections || [];
+    console.log(`Setting up ${this.additionalConnections.length} additional OSC connections`);
     this.setupAdditionalPorts();
   }
   setupAdditionalPorts() {
     this.additionalPorts.forEach((portData, portId) => {
-      if (portData.incoming) {
+      if (portData.server) {
         try {
-          portData.incoming.close();
+          portData.server.close();
         } catch (err) {
-          console.warn(`Error closing additional incoming port ${portId}:`, err);
+          console.warn(`Error closing additional server ${portId}:`, err);
         }
       }
-      if (portData.outgoing) {
+      if (portData.client) {
         try {
-          portData.outgoing.close();
+          portData.client.close();
         } catch (err) {
-          console.warn(`Error closing additional outgoing port ${portId}:`, err);
+          console.warn(`Error closing additional client ${portId}:`, err);
         }
       }
     });
     this.additionalPorts.clear();
     this.additionalConnections.forEach(connection => {
-      if (!connection.enabled) return;
+      if (!connection.enabled || !connection.port) return;
       const portData = {};
-      if (connection.incomingPort) {
+      if (connection.type === 'incoming') {
         try {
-          portData.incoming = new osc.UDPPort({
-            localAddress: "0.0.0.0",
-            localPort: connection.incomingPort,
+          portData.server = new osc.UDPPort({
+            localAddress: connection.address || "0.0.0.0",
+            localPort: connection.port,
             metadata: true
           });
-          portData.incoming.on("ready", () => {
+          portData.server.on("ready", () => {
             this.emit('additionalPortReady', {
               connectionId: connection.id,
               type: 'incoming',
-              port: connection.incomingPort
+              port: connection.port,
+              address: connection.address,
+              name: connection.name
             });
           });
-          portData.incoming.on("message", (oscMsg) => {
+          portData.server.on("message", (oscMsg) => {
             this.handleIncomingMessage(oscMsg, connection.id);
           });
-          portData.incoming.on("error", (error) => {
+          portData.server.on("error", (error) => {
             this.emit('additionalPortError', {
               connectionId: connection.id,
               type: 'incoming',
-              port: connection.incomingPort,
+              port: connection.port,
+              name: connection.name,
               error
             });
           });
           if (this.isListening) {
-            portData.incoming.open();
+            portData.server.open();
           }
         } catch (error) {
           this.emit('additionalPortError', {
             connectionId: connection.id,
             type: 'incoming',
-            port: connection.incomingPort,
+            port: connection.port,
+            name: connection.name,
             error
           });
         }
-      }
-      if (connection.outgoingPort) {
+      } else if (connection.type === 'outgoing') {
         try {
-          portData.outgoing = new osc.UDPPort({
+          portData.client = new osc.UDPPort({
             localAddress: "0.0.0.0",
-            localPort: 0, // System assigned port
-            remoteAddress: connection.address,
-            remotePort: connection.outgoingPort,
+            localPort: 0, // Let system assign local port
+            remoteAddress: connection.address || '127.0.0.1',
+            remotePort: connection.port,
             metadata: true
           });
-          portData.outgoing.on("error", (error) => {
+          portData.client.on("ready", () => {
+            this.emit('additionalPortReady', {
+              connectionId: connection.id,
+              type: 'outgoing',
+              port: connection.port,
+              address: connection.address,
+              name: connection.name
+            });
+          });
+          portData.client.on("error", (error) => {
             this.emit('additionalPortError', {
               connectionId: connection.id,
               type: 'outgoing',
-              port: connection.outgoingPort,
+              port: connection.port,
+              name: connection.name,
               error
             });
           });
           if (this.isListening) {
-            portData.outgoing.open();
+            portData.client.open();
           }
         } catch (error) {
           this.emit('additionalPortError', {
             connectionId: connection.id,
             type: 'outgoing',
-            port: connection.outgoingPort,
+            port: connection.port,
+            name: connection.name,
             error
           });
         }
@@ -153,18 +169,18 @@ class OscService extends EventEmitter {
     try {
       this.primaryUdpPort.open();
       this.additionalPorts.forEach((portData) => {
-        if (portData.incoming) {
+        if (portData.server) {
           try {
-            portData.incoming.open();
+            portData.server.open();
           } catch (err) {
-            console.warn('Error opening additional incoming port:', err);
+            console.warn('Error opening additional server:', err);
           }
         }
-        if (portData.outgoing) {
+        if (portData.client) {
           try {
-            portData.outgoing.open();
+            portData.client.open();
           } catch (err) {
-            console.warn('Error opening additional outgoing port:', err);
+            console.warn('Error opening additional client:', err);
           }
         }
       });
@@ -183,18 +199,18 @@ class OscService extends EventEmitter {
       }
     }
     this.additionalPorts.forEach((portData) => {
-      if (portData.incoming) {
+      if (portData.server) {
         try {
-          portData.incoming.close();
+          portData.server.close();
         } catch (err) {
-          console.warn('Error closing additional incoming port:', err);
+          console.warn('Error closing additional server:', err);
         }
       }
-      if (portData.outgoing) {
+      if (portData.client) {
         try {
-          portData.outgoing.close();
+          portData.client.close();
         } catch (err) {
-          console.warn('Error closing additional outgoing port:', err);
+          console.warn('Error closing additional client:', err);
         }
       }
     });
@@ -216,6 +232,12 @@ class OscService extends EventEmitter {
         value = true;
       }
       this.parameters[address] = { value, type };
+      if (connectionId !== null && this.forwardFromAdditionalToPrimary && this.primaryUdpPort && this.isListening) {
+        try {
+          this.primaryUdpPort.send(oscMsg);
+        } catch (forwardError) {
+        }
+      }
       this.emit('messageReceived', {
         address: address,
         value: value,
@@ -227,21 +249,45 @@ class OscService extends EventEmitter {
       this.emit('error', error);
     }
   }
-  sendMessageToConnection(connectionId, address, value, type = 'f') {
+  sendMessageToConnection(connectionId, address, value, type = 'f', rawMessage = null) {
     const portData = this.additionalPorts.get(connectionId);
-    if (!portData || !portData.outgoing) {
-      this.emit('error', new Error(`Additional connection ${connectionId} not available for sending`));
+    if (!portData || !portData.client) {
+      this.emit('error', new Error(`Outgoing connection ${connectionId} not available for sending`));
+      return false;
+    }
+    if (typeof portData.client.isOpen === 'boolean' && !portData.client.isOpen) {
+      this.emit('error', new Error(`Outgoing connection ${connectionId} is not ready`));
       return false;
     }
     try {
-      const message = this.formatOscMessage(address, value, type);
-      portData.outgoing.send(message);
+      const message = rawMessage || this.formatOscMessage(address, value, type);
+      portData.client.send(message);
       this.emit('messageSent', { address, value, type, connectionId });
       return true;
     } catch (error) {
       this.emit('error', error);
       return false;
     }
+  }
+  broadcastToAllOutgoing(address, value, type = 'f') {
+    let successCount = 0;
+    const outgoingConnections = this.additionalConnections.filter(conn => 
+      conn.type === 'outgoing' && conn.enabled
+    );
+    const message = this.formatOscMessage(address, value, type);
+    outgoingConnections.forEach(connection => {
+      const portData = this.additionalPorts.get(connection.id);
+      if (portData && portData.client) {
+        try {
+          portData.client.send(message);
+          this.emit('messageSent', { address, value, type, connectionId: connection.id });
+          successCount++;
+        } catch (error) {
+          this.emit('error', error);
+        }
+      }
+    });
+    return successCount;
   }
   formatOscMessage(address, value, type) {
     let oscType = type;
@@ -283,16 +329,18 @@ class OscService extends EventEmitter {
   }
   sendMessage(address, value, type = 'f') {
     if (!this.primaryUdpPort || !this.isListening) {
+      console.warn('OSC service not running - cannot send message');
       this.emit('error', new Error('OSC service not running'));
       return false;
     }
     try {
       const message = this.formatOscMessage(address, value, type);
-      this.primaryUdpPort.send(message, this.targetAddress, this.targetPort);
+      this.primaryUdpPort.send(message);
       this.parameters[address] = { value: value, type: type };
       this.emit('messageSent', { address, value, type });
       return true;
     } catch (error) {
+      console.error('Error sending primary OSC message:', error);
       this.emit('error', error);
       return false;
     }
@@ -304,6 +352,13 @@ class OscService extends EventEmitter {
       this.primaryUdpPort.options.remoteAddress = targetAddress;
       this.primaryUdpPort.options.remotePort = targetPort;
     }
+  }
+  setForwardingEnabled(enabled) {
+    this.forwardFromAdditionalToPrimary = enabled;
+    console.log(`OSC forwarding from additional to primary connections: ${enabled ? 'enabled' : 'disabled'}`);
+  }
+  isForwardingEnabled() {
+    return this.forwardFromAdditionalToPrimary;
   }
   getConfig() {
     return {
@@ -336,15 +391,34 @@ class OscService extends EventEmitter {
     return startPort;
   }
   getStatus() {
-    return {
+    const status = {
       isListening: this.isListening,
       localPort: this.localPort,
       targetPort: this.targetPort,
       targetAddress: this.targetAddress,
       parameterCount: Object.keys(this.parameters).length,
       additionalConnections: this.additionalConnections.length,
-      activeAdditionalPorts: this.additionalPorts.size
+      activeAdditionalPorts: this.additionalPorts.size,
+      incomingConnections: this.additionalConnections.filter(c => c.type === 'incoming').length,
+      outgoingConnections: this.additionalConnections.filter(c => c.type === 'outgoing').length,
+      primaryPortReady: !!(this.primaryUdpPort && this.isListening),
+      forwardingEnabled: this.forwardFromAdditionalToPrimary,
+      additionalPortsDetails: []
     };
+    this.additionalPorts.forEach((portData, connectionId) => {
+      const connection = this.additionalConnections.find(c => c.id === connectionId);
+      status.additionalPortsDetails.push({
+        connectionId,
+        type: connection?.type,
+        name: connection?.name,
+        port: connection?.port,
+        address: connection?.address,
+        enabled: connection?.enabled,
+        hasServer: !!portData.server,
+        hasClient: !!portData.client
+      });
+    });
+    return status;
   }
 }
 module.exports = OscService;

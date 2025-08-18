@@ -1,0 +1,308 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #333;
+    height: 100vh;
+}
+::-webkit-scrollbar {
+    width: 10px;
+    background: #ecf0f1;
+}
+::-webkit-scrollbar-thumb {
+    background: #3498db;
+    border-radius: 5px;
+    transition: background 0.3s;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #2980b9;
+}
+::-webkit-scrollbar-track {
+    background: #f8f9fa;
+    border-radius: 5px;
+}
+::-webkit-scrollbar-corner {
+    background: #ecf0f1;
+    overflow: hidden;
+}
+.app-container {
+    display: flex;
+    height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    backdrop-filter: blur(10px);
+}
+.sidebar {
+    width: 300px;
+    background: #2c3e50;
+    color: white;
+    padding: 20px;
+    overflow-y: auto;
+}
+.main-content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+.header h1 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+}
+.status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+.status-connected { background-color: #27ae60; }
+.status-disconnected { background-color: #e74c3c; }
+.status-pending { background-color: #f39c12; }
+.card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+.form-group {
+    margin-bottom: 15px;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+.form-group input, .form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid #ecf0f1;
+    border-radius: 5px;
+    font-size: 14px;
+}
+.form-group input:focus, .form-group select:focus {
+    outline: none;
+    border-color: #3498db;
+}
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+.btn-primary {
+    background-color: #3498db;
+    color: white;
+}
+.btn-primary:hover {
+    background-color: #2980b9;
+}
+.btn-success {
+    background-color: #27ae60;
+    color: white;
+}
+.btn-danger {
+    background-color: #e74c3c;
+    color: white;
+}
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.parameter-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+.parameter-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid #ecf0f1;
+    border-radius: 5px;
+    margin-bottom: 5px;
+}
+.parameter-item:nth-child(even) {
+    background-color: #f8f9fa;
+}
+.log-container {
+    background: #1e1e1e;
+    color: #00ff00;
+    padding: 15px;
+    border-radius: 5px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    height: 200px;
+    overflow-y: auto;
+}
+.sidebar-section {
+    margin-bottom: 25px;
+}
+.sidebar-section h3 {
+    color: #ecf0f1;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 2px solid #34495e;
+}
+.connection-status {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.avatar-info {
+    background: #34495e;
+    padding: 15px;
+    border-radius: 5px;
+    margin-top: 10px;
+}
+.tabs {
+    display: flex;
+    margin-bottom: 20px;
+}
+.tab {
+    padding: 10px 20px;
+    background: #ecf0f1;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px 5px 0 0;
+    margin-right: 2px;
+}
+.tab.active {
+    background: #3498db;
+    color: white;
+}
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+.osc-sender {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr auto;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 15px;
+}
+.view-transition {
+    transition: opacity 0.3s ease-in-out;
+}
+.main-content {
+    opacity: 1;
+}
+.navigation-section .btn {
+    transition: all 0.2s ease;
+}
+.navigation-section .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+.navigation-section .btn.active, .navigation-section .btn:disabled {
+    background-color: #27973a;
+    color: #ffffff;
+    cursor: default;
+    box-shadow: none;
+    opacity: 0.85;
+}
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+.dropdown-content {
+    position: absolute;
+    z-index: 1000;
+    width: 100%;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    transition: all 0.2s ease;
+}
+.dropdown-content button {
+    margin: 2px 0;
+    transition: all 0.2s ease;
+}
+.dropdown-content button:hover {
+    background-color: #3498db !important;
+}
+.dropdown-toggle.active {
+    background-color: #2980b9;
+}
+.dropdown-content.show {
+    display: block !important;
+}
+.tree-view {
+    width: 100%;
+}
+.tree-item {
+    margin-bottom: 10px;
+}
+.tree-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, margin 0.4s ease-out;
+    margin: 0;
+}
+.tree-content.expanded {
+    max-height: 500px;
+    margin-top: 5px;
+}
+.tree-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+    background-color: #3498db;
+    color: white;
+    cursor: pointer;
+    transition: all 0.4s ease;
+    font-weight: 600;
+}
+.tree-toggle:hover {
+    background-color: #2980b9;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+.tree-toggle .arrow {
+    margin-right: 10px;
+    transition: transform 0.3s ease;
+    font-size: 12px;
+}
+.tree-toggle.expanded .arrow {
+    transform: rotate(0deg);
+}
+.tree-items {
+    padding-left: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.tree-child {
+    padding: 8px 15px;
+    background-color: #385f86;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.4s ease;
+    font-weight: 500;
+    text-align: left;
+    width: 100%;
+}
+.tree-child:hover {
+    background-color: #3498db;
+}
+.tree-child.active {
+    background-color: #349727;
+    cursor: default;
+}
