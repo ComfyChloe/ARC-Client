@@ -1,11 +1,6 @@
-let currentUser = null;
-let currentAvatar = null;
-let parameters = {};
-let isConnected = false;
-let isAuthenticated = false;
-let oscEnabled = false;
 let additionalOscConnections = [];
-let maxAdditionalConnections = 20; // Increased since we now have separate in/out
+let maxAdditionalConnections = 20;
+let oscEnabled = false;
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     loadAppSettings();
@@ -23,17 +18,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     navLogs.disabled = false;
     navSettings.classList.remove('active');
     navSettings.disabled = false;
-    addLog('Application initialized');
+    debugLog('Application initialized');
 });
 async function loadConfig() {
     try {
         const config = await window.electronAPI.getConfig();
-        document.getElementById('server-url-settings').value = config.serverUrl;
         document.getElementById('local-port-settings').value = config.localOscPort;
         document.getElementById('target-port-settings').value = config.targetOscPort;
         document.getElementById('target-address-settings').value = config.targetOscAddress;
-        
-        // Load additional OSC connections
         if (config.additionalOscConnections) {
             additionalOscConnections = config.additionalOscConnections;
             renderAdditionalOscConnections();
@@ -43,48 +35,6 @@ async function loadConfig() {
     }
 }
 function setupEventListeners() {
-    window.electronAPI.onServerConnection((data) => {
-        updateServerStatus(data.status);
-        if (data.status === 'connected') {
-            addLog('Connected to ARC-OSC Server');
-        } else {
-            addLog('Disconnected from ARC-OSC Server');
-            isConnected = false;
-            isAuthenticated = false;
-            updateUI();
-        }
-    });
-    window.electronAPI.onAuthRequired(() => {
-        addLog('Authentication required');
-    });
-    window.electronAPI.onAuthSuccess((data) => {
-        addLog(`Authentication successful: ${data.userId}`);
-        currentUser = data.userId;
-        isAuthenticated = true;
-        updateUI();
-        // Request current avatar info
-        window.electronAPI.getUserAvatar();
-        window.electronAPI.getParameters();
-    });
-    window.electronAPI.onAuthFailed((data) => {
-        addLog(`Authentication failed: ${data.message}`, 'error');
-        isAuthenticated = false;
-        updateUI();
-    });
-    window.electronAPI.onUserAvatarInfo((data) => {
-        currentAvatar = data.avatarId;
-        parameters = data.parameters || {};
-        updateAvatarDisplay();
-        updateParameterList();
-        addLog(`Avatar updated: ${data.avatarId || 'None'}`);
-    });
-    window.electronAPI.onParameterUpdate((data) => {
-        if (data.name && data.value !== undefined) {
-            parameters[data.name] = data.value;
-            updateParameterList();
-            debugLog(`Parameter updated: ${data.name} = ${data.value}`);
-        }
-    });
     window.electronAPI.onOscReceived((data) => {
         debugLog(`OSC Received: ${data.address} = ${data.value}`);
     });
@@ -102,40 +52,6 @@ function setupEventListeners() {
             debugLog(`OSC Server error: ${data.error}`, 'error');
         }
     });
-    window.electronAPI.onServerError((error) => {
-        addLog(`Server error: ${error.message}`, 'error');
-    });
-    document.getElementById('password').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            authenticate();
-        }
-    });
-    document.getElementById('osc-value').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            sendOscMessage();
-        }
-    });
-}
-function updateServerStatus(status) {
-    const indicator = document.getElementById('server-status');
-    const text = document.getElementById('server-status-text');
-    indicator.className = 'status-indicator';
-    switch (status) {
-        case 'connected':
-            indicator.classList.add('status-connected');
-            text.textContent = 'Connected';
-            isConnected = true;
-            break;
-        case 'disconnected':
-            indicator.classList.add('status-disconnected');
-            text.textContent = 'Disconnected';
-            isConnected = false;
-            break;
-        default:
-            indicator.classList.add('status-pending');
-            text.textContent = 'Connecting...';
-    }
-    updateUI();
 }
 function updateOscStatus(status, port) {
     const indicator = document.getElementById('osc-status');
@@ -188,38 +104,6 @@ function updateUI() {
         avatarSection.style.display = 'none';
     }
 }
-function updateAvatarDisplay() {
-    const avatarId = document.getElementById('avatar-id');
-    const paramCount = document.getElementById('parameter-count');
-    avatarId.textContent = currentAvatar || 'No avatar selected';
-    paramCount.textContent = `${Object.keys(parameters).length} parameters`;
-}
-function updateParameterList() {
-    const container = document.getElementById('parameter-list');
-    if (Object.keys(parameters).length === 0) {
-        container.innerHTML = '<p>No parameters available</p>';
-        return;
-    }
-    container.innerHTML = '';
-    Object.entries(parameters).forEach(([name, value]) => {
-        const item = document.createElement('div');
-        item.className = 'parameter-item';
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = name;
-        nameSpan.style.fontWeight = '600';
-        const valueSpan = document.createElement('span');
-        valueSpan.textContent = value;
-        valueSpan.style.fontFamily = 'monospace';
-        const typeSpan = document.createElement('span');
-        typeSpan.textContent = typeof value;
-        typeSpan.style.fontSize = '0.8em';
-        typeSpan.style.color = '#666';
-        item.appendChild(nameSpan);
-        item.appendChild(valueSpan);
-        item.appendChild(typeSpan);
-        container.appendChild(item);
-    });
-}
 async function updateConfig() {
     try {
         const config = {
@@ -245,7 +129,7 @@ async function updateOscPorts() {
         await window.electronAPI.setConfig(config);
         debugLog('Primary OSC configuration updated - OSC services will restart');
     } catch (error) {
-        addLog(`Error updating primary OSC configuration: ${error.message}`, 'error');
+        debugLog(`Error updating primary OSC configuration: ${error.message}`, 'error');
     }
 }
 
@@ -259,7 +143,7 @@ async function updateAdditionalOscConnections() {
         await window.electronAPI.setConfig(updatedConfig);
         debugLog(`Additional OSC connections updated - ${additionalOscConnections.length} connections configured`);
     } catch (error) {
-        addLog(`Error updating additional OSC connections: ${error.message}`, 'error');
+        debugLog(`Error updating additional OSC connections: ${error.message}`, 'error');
     }
 }
 async function toggleOscServer() {
@@ -383,9 +267,6 @@ function debugLog(message, type = 'info') {
 function clearLogs() {
     document.getElementById('log-container').innerHTML = '';
     debugLog('Logs cleared');
-}
-function updateConfigFromSettings() {
-    return updateConfig();
 }
 function updateOscPortsFromSettings() {
     return updateOscPorts();
@@ -641,15 +522,8 @@ function loadAppSettings() {
     if (logLevelSelect) logLevelSelect.value = logLevel;
 }
 window.addEventListener('beforeunload', () => {
-    window.electronAPI.removeAllListeners('server-connection');
-    window.electronAPI.removeAllListeners('auth-required');
-    window.electronAPI.removeAllListeners('auth-success');
-    window.electronAPI.removeAllListeners('auth-failed');
-    window.electronAPI.removeAllListeners('user-avatar-info');
-    window.electronAPI.removeAllListeners('parameter-update');
     window.electronAPI.removeAllListeners('osc-received');
     window.electronAPI.removeAllListeners('osc-server-status');
-    window.electronAPI.removeAllListeners('server-error');
 });
 function addOscConnection(type) {
     if (additionalOscConnections.length >= maxAdditionalConnections) {
