@@ -28,3 +28,4 @@ icons/
 .vscode
 package-lock.json
 dist/
+userdata/
