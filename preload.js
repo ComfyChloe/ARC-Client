@@ -1,7 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('get-config'),
+  getServerConfig: () => ipcRenderer.invoke('get-server-config'),
   setConfig: (config) => ipcRenderer.invoke('set-config', config),
+  getAppSettings: () => ipcRenderer.invoke('get-app-settings'),
+  setAppSettings: (settings) => ipcRenderer.invoke('set-app-settings', settings),
   enableOsc: () => ipcRenderer.invoke('enable-osc'),
   disableOsc: () => ipcRenderer.invoke('disable-osc'),
   getOscStatus: () => ipcRenderer.invoke('get-osc-status'),
@@ -40,6 +43,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onWebSocketServerMessage: (callback) => {
     ipcRenderer.on('websocket-server-message', (event, data) => callback(data));
+  },
+  onAppSettings: (callback) => {
+    ipcRenderer.on('app-settings', (event, data) => callback(data));
   },
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);

@@ -7,10 +7,11 @@ let isAuthenticated = false;
 let currentUser = null;
 let currentAvatar = null;
 let parameters = {};
+let appSettings = {};
 // Websocket connection states end
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
-    loadAppSettings();
+    await loadAppSettings();
     setupEventListeners();
     setupExtrasDropdown();
     const navMain = document.getElementById('nav-main');
@@ -29,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 async function loadConfig() {
     try {
-        const config = await window.electronAPI.getConfig();
+        const config = await window.electronAPI.getServerConfig();
         document.getElementById('local-port-settings').value = config.localOscPort;
         document.getElementById('target-port-settings').value = config.targetOscPort;
         document.getElementById('target-address-settings').value = config.targetOscAddress;
@@ -42,6 +43,7 @@ async function loadConfig() {
             additionalOscConnections = config.additionalOscConnections;
             renderAdditionalOscConnections();
         }
+        debugLog('Configuration loaded from saved settings');
     } catch (error) {
         debugLog(`Error loading config: ${error.message}`, 'error');
     }
@@ -62,6 +64,24 @@ function setupEventListeners() {
             debugLog(`OSC Server listening on port ${data.port}`);
         } else if (data.status === 'error') {
             debugLog(`OSC Server error: ${data.error}`, 'error');
+        }
+    });
+    // Handle app settings event from main process
+    window.electronAPI.onAppSettings((settings) => {
+        console.log('Received app settings from main process:', settings);
+        // Store for later use
+        appSettings = settings;
+        // Apply auto-connect setting if enabled
+        if (settings.autoConnect) {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            if (username && password) {
+                console.log('Auto-connect is enabled, attempting to connect...');
+                debugLog('Auto-connect enabled, attempting to connect automatically');
+                setTimeout(() => {
+                    authenticate();
+                }, 1000); // delay to load ui
+            }
         }
     });
     // WebSocket event listeners
@@ -119,6 +139,7 @@ function updateOscStatus(status, port) {
     const text = document.getElementById('osc-status-text');
     const toggleBtn = document.getElementById('osc-toggle-btn');
     indicator.className = 'status-indicator';
+    
     switch (status) {
         case 'connected':
             indicator.classList.add('status-connected');
@@ -208,10 +229,7 @@ async function updateConfig() {
 async function updateConfigFromSettings() {
     try {
         const config = {
-            websocketServerUrl: document.getElementById('server-url-settings').value,
-            localOscPort: parseInt(document.getElementById('local-port-settings').value),
-            targetOscPort: parseInt(document.getElementById('target-port-settings').value),
-            targetOscAddress: document.getElementById('target-address-settings').value
+            websocketServerUrl: document.getElementById('server-url-settings').value
         };
         await window.electronAPI.setConfig(config);
         debugLog('Server configuration updated');
@@ -222,7 +240,6 @@ async function updateConfigFromSettings() {
 async function updateOscPorts() {
     try {
         const config = {
-            serverUrl: document.getElementById('server-url-settings').value,
             localOscPort: parseInt(document.getElementById('local-port-settings').value),
             targetOscPort: parseInt(document.getElementById('target-port-settings').value),
             targetOscAddress: document.getElementById('target-address-settings').value
@@ -236,7 +253,7 @@ async function updateOscPorts() {
 
 async function updateAdditionalOscConnections() {
     try {
-        const currentConfig = await window.electronAPI.getConfig();
+        const currentConfig = await window.electronAPI.getServerConfig();
         const updatedConfig = {
             ...currentConfig,
             additionalOscConnections: additionalOscConnections
@@ -251,9 +268,11 @@ async function toggleOscServer() {
     try {
         if (oscEnabled) {
             await window.electronAPI.disableOsc();
+            oscEnabled = false;
             debugLog('OSC Server disabled');
         } else {
             await window.electronAPI.enableOsc();
+            oscEnabled = true;
             debugLog('OSC Server enabled');
         }
     } catch (error) {
@@ -664,20 +683,47 @@ function showHyperateView() {
     navHyperate.disabled = true;
     debugLog('Switched to Hyperate view');
 }
-function updateAppSettings() {
-    const autoConnect = document.getElementById('auto-connect').value;
-    const logLevel = document.getElementById('log-level').value;
-    localStorage.setItem('autoConnect', autoConnect);
-    localStorage.setItem('logLevel', logLevel);
-    debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}`);
+async function updateAppSettings() {
+    try {
+        const autoConnect = document.getElementById('auto-connect').value === 'true';
+        const logLevel = document.getElementById('log-level').value;
+        const enableOscOnStartup = document.getElementById('enable-osc-startup')?.value === 'true';
+        
+        const settings = {
+            autoConnect,
+            logLevel,
+            enableOscOnStartup
+        };
+        
+        await window.electronAPI.setAppSettings(settings);
+        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}`);
+    } catch (error) {
+        debugLog(`Error updating app settings: ${error.message}`, 'error');
+    }
 }
-function loadAppSettings() {
-    const autoConnect = localStorage.getItem('autoConnect') || 'false';
-    const logLevel = localStorage.getItem('logLevel') || 'info';
-    const autoConnectSelect = document.getElementById('auto-connect');
-    const logLevelSelect = document.getElementById('log-level');
-    if (autoConnectSelect) autoConnectSelect.value = autoConnect;
-    if (logLevelSelect) logLevelSelect.value = logLevel;
+async function loadAppSettings() {
+    try {
+        const settings = await window.electronAPI.getAppSettings();
+        const autoConnectSelect = document.getElementById('auto-connect');
+        const logLevelSelect = document.getElementById('log-level');
+        const enableOscStartupSelect = document.getElementById('enable-osc-startup');
+        
+        if (autoConnectSelect) {
+            autoConnectSelect.value = settings.autoConnect ? 'true' : 'false';
+        }
+        
+        if (logLevelSelect) {
+            logLevelSelect.value = settings.logLevel || 'info';
+        }
+        
+        if (enableOscStartupSelect) {
+            enableOscStartupSelect.value = settings.enableOscOnStartup ? 'true' : 'false';
+        }
+        
+        debugLog('Application settings loaded from saved config');
+    } catch (error) {
+        debugLog(`Error loading app settings: ${error.message}`, 'error');
+    }
 }
 window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('osc-received');
@@ -689,6 +735,7 @@ window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('websocket-avatar-change');
     window.electronAPI.removeAllListeners('websocket-parameter-update');
     window.electronAPI.removeAllListeners('websocket-server-message');
+    window.electronAPI.removeAllListeners('app-settings');
 });
 function addOscConnection(type) {
     if (additionalOscConnections.length >= maxAdditionalConnections) {
