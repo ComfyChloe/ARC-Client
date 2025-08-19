@@ -5,16 +5,19 @@ const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
 const logger = require('./utils/logger');
+const WebSocketManager = require('./utils/websocketManager');
 let mainWindow;
 let oscServer;
 let oscClient;
 let oscService;
 let oscEnabled = false;
+let wsManager;
 let serverConfig = {
   localOscPort: 9001,
   targetOscPort: 9000,
   targetOscAddress: '127.0.0.1',
-  additionalOscConnections: []
+  additionalOscConnections: [],
+  websocketServerUrl: 'ws://localhost:48255'
 };
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -51,6 +54,9 @@ function createWindow() {
         port: serverConfig.localOscPort 
       });
     }
+    sendToRenderer('websocket-status', {
+      status: 'disconnected'
+    });
   });
   mainWindow.webContents.on('crashed', () => {
     dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
@@ -60,6 +66,44 @@ function createWindow() {
     dialog.showErrorBox('Application Unresponsive', 'The application is not responding and will now close.');
     app.quit();
   });
+}
+function initWebSocket() {
+  if (!wsManager) {
+    wsManager = new WebSocketManager();
+    wsManager.setConfig({
+      serverUrl: serverConfig.websocketServerUrl
+    });
+    wsManager.on('connection-status', (data) => {
+      sendToRenderer('websocket-status', data);
+      if (data.status === 'connected') {
+        debug.logWebSocketConnection('Connected to WebSocket server');
+      } else if (data.status === 'disconnected') {
+        debug.logWebSocketConnection('Disconnected from WebSocket server');
+      }
+    });
+    wsManager.on('connection-error', (data) => {
+      sendToRenderer('websocket-error', data);
+      debug.logWebSocketConnection(`Connection error: ${data.error} (Attempt ${data.attempts}/${data.maxAttempts})`);
+    });
+    wsManager.on('authenticated', (data) => {
+      sendToRenderer('websocket-authenticated', data);
+      debug.logWebSocketConnection(`Authenticated as ${data.username} in room ${data.room}`);
+    });
+    wsManager.on('osc-data', (data) => {
+      sendToRenderer('websocket-osc-data', data);
+      debug.logWebSocketConnection(`Received OSC data: ${data.address} = ${data.value}`);
+    });
+    wsManager.on('avatar-change', (data) => {
+      sendToRenderer('websocket-avatar-change', data);
+      debug.logWebSocketConnection(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+    });
+    wsManager.on('parameter-update', (data) => {
+      sendToRenderer('websocket-parameter-update', data);
+    });
+    wsManager.on('server-message', (data) => {
+      sendToRenderer('websocket-server-message', data);
+    });
+  }
 }
 function initOscServer() {
   if (oscService) {
@@ -199,6 +243,58 @@ ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
 });
+ipcMain.handle('websocket-connect', async (event, credentials) => {
+  try {
+    initWebSocket();
+    const result = await wsManager.connect(credentials);
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('websocket-disconnect', () => {
+  try {
+    if (wsManager) {
+      const result = wsManager.disconnect();
+      return result;
+    }
+    return { success: true, message: 'Already disconnected' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('websocket-send-osc', (event, data) => {
+  try {
+    if (wsManager) {
+      return wsManager.sendOscData(data);
+    }
+    throw new Error('WebSocket not connected');
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('websocket-send-message', (event, eventName, data) => {
+  try {
+    if (wsManager) {
+      return wsManager.sendMessage(eventName, data);
+    }
+    throw new Error('WebSocket not connected');
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('websocket-get-status', () => {
+  if (wsManager) {
+    return wsManager.getStatus();
+  }
+  return {
+    isConnected: false,
+    isAuthenticated: false,
+    currentUser: null,
+    reconnectAttempts: 0,
+    serverUrl: serverConfig.websocketServerUrl
+  };
+});
 ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
@@ -221,6 +317,44 @@ ipcMain.handle('disable-osc', () => {
     port: serverConfig.localOscPort 
   });
 });
+function initWebSocket() {
+  if (!wsManager) {
+    wsManager = new WebSocketManager();
+    wsManager.setConfig({
+      serverUrl: serverConfig.websocketServerUrl
+    });
+    wsManager.on('connection-status', (data) => {
+      sendToRenderer('websocket-status', data);
+      if (data.status === 'connected') {
+        debug.logWebSocketConnection('Connected to WebSocket server');
+      } else if (data.status === 'disconnected') {
+        debug.logWebSocketConnection('Disconnected from WebSocket server');
+      }
+    });
+    wsManager.on('connection-error', (data) => {
+      sendToRenderer('websocket-error', data);
+      debug.logWebSocketConnection(`Connection error: ${data.error} (Attempt ${data.attempts}/${data.maxAttempts})`);
+    });
+    wsManager.on('authenticated', (data) => {
+      sendToRenderer('websocket-authenticated', data);
+      debug.logWebSocketConnection(`Authenticated as ${data.username} in room ${data.room}`);
+    });
+    wsManager.on('osc-data', (data) => {
+      sendToRenderer('websocket-osc-data', data);
+      debug.logWebSocketConnection(`Received OSC data: ${data.address} = ${data.value}`);
+    });
+    wsManager.on('avatar-change', (data) => {
+      sendToRenderer('websocket-avatar-change', data);
+      debug.logWebSocketConnection(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+    });
+    wsManager.on('parameter-update', (data) => {
+      sendToRenderer('websocket-parameter-update', data);
+    });
+    wsManager.on('server-message', (data) => {
+      sendToRenderer('websocket-server-message', data);
+    });
+  }
+}
 app.whenReady().then(() => {
   debug.logAppStartup();
   createWindow();
@@ -246,6 +380,7 @@ app.on('window-all-closed', () => {
   debug.logAppShutdown();
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
+  if (wsManager) wsManager.disconnect();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -254,6 +389,7 @@ app.on('before-quit', () => {
   debug.logAppShutdown('Application quit requested');
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
+  if (wsManager) wsManager.disconnect();
 });
 process.on('uncaughtException', (error) => {
   logger.logError(error);

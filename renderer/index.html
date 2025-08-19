@@ -51,11 +51,11 @@
                 <h3>Authentication</h3>
                 <div class="form-group">
                     <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Username</div>
-                    <input type="text" id="username">
+                    <input type="text" id="username" value="websocket-test">
                 </div>
                 <div class="form-group">
                     <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Password</div>
-                    <input type="password" id="password">
+                    <input type="password" id="password" value="test12">
                 </div>
                 <button class="btn btn-success" onclick="authenticate()" id="auth-btn">Connect & Login</button>
             </div>
@@ -88,7 +88,7 @@
                 <h3>Server Configuration</h3>
                 <div class="form-group">
                     <label for="server-url-settings">WebSocket Server URL</label>
-                    <input type="text" id="server-url-settings" value="wss://localhost:3000">
+                    <input type="text" id="server-url-settings" value="ws://localhost:48255">
                 </div>
                 <button class="btn btn-primary" onclick="updateConfigFromSettings()">Update Server Config</button>
             </div>
