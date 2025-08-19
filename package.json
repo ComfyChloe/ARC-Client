@@ -1,13 +1,14 @@
 {
   "name": "arc-osc-client",
-  "version": "0.22.8",
+  "version": "0.22.5",
   "author": "ComfyChloe",
   "description": "Standalone OSC Client for ARC-OSC",
   "main": "main.js",
   "private": false,
   "dependencies": {
     "naive-ui": "2.38.1",
-    "osc": "2.4.5"
+    "osc": "2.4.5",
+    "socket.io-client": "4.7.4"
   },
   "scripts": {
     "start": "electron .",

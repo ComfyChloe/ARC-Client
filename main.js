@@ -1,21 +1,24 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
-app.setPath('userData', path.join(process.cwd(), 'userdata'));
+const fs = require('fs');
+const userDataPath = path.join(process.cwd(), 'userdata');
+if (!fs.existsSync(userDataPath)) {
+    fs.mkdirSync(userDataPath, { recursive: true });
+}
+app.setPath('userData', userDataPath);
 const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
 const logger = require('./utils/logger');
+const WebSocketManager = require('./utils/websocketManager');
+const configManager = require('./utils/configManager');
 let mainWindow;
 let oscServer;
 let oscClient;
 let oscService;
 let oscEnabled = false;
-let serverConfig = {
-  localOscPort: 9001,
-  targetOscPort: 9000,
-  targetOscAddress: '127.0.0.1',
-  additionalOscConnections: []
-};
+let wsManager;
+let serverConfig = configManager.getServerConfig();
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -40,7 +43,9 @@ function createWindow() {
     mainWindow = null;
   });
   mainWindow.webContents.once('did-finish-load', () => {
-    if (oscEnabled && oscServer) {
+    const appSettings = configManager.getAppSettings();
+    sendToRenderer('app-settings', appSettings);
+    if (oscEnabled && oscService) {
       sendToRenderer('osc-server-status', { 
         status: 'connected', 
         port: serverConfig.localOscPort 
@@ -51,6 +56,9 @@ function createWindow() {
         port: serverConfig.localOscPort 
       });
     }
+    sendToRenderer('websocket-status', {
+      status: 'disconnected'
+    });
   });
   mainWindow.webContents.on('crashed', () => {
     dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
@@ -61,18 +69,59 @@ function createWindow() {
     app.quit();
   });
 }
+function initWebSocket() {
+  if (!wsManager) {
+    wsManager = new WebSocketManager();
+    wsManager.setConfig({
+      serverUrl: serverConfig.websocketServerUrl
+    });
+    wsManager.on('connection-status', (data) => {
+      sendToRenderer('websocket-status', data);
+      if (data.status === 'connected') {
+        debug.logWebSocketConnection('Connected to WebSocket server');
+      } else if (data.status === 'disconnected') {
+        debug.logWebSocketConnection('Disconnected from WebSocket server');
+      }
+    });
+    wsManager.on('connection-error', (data) => {
+      sendToRenderer('websocket-error', data);
+      debug.logWebSocketConnection(`Connection error: ${data.error} (Attempt ${data.attempts}/${data.maxAttempts})`);
+    });
+    wsManager.on('authenticated', (data) => {
+      sendToRenderer('websocket-authenticated', data);
+      debug.logWebSocketConnection(`Authenticated as ${data.username} in room ${data.room}`);
+    });
+    wsManager.on('osc-data', (data) => {
+      sendToRenderer('websocket-osc-data', data);
+      debug.logWebSocketConnection(`Received OSC data: ${data.address} = ${data.value}`);
+    });
+    wsManager.on('avatar-change', (data) => {
+      sendToRenderer('websocket-avatar-change', data);
+      debug.logWebSocketConnection(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+    });
+    wsManager.on('parameter-update', (data) => {
+      sendToRenderer('websocket-parameter-update', data);
+    });
+    wsManager.on('server-message', (data) => {
+      sendToRenderer('websocket-server-message', data);
+    });
+  }
+}
 function initOscServer() {
   if (oscService) {
+    debug.info('Stopping existing OSC service before reinitialization...');
     oscService.stop();
     global.oscService = null;
   }
   if (!oscEnabled) {
+    debug.info('OSC is disabled, not initializing server');
     sendToRenderer('osc-server-status', { 
       status: 'disabled', 
       port: serverConfig.localOscPort 
     });
     return;
   }
+  debug.info(`Initializing OSC service with port ${serverConfig.localOscPort}`);
   oscService = new OscService();
   oscService.on('ready', (config) => {
     debug.logOscServiceReady(config);
@@ -149,6 +198,9 @@ function sendToRenderer(channel, data) {
   }
 }
 ipcMain.handle('get-config', () => {
+  return configManager.getConfig();
+});
+ipcMain.handle('get-server-config', () => {
   return serverConfig;
 });
 ipcMain.handle('set-config', (event, newConfig) => {
@@ -160,9 +212,21 @@ ipcMain.handle('set-config', (event, newConfig) => {
     debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
   debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
+  configManager.updateConfig(serverConfig);
   initOscServer();
   initOscClient();
   return serverConfig;
+});
+ipcMain.handle('get-app-settings', () => {
+  return configManager.getAppSettings();
+});
+ipcMain.handle('set-app-settings', (event, newSettings) => {
+  const result = configManager.updateAppSettings(newSettings);
+  debug.info(`App settings updated: ${JSON.stringify(newSettings)}`);
+  if (!result) {
+    debug.error('Failed to save app settings to config file');
+  }
+  return configManager.getAppSettings();
 });
 ipcMain.handle('get-debug-stats', () => {
   return debug.getStats();
@@ -187,11 +251,65 @@ ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
 });
+ipcMain.handle('websocket-connect', async (event, credentials) => {
+  try {
+    initWebSocket();
+    const result = await wsManager.connect(credentials);
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('websocket-disconnect', () => {
+  try {
+    if (wsManager) {
+      const result = wsManager.disconnect();
+      return result;
+    }
+    return { success: true, message: 'Already disconnected' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('websocket-send-osc', (event, data) => {
+  try {
+    if (wsManager) {
+      return wsManager.sendOscData(data);
+    }
+    throw new Error('WebSocket not connected');
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('websocket-send-message', (event, eventName, data) => {
+  try {
+    if (wsManager) {
+      return wsManager.sendMessage(eventName, data);
+    }
+    throw new Error('WebSocket not connected');
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('websocket-get-status', () => {
+  if (wsManager) {
+    return wsManager.getStatus();
+  }
+  return {
+    isConnected: false,
+    isAuthenticated: false,
+    currentUser: null,
+    reconnectAttempts: 0,
+    serverUrl: serverConfig.websocketServerUrl
+  };
+});
 ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
+  debug.info('OSC explicitly enabled by user');
   initOscServer();
   initOscClient();
+  return { success: true, message: 'OSC enabled' };
 });
 ipcMain.handle('disable-osc', () => {
   oscEnabled = false;
@@ -209,18 +327,62 @@ ipcMain.handle('disable-osc', () => {
     port: serverConfig.localOscPort 
   });
 });
-app.whenReady().then(() => {
-  debug.logAppStartup();
-  createWindow();
-  if (oscEnabled) {
-    initOscServer();
-    initOscClient();
-  } else {
-    sendToRenderer('osc-server-status', { 
-      status: 'disabled', 
-      port: serverConfig.localOscPort 
+function initWebSocket() {
+  if (!wsManager) {
+    wsManager = new WebSocketManager();
+    wsManager.setConfig({
+      serverUrl: serverConfig.websocketServerUrl
+    });
+    wsManager.on('connection-status', (data) => {
+      sendToRenderer('websocket-status', data);
+      if (data.status === 'connected') {
+        debug.logWebSocketConnection('Connected to WebSocket server');
+      } else if (data.status === 'disconnected') {
+        debug.logWebSocketConnection('Disconnected from WebSocket server');
+      }
+    });
+    wsManager.on('connection-error', (data) => {
+      sendToRenderer('websocket-error', data);
+      debug.logWebSocketConnection(`Connection error: ${data.error} (Attempt ${data.attempts}/${data.maxAttempts})`);
+    });
+    wsManager.on('authenticated', (data) => {
+      sendToRenderer('websocket-authenticated', data);
+      debug.logWebSocketConnection(`Authenticated as ${data.username} in room ${data.room}`);
+    });
+    wsManager.on('osc-data', (data) => {
+      sendToRenderer('websocket-osc-data', data);
+      debug.logWebSocketConnection(`Received OSC data: ${data.address} = ${data.value}`);
+    });
+    wsManager.on('avatar-change', (data) => {
+      sendToRenderer('websocket-avatar-change', data);
+      debug.logWebSocketConnection(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+    });
+    wsManager.on('parameter-update', (data) => {
+      sendToRenderer('websocket-parameter-update', data);
+    });
+    wsManager.on('server-message', (data) => {
+      sendToRenderer('websocket-server-message', data);
     });
   }
+}
+app.whenReady().then(() => {
+  debug.logAppStartup();
+  const appSettings = configManager.getAppSettings();
+  oscEnabled = appSettings.enableOscOnStartup;
+  debug.info(`OSC startup state from config: ${oscEnabled ? 'enabled' : 'disabled'}`);
+  createWindow();
+  setTimeout(() => {
+    if (oscEnabled) {
+      debug.info('Starting OSC service based on saved config...');
+      initOscServer();
+      initOscClient();
+    } else {
+      sendToRenderer('osc-server-status', { 
+        status: 'disabled', 
+        port: serverConfig.localOscPort 
+      });
+    }
+  }, 500); // Short delay to ensure window is ready
   setTimeout(() => {
     debug.connectionTimeout();
   }, 30000); // Check after 30 seconds
@@ -234,6 +396,7 @@ app.on('window-all-closed', () => {
   debug.logAppShutdown();
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
+  if (wsManager) wsManager.disconnect();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -242,6 +405,7 @@ app.on('before-quit', () => {
   debug.logAppShutdown('Application quit requested');
   if (oscServer) oscServer.close();
   if (oscClient) oscClient.close();
+  if (wsManager) wsManager.disconnect();
 });
 process.on('uncaughtException', (error) => {
   logger.logError(error);

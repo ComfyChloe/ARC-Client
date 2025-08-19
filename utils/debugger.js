@@ -174,5 +174,8 @@ class Debugger {
       this.error('Failed to clear log file', err);
     }
   }
+  logWebSocketConnection(message) {
+    this.info(`[WebSocket] ${message}`);
+  }
 }
 module.exports = new Debugger();

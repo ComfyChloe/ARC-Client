@@ -1,9 +1,15 @@
 let additionalOscConnections = [];
 let maxAdditionalConnections = 20;
 let oscEnabled = false;
+let isConnected = false;
+let isAuthenticated = false;
+let currentUser = null;
+let currentAvatar = null;
+let parameters = {};
+let appSettings = {};
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
-    loadAppSettings();
+    await loadAppSettings();
     setupEventListeners();
     setupExtrasDropdown();
     const navMain = document.getElementById('nav-main');
@@ -22,14 +28,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 async function loadConfig() {
     try {
-        const config = await window.electronAPI.getConfig();
+        const config = await window.electronAPI.getServerConfig();
         document.getElementById('local-port-settings').value = config.localOscPort;
         document.getElementById('target-port-settings').value = config.targetOscPort;
         document.getElementById('target-address-settings').value = config.targetOscAddress;
+        const serverUrlInput = document.getElementById('server-url-settings');
+        if (serverUrlInput) {
+            serverUrlInput.value = config.websocketServerUrl || 'ws://localhost:48255';
+        }
         if (config.additionalOscConnections) {
             additionalOscConnections = config.additionalOscConnections;
             renderAdditionalOscConnections();
         }
+        debugLog('Configuration loaded from saved settings');
     } catch (error) {
         debugLog(`Error loading config: ${error.message}`, 'error');
     }
@@ -51,6 +62,69 @@ function setupEventListeners() {
         } else if (data.status === 'error') {
             debugLog(`OSC Server error: ${data.error}`, 'error');
         }
+    });
+    window.electronAPI.onAppSettings((settings) => {
+        console.log('Received app settings from main process:', settings);
+        appSettings = settings;
+        if (settings.autoConnect) {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            if (username && password) {
+                console.log('Auto-connect is enabled, attempting to connect...');
+                debugLog('Auto-connect enabled, attempting to connect automatically');
+                setTimeout(() => {
+                    authenticate();
+                }, 1000); 
+            }
+        }
+    });
+    window.electronAPI.onWebSocketStatus((data) => {
+        console.log('WebSocket status update:', data);
+        updateServerConnectionStatus(data.status);
+        if (data.status === 'connected') {
+            isConnected = true;
+            debugLog('Connected to WebSocket server');
+        } else if (data.status === 'disconnected') {
+            isConnected = false;
+            isAuthenticated = false;
+            currentUser = null;
+            currentAvatar = null;
+            parameters = {};
+            debugLog('Disconnected from WebSocket server');
+            updateUI();
+            updateAvatarDisplay();
+            updateParameterList();
+        }
+    });
+    window.electronAPI.onWebSocketError((data) => {
+        console.log('WebSocket error:', data);
+        debugLog(`WebSocket connection error: ${data.error} (Attempt ${data.attempts}/${data.maxAttempts})`, 'error');
+    });
+    window.electronAPI.onWebSocketAuthenticated((data) => {
+        console.log('WebSocket authenticated:', data);
+        isAuthenticated = true;
+        currentUser = { username: data.username };
+        debugLog(`Authenticated as ${data.username} in room ${data.room}`);
+        updateUI();
+        updateAvatarDisplay();
+        updateParameterList();
+    });
+    window.electronAPI.onWebSocketOscData((data) => {
+        debugLog(`WebSocket OSC: ${data.address} = ${data.value}`);
+    });
+    window.electronAPI.onWebSocketAvatarChange((data) => {
+        currentAvatar = data;
+        updateAvatarDisplay();
+        debugLog(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+    });
+    window.electronAPI.onWebSocketParameterUpdate((data) => {
+        if (data.parameters) {
+            parameters = { ...parameters, ...data.parameters };
+            updateParameterList();
+        }
+    });
+    window.electronAPI.onWebSocketServerMessage((data) => {
+        debugLog(`Server message: ${data.message || JSON.stringify(data)}`);
     });
 }
 function updateOscStatus(status, port) {
@@ -88,6 +162,32 @@ function updateOscStatus(status, port) {
             oscEnabled = false;
     }
 }
+function updateServerConnectionStatus(status) {
+    const indicator = document.getElementById('server-status');
+    const text = document.getElementById('server-status-text');
+    indicator.className = 'status-indicator';
+    switch (status) {
+        case 'connected':
+            indicator.classList.add('status-connected');
+            text.textContent = 'Connected';
+            break;
+        case 'disconnected':
+            indicator.classList.add('status-disconnected');
+            text.textContent = 'Disconnected';
+            break;
+        case 'connecting':
+            indicator.classList.add('status-connecting');
+            text.textContent = 'Connecting...';
+            break;
+        case 'error':
+            indicator.classList.add('status-disconnected');
+            text.textContent = 'Connection Error';
+            break;
+        default:
+            indicator.classList.add('status-disconnected');
+            text.textContent = 'Disconnected';
+    }
+}
 function updateUI() {
     const authBtn = document.getElementById('auth-btn');
     const authSection = document.getElementById('auth-section');
@@ -118,10 +218,20 @@ async function updateConfig() {
         debugLog(`Error updating config: ${error.message}`, 'error');
     }
 }
+async function updateConfigFromSettings() {
+    try {
+        const config = {
+            websocketServerUrl: document.getElementById('server-url-settings').value
+        };
+        await window.electronAPI.setConfig(config);
+        debugLog('Server configuration updated');
+    } catch (error) {
+        debugLog(`Error updating server config: ${error.message}`, 'error');
+    }
+}
 async function updateOscPorts() {
     try {
         const config = {
-            serverUrl: document.getElementById('server-url-settings').value,
             localOscPort: parseInt(document.getElementById('local-port-settings').value),
             targetOscPort: parseInt(document.getElementById('target-port-settings').value),
             targetOscAddress: document.getElementById('target-address-settings').value
@@ -134,7 +244,7 @@ async function updateOscPorts() {
 }
 async function updateAdditionalOscConnections() {
     try {
-        const currentConfig = await window.electronAPI.getConfig();
+        const currentConfig = await window.electronAPI.getServerConfig();
         const updatedConfig = {
             ...currentConfig,
             additionalOscConnections: additionalOscConnections
@@ -149,9 +259,11 @@ async function toggleOscServer() {
     try {
         if (oscEnabled) {
             await window.electronAPI.disableOsc();
+            oscEnabled = false;
             debugLog('OSC Server disabled');
         } else {
             await window.electronAPI.enableOsc();
+            oscEnabled = true;
             debugLog('OSC Server enabled');
         }
     } catch (error) {
@@ -171,12 +283,21 @@ async function authenticate() {
     }
     try {
         debugLog('Connecting to server...');
-        await window.electronAPI.connectServer();
-        setTimeout(async () => {
-            await window.electronAPI.authenticate({ username, password });
-        }, 1000);
+        updateServerConnectionStatus('connecting');
+        const result = await window.electronAPI.authenticate({ username, password });
+        if (result.success) {
+            isConnected = true;
+            isAuthenticated = true;
+            currentUser = result.user;
+            debugLog(`Successfully authenticated as ${username}`);
+            updateUI();
+        } else {
+            debugLog(`Authentication failed: ${result.error}`, 'error');
+            updateServerConnectionStatus('error');
+        }
     } catch (error) {
         debugLog(`Authentication error: ${error.message}`, 'error');
+        updateServerConnectionStatus('error');
     }
 }
 async function disconnect() {
@@ -190,16 +311,58 @@ async function disconnect() {
         updateUI();
         updateAvatarDisplay();
         updateParameterList();
-        addLog('Disconnected from server');
+        updateServerConnectionStatus('disconnected');
+        debugLog('Disconnected from server');
     } catch (error) {
-        addLog(`Disconnect error: ${error.message}`, 'error');
+        debugLog(`Disconnect error: ${error.message}`, 'error');
     }
 }
-async function sendOscMessage() {
+function updateAvatarDisplay() {
+    const avatarSection = document.getElementById('avatar-section');
+    const avatarInfo = document.getElementById('avatar-info');
+    const avatarId = document.getElementById('avatar-id');
+    const parameterCount = document.getElementById('parameter-count');
+    
+    if (isAuthenticated && currentAvatar) {
+        avatarSection.style.display = 'block';
+        avatarId.textContent = currentAvatar.avatarId || currentAvatar.name || 'Unknown Avatar';
+        const paramCount = Object.keys(parameters).length;
+        parameterCount.textContent = `${paramCount} parameters`;
+    } else if (isAuthenticated) {
+        avatarSection.style.display = 'block';
+        avatarId.textContent = 'No avatar detected';
+        parameterCount.textContent = '0 parameters';
+    } else {
+        avatarSection.style.display = 'none';
+    }
+}
+function updateParameterList() {
+    const parameterList = document.getElementById('parameter-list');
     if (!isAuthenticated) {
-        debugLog('Must be authenticated to send OSC messages', 'error');
+        parameterList.innerHTML = '<p>Connect and authenticate to view parameters</p>';
         return;
     }
+    if (Object.keys(parameters).length === 0) {
+        parameterList.innerHTML = '<p>No parameters detected. Make sure VRChat is running and avatar has parameters.</p>';
+        return;
+    }
+    parameterList.innerHTML = '';
+    Object.entries(parameters).forEach(([name, value]) => {
+        const paramDiv = document.createElement('div');
+        paramDiv.className = 'parameter-item';
+        paramDiv.style.cssText = 'display: flex; justify-content: space-between; padding: 8px; border: 1px solid #ddd; margin-bottom: 5px; border-radius: 3px; background: #f9f9f9;';
+        const nameSpan = document.createElement('span');
+        nameSpan.style.fontWeight = 'bold';
+        nameSpan.textContent = name;
+        const valueSpan = document.createElement('span');
+        valueSpan.style.color = '#666';
+        valueSpan.textContent = typeof value === 'number' ? value.toFixed(3) : value.toString();
+        paramDiv.appendChild(nameSpan);
+        paramDiv.appendChild(valueSpan);
+        parameterList.appendChild(paramDiv);
+    });
+}
+async function sendOscMessage() {
     const address = document.getElementById('osc-address').value;
     const value = document.getElementById('osc-value').value;
     const type = document.getElementById('osc-type').value;
@@ -226,12 +389,18 @@ async function sendOscMessage() {
                 parsedValue = value.toLowerCase() === 'true' || value === '1';
                 break;
         }
-        await window.electronAPI.sendOsc({
+        const oscData = {
             address,
             value: parsedValue,
             type
-        });
-        debugLog(`OSC Sent: ${address} = ${parsedValue} (${type})`);
+        };
+        if (isAuthenticated && isConnected) {
+            await window.electronAPI.sendOsc(oscData);
+            debugLog(`OSC Sent via WebSocket: ${address} = ${parsedValue} (${type})`);
+        } else {
+            await window.electronAPI.sendOsc(oscData);
+            debugLog(`OSC Sent locally: ${address} = ${parsedValue} (${type})`);
+        }
         document.getElementById('osc-address').value = '';
         document.getElementById('osc-value').value = '';
     } catch (error) {
@@ -496,24 +665,53 @@ function showHyperateView() {
     navHyperate.disabled = true;
     debugLog('Switched to Hyperate view');
 }
-function updateAppSettings() {
-    const autoConnect = document.getElementById('auto-connect').value;
-    const logLevel = document.getElementById('log-level').value;
-    localStorage.setItem('autoConnect', autoConnect);
-    localStorage.setItem('logLevel', logLevel);
-    debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}`);
+async function updateAppSettings() {
+    try {
+        const autoConnect = document.getElementById('auto-connect').value === 'true';
+        const logLevel = document.getElementById('log-level').value;
+        const enableOscOnStartup = document.getElementById('enable-osc-startup')?.value === 'true';
+        const settings = {
+            autoConnect,
+            logLevel,
+            enableOscOnStartup
+        };
+        await window.electronAPI.setAppSettings(settings);
+        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}`);
+    } catch (error) {
+        debugLog(`Error updating app settings: ${error.message}`, 'error');
+    }
 }
-function loadAppSettings() {
-    const autoConnect = localStorage.getItem('autoConnect') || 'false';
-    const logLevel = localStorage.getItem('logLevel') || 'info';
-    const autoConnectSelect = document.getElementById('auto-connect');
-    const logLevelSelect = document.getElementById('log-level');
-    if (autoConnectSelect) autoConnectSelect.value = autoConnect;
-    if (logLevelSelect) logLevelSelect.value = logLevel;
+async function loadAppSettings() {
+    try {
+        const settings = await window.electronAPI.getAppSettings();
+        const autoConnectSelect = document.getElementById('auto-connect');
+        const logLevelSelect = document.getElementById('log-level');
+        const enableOscStartupSelect = document.getElementById('enable-osc-startup');
+        if (autoConnectSelect) {
+            autoConnectSelect.value = settings.autoConnect ? 'true' : 'false';
+        }
+        if (logLevelSelect) {
+            logLevelSelect.value = settings.logLevel || 'info';
+        }
+        if (enableOscStartupSelect) {
+            enableOscStartupSelect.value = settings.enableOscOnStartup ? 'true' : 'false';
+        }
+        debugLog('Application settings loaded from saved config');
+    } catch (error) {
+        debugLog(`Error loading app settings: ${error.message}`, 'error');
+    }
 }
 window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('osc-received');
     window.electronAPI.removeAllListeners('osc-server-status');
+    window.electronAPI.removeAllListeners('websocket-status');
+    window.electronAPI.removeAllListeners('websocket-error');
+    window.electronAPI.removeAllListeners('websocket-authenticated');
+    window.electronAPI.removeAllListeners('websocket-osc-data');
+    window.electronAPI.removeAllListeners('websocket-avatar-change');
+    window.electronAPI.removeAllListeners('websocket-parameter-update');
+    window.electronAPI.removeAllListeners('websocket-server-message');
+    window.electronAPI.removeAllListeners('app-settings');
 });
 function addOscConnection(type) {
     if (additionalOscConnections.length >= maxAdditionalConnections) {
