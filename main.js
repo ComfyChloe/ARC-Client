@@ -98,7 +98,7 @@ function initWebSocket() {
     });
     wsManager.on('osc-data', (data) => {
       sendToRenderer('websocket-osc-data', data);
-      debug.logWebSocketConnection(`Received OSC data: ${data.address} = ${data.value}`);
+      // debug.logWebSocketConnection(`Received OSC data: ${data.address} = ${data.value}`);
       // Forward received OSC data to VRChat via normal OSC
       if (oscService && oscService.getStatus().isListening) {
         try {
@@ -113,7 +113,7 @@ function initWebSocket() {
           }
           const success = oscService.sendMessage(data.address, data.value, type);
           if (success) {
-            debug.logWebSocketConnection(`Forwarded WebSocket OSC to VRChat: ${data.address} = ${data.value} (${type})`);
+            // debug.logWebSocketConnection(`Forwarded WebSocket OSC to VRChat: ${data.address} = ${data.value} (${type})`);
           }
         } catch (error) {
           debug.logError(`Failed to forward WebSocket OSC to VRChat: ${error.message}`);
