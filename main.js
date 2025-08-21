@@ -160,23 +160,18 @@ function initOscServer() {
   });
   oscService.on('messageReceived', (data) => {
     debug.oscMessageReceived(data.address, data.value, data.type);
-    debug.info(`OSC message received: address=${data.address}, value=${data.value}, type=${data.type}`);
     // Always forward to WebSocket if connected
     const wsConnected = wsManager && wsManager.isConnected;
-    debug.info(`WebSocket forwarding check: wsConnected=${wsConnected}, wsManager=${!!wsManager}`);
     if (wsConnected) {
       try {
-        debug.info(`Attempting to forward OSC data: ${data.address} = ${data.value}`);
         const result = wsManager.sendOscData({
           address: data.address,
           value: data.value
         });
         debug.logWebSocketForwarding(`${data.address} = ${data.value} (result: ${JSON.stringify(result)})`);
       } catch (error) {
-        debug.logError(`Failed to forward OSC to WebSocket: ${error.message}`);
       }
     } else {
-      debug.info(`WebSocket forwarding skipped: connected=${wsConnected}`);
     }
     if (!data.connectionId && oscService) {
       oscService.broadcastToAllOutgoing(data.address, data.value, data.type);

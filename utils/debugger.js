@@ -178,7 +178,6 @@ class Debugger {
     this.info(`[WebSocket] ${message}`);
   }
   logWebSocketForwarding(message) {
-    this.info(`[WS Forward] ${message}`);
   }
 }
 module.exports = new Debugger();
