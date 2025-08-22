@@ -13,8 +13,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   disconnectServer: () => ipcRenderer.invoke('websocket-disconnect'),
   authenticate: (credentials) => ipcRenderer.invoke('websocket-connect', credentials),
   sendOsc: (data) => ipcRenderer.invoke('websocket-send-osc', data),
+  testWebSocketSend: () => ipcRenderer.invoke('websocket-test-send'),
   sendWebSocketMessage: (event, data) => ipcRenderer.invoke('websocket-send-message', event, data),
   getWebSocketStatus: () => ipcRenderer.invoke('websocket-get-status'),
+  getWebSocketForwardingStatus: () => ipcRenderer.invoke('websocket-get-forwarding-status'),
+  setWebSocketForwarding: (enabled) => ipcRenderer.invoke('websocket-set-forwarding', enabled),
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
   },
