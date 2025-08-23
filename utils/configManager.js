@@ -15,6 +15,7 @@ class ConfigManager {
       logLevel: 'info',
       appSettings: {
         enableOscOnStartup: false,
+        enableWebSocketForwarding: false,
       },
       // Version for future migration support
       configVersion: 1

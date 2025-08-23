@@ -177,5 +177,7 @@ class Debugger {
   logWebSocketConnection(message) {
     this.info(`[WebSocket] ${message}`);
   }
+  logWebSocketForwarding(message) {
+  }
 }
 module.exports = new Debugger();
