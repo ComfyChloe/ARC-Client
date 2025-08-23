@@ -1,13 +1,13 @@
 {
   "name": "arc-osc-client",
-  "version": "0.22.8",
+  "version": "0.28.0",
   "author": "ComfyChloe",
   "description": "Standalone OSC Client for ARC-OSC",
   "main": "main.js",
   "private": false,
   "dependencies": {
-    "naive-ui": "2.38.1",
-    "osc": "2.4.5"
+    "osc": "2.4.5",
+    "socket.io-client": "4.7.4"
   },
   "scripts": {
     "start": "electron .",
@@ -31,10 +31,24 @@
       "renderer/**/*",
       "utils/**/*",
       "package.json",
-      "node_modules/**/*"
+      "!node_modules/**/*.md",
+      "!node_modules/**/*.txt",
+      "!node_modules/**/LICENSE*",
+      "!node_modules/**/CHANGELOG*",
+      "!node_modules/**/README*",
+      "!node_modules/**/.npmignore",
+      "!node_modules/**/test/**",
+      "!node_modules/**/tests/**",
+      "!node_modules/**/docs/**",
+      "!node_modules/**/example/**",
+      "!node_modules/**/examples/**",
+      "!node_modules/**/*.d.ts",
+      "!node_modules/**/*.map"
     ],
+    "asar": true,
     "asarUnpack": [
-      "node_modules/**"
+      "**/node_modules/@serialport/**/*",
+      "**/node_modules/serialport/**/*"
     ],
     "extraResources": [
       "userdata"
@@ -42,6 +56,11 @@
     "win": {
       "target": "portable",
       "icon": "assets/icon.ico"
+    },
+    "compression": "maximum",
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   }
 }
