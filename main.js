@@ -20,6 +20,8 @@ let oscService;
 let oscEnabled = false;
 let wsManager;
 let serverConfig = configManager.getServerConfig();
+let isShuttingDown = false;
+let hasShownCriticalError = false;
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -63,12 +65,22 @@ function createWindow() {
     });
   });
   mainWindow.webContents.on('crashed', () => {
+    if (hasShownCriticalError) {
+      return;
+    }
+    hasShownCriticalError = true;
+    cleanup('renderer-crashed');
     dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
-    app.quit();
+    process.exit(1);
   });
   mainWindow.on('unresponsive', () => {
+    if (hasShownCriticalError) {
+      return;
+    }
+    hasShownCriticalError = true;
+    cleanup('renderer-unresponsive');
     dialog.showErrorBox('Application Unresponsive', 'The application is not responding and will now close.');
-    app.quit();
+    process.exit(1);
   });
 }
 function initWebSocket() {
@@ -250,15 +262,28 @@ ipcMain.handle('set-config', (event, newConfig) => {
   // Log changes to additional connections
   const oldConnections = oldConfig.additionalOscConnections || [];
   const newConnections = newConfig.additionalOscConnections || [];
-  
   if (oldConnections.length !== newConnections.length) {
     debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
-  
   debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
   // Save the updated config to file
   configManager.updateConfig(serverConfig);
-  
+  // Update WebSocket configuration if URL changed
+  if (newConfig.websocketServerUrl && oldConfig.websocketServerUrl !== newConfig.websocketServerUrl) {
+    debug.info(`WebSocket URL changed from ${oldConfig.websocketServerUrl} to ${newConfig.websocketServerUrl}`);
+    if (wsManager) {
+      const wasConnected = wsManager.isConnected;
+      if (wasConnected) {
+        debug.info('Disconnecting WebSocket to apply new URL...');
+        wsManager.disconnect();
+      }
+      // Update the WebSocket manager's configuration
+      wsManager.setConfig({
+        serverUrl: serverConfig.websocketServerUrl
+      });
+      debug.info(`WebSocket configuration updated to: ${serverConfig.websocketServerUrl}`);
+    }
+  }
   initOscServer();
   initOscClient();
   return serverConfig;
@@ -413,18 +438,27 @@ ipcMain.handle('enable-osc', () => {
 ipcMain.handle('disable-osc', () => {
   oscEnabled = false;
   debug.logOscServerStateChange(false);
-  if (oscService) {
-    oscService.stop();
-    global.oscService = null;
+  try {
+    if (oscService) {
+      oscService.stop();
+      global.oscService = null;
+    }
+  } catch (error) {
+    debug.logError(`Error stopping OSC service: ${error.message}`);
   }
-  if (oscServer) {
-    oscServer.close();
-    oscServer = undefined;
+  try {
+    if (oscServer) {
+      oscServer.close();
+      oscServer = undefined;
+    }
+  } catch (error) {
+    debug.logError(`Error closing OSC server: ${error.message}`);
   }
   sendToRenderer('osc-server-status', { 
     status: 'disabled', 
     port: serverConfig.localOscPort 
   });
+  return { success: true, message: 'OSC disabled' };
 });
 app.whenReady().then(() => {
   debug.logAppStartup();
@@ -461,28 +495,83 @@ app.whenReady().then(() => {
     }
   });
 });
+function cleanup(source = 'unknown') {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+  debug.logAppShutdown(`Cleanup initiated from: ${source}`);
+  try {
+    if (oscService) {
+      oscService.stop();
+      global.oscService = null;
+    }
+  } catch (error) {
+    debug.logError(`Error stopping OSC service: ${error.message}`);
+  }
+  try {
+    if (oscServer) {
+      oscServer.close();
+      oscServer = undefined;
+    }
+  } catch (error) {
+    debug.logError(`Error closing OSC server: ${error.message}`);
+  }
+  try {
+    if (oscClient) {
+      oscClient.close();
+      oscClient = undefined;
+    }
+  } catch (error) {
+    debug.logError(`Error closing OSC client: ${error.message}`);
+  }
+  try {
+    if (wsManager) {
+      wsManager.disconnect();
+      wsManager = undefined;
+    }
+  } catch (error) {
+    debug.logError(`Error disconnecting WebSocket: ${error.message}`);
+  }
+}
 app.on('window-all-closed', () => {
-  debug.logAppShutdown();
-  if (oscServer) oscServer.close();
-  if (oscClient) oscClient.close();
-  if (wsManager) wsManager.disconnect();
+  cleanup('window-all-closed');
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
-app.on('before-quit', () => {
-  debug.logAppShutdown('Application quit requested');
-  if (oscServer) oscServer.close();
-  if (oscClient) oscClient.close();
-  if (wsManager) wsManager.disconnect();
+app.on('before-quit', (event) => {
+  cleanup('before-quit');
 });
 process.on('uncaughtException', (error) => {
+  if (hasShownCriticalError) {
+    process.exit(1);
+    return;
+  }
+  hasShownCriticalError = true;
   logger.logError(error);
+  debug.logError(`Uncaught exception: ${error.message}`);
+  try {
+    cleanup('uncaught-exception');
+  } catch (cleanupError) {
+    debug.logError(`Error during cleanup: ${cleanupError.message}`);
+  }
   dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
-  app.quit();
+  process.exit(1);
 });
 process.on('unhandledRejection', (reason) => {
+  if (hasShownCriticalError) {
+    process.exit(1);
+    return;
+  }
+  hasShownCriticalError = true;
   logger.logError(reason);
+  debug.logError(`Unhandled rejection: ${reason}`);
+  try {
+    cleanup('unhandled-rejection');
+  } catch (cleanupError) {
+    debug.logError(`Error during cleanup: ${cleanupError.message}`);
+  }
   dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
-  app.quit();
+  process.exit(1);
 });
