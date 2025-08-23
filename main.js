@@ -10,7 +10,8 @@ app.setPath('userData', userDataPath);
 const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
-const logger = require('./utils/logger');
+// Logger will be loaded after app is ready
+let logger;
 const WebSocketManager = require('./utils/websocketManager');
 const configManager = require('./utils/configManager');
 let mainWindow;
@@ -217,7 +218,7 @@ function initOscServer() {
     });
   });
   oscService.on('error', (err) => {
-    const status = logger.handleOscError(err);
+    const status = logger ? logger.handleOscError(err) : { status: 'error', error: err.message };
     sendToRenderer('osc-server-status', status);
   });
   // Initialize and start the service
@@ -462,6 +463,10 @@ ipcMain.handle('disable-osc', () => {
 });
 app.whenReady().then(() => {
   debug.logAppStartup();
+  
+  // Load logger after app is ready
+  logger = require('./utils/logger');
+  
   // Get app settings from config
   const appSettings = configManager.getAppSettings();
   // Ensure serverConfig has appSettings
@@ -549,7 +554,9 @@ process.on('uncaughtException', (error) => {
     return;
   }
   hasShownCriticalError = true;
-  logger.logError(error);
+  if (logger) {
+    logger.logError(error);
+  }
   debug.logError(`Uncaught exception: ${error.message}`);
   try {
     cleanup('uncaught-exception');
@@ -565,7 +572,9 @@ process.on('unhandledRejection', (reason) => {
     return;
   }
   hasShownCriticalError = true;
-  logger.logError(reason);
+  if (logger) {
+    logger.logError(reason);
+  }
   debug.logError(`Unhandled rejection: ${reason}`);
   try {
     cleanup('unhandled-rejection');
