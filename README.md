@@ -49,7 +49,7 @@ Configure VRChat to send OSC data to the client:
 
 ### Client Configuration
 
-1. **Server URL**: Point to your ARC-OSC server (e.g., `ws://localhost:3000`)
+1. **Server URL**: Point to your ARC-OSC server (e.g., `wss://localhost:48255`)
 2. **Local OSC Port**: Port for receiving from VRChat (default: 9001)
 3. **Target OSC Port**: Port for sending to VRChat (default: 9000)
 4. **Target Address**: VRChat's IP address (usually 127.0.0.1)
