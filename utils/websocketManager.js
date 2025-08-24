@@ -6,7 +6,7 @@ class WebSocketManager {
         this.isAuthenticated = false;
         this.currentUser = null;
         this.connectionConfig = {
-            serverUrl: 'ws://localhost:48255',
+            serverUrl: 'wss://avatar.comfychloe.uk:48255',
             autoReconnect: true,
             reconnectDelay: 3000,
             maxReconnectAttempts: 5
@@ -33,7 +33,10 @@ class WebSocketManager {
                 autoConnect: false,
                 reconnection: this.connectionConfig.autoReconnect,
                 reconnectionDelay: this.connectionConfig.reconnectDelay,
-                reconnectionAttempts: this.connectionConfig.maxReconnectAttempts
+                reconnectionAttempts: this.connectionConfig.maxReconnectAttempts,
+                // SSL/TLS configuration for WSS
+                secure: socketUrl.startsWith('wss://'),
+                rejectUnauthorized: true // Validate SSL certificates
             });
             await this.setupEventHandlers();
             return new Promise((resolve, reject) => {
