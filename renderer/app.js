@@ -1,6 +1,7 @@
 let additionalOscConnections = [];
 let maxAdditionalConnections = 20;
 let oscEnabled = false;
+let wsForwardingEnabled = false;
 // WebSocket connection state
 let isConnected = false;
 let isAuthenticated = false;
@@ -71,6 +72,9 @@ function setupEventListeners() {
         console.log('Received app settings from main process:', settings);
         // Store for later use
         appSettings = settings;
+        // Initialize WebSocket forwarding status
+        wsForwardingEnabled = settings.enableWebSocketForwarding || false;
+        updateWebSocketForwardingStatus(wsForwardingEnabled);
         // Apply auto-connect setting if enabled
         if (settings.autoConnect) {
             const username = document.getElementById('username').value;
@@ -168,6 +172,28 @@ function updateOscStatus(status, port) {
             toggleBtn.textContent = 'Enable OSC';
             toggleBtn.className = 'btn btn-primary';
             oscEnabled = false;
+    }
+}
+function updateWebSocketForwardingStatus(enabled) {
+    const indicator = document.getElementById('ws-forwarding-status');
+    const text = document.getElementById('ws-forwarding-status-text');
+    const toggleBtn = document.getElementById('ws-forwarding-toggle-btn');
+    if (!indicator || !text || !toggleBtn) {
+        return; // Elements not found, skip update
+    }
+    indicator.className = 'status-indicator';
+    if (enabled) {
+        indicator.classList.add('status-connected');
+        text.textContent = 'ARC Server Transmit: Enabled';
+        toggleBtn.textContent = 'Disable ARC Server Transmit';
+        toggleBtn.className = 'btn btn-danger';
+        wsForwardingEnabled = true;
+    } else {
+        indicator.classList.add('status-disconnected');
+        text.textContent = 'ARC Server Transmit: Disabled';
+        toggleBtn.textContent = 'Enable ARC Server Transmit';
+        toggleBtn.className = 'btn btn-primary';
+        wsForwardingEnabled = false;
     }
 }
 function updateServerConnectionStatus(status) {
@@ -277,6 +303,21 @@ async function toggleOscServer() {
         }
     } catch (error) {
         debugLog(`Error toggling OSC server: ${error.message}`, 'error');
+    }
+}
+async function toggleWebSocketForwarding() {
+    try {
+        const newState = !wsForwardingEnabled;
+        const result = await window.electronAPI.setWebSocketForwarding(newState);
+        if (result.success) {
+            wsForwardingEnabled = result.enabled;
+            updateWebSocketForwardingStatus(wsForwardingEnabled);
+            debugLog(`ARC Server transmit ${wsForwardingEnabled ? 'enabled' : 'disabled'}`);
+        } else {
+            debugLog(`Error toggling ARC Server transmit: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error toggling ARC Server transmit: ${error.message}`, 'error');
     }
 }
 async function authenticate() {
@@ -719,6 +760,10 @@ async function loadAppSettings() {
         if (enableOscStartupSelect) {
             enableOscStartupSelect.value = settings.enableOscOnStartup ? 'true' : 'false';
         }
+        
+        // Initialize WebSocket forwarding status from settings
+        wsForwardingEnabled = settings.enableWebSocketForwarding || false;
+        updateWebSocketForwardingStatus(wsForwardingEnabled);
         
         debugLog('Application settings loaded from saved config');
     } catch (error) {

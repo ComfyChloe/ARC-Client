@@ -73,14 +73,16 @@ class ConfigManager {
       targetOscPort: this.config.targetOscPort,
       targetOscAddress: this.config.targetOscAddress,
       additionalOscConnections: this.config.additionalOscConnections || [],
-      websocketServerUrl: this.config.websocketServerUrl
+      websocketServerUrl: this.config.websocketServerUrl,
+      appSettings: this.config.appSettings || {}
     };
   }
   getAppSettings() {
     return {
       autoConnect: this.config.autoConnect || false,
       logLevel: this.config.logLevel || 'info',
-      enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false
+      enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false,
+      enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false
     };
   }
   updateAppSettings(settings) {

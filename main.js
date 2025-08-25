@@ -151,6 +151,7 @@ function initOscServer() {
   if (oscService) {
     debug.info('Stopping existing OSC service before reinitialization...');
     oscService.stop();
+    oscService = null;
     global.oscService = null;
   }
   if (!oscEnabled) {
@@ -173,9 +174,10 @@ function initOscServer() {
   });
   oscService.on('messageReceived', (data) => {
     debug.oscMessageReceived(data.address, data.value, data.type);
-    // Always forward to WebSocket if connected
+    // Only forward to WebSocket if both OSC and WebSocket forwarding are enabled
     const wsConnected = wsManager && wsManager.isConnected;
-    if (wsConnected) {
+    const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
+    if (wsConnected && wsForwardingEnabled) {
       try {
         const result = wsManager.sendOscData({
           address: data.address,
@@ -183,8 +185,12 @@ function initOscServer() {
         });
         debug.logWebSocketForwarding(`${data.address} = ${data.value} (result: ${JSON.stringify(result)})`);
       } catch (error) {
+        debug.logError(`Failed to forward OSC to WebSocket: ${error.message}`);
       }
     } else {
+      if (wsConnected && !wsForwardingEnabled) {
+        // debug.logWebSocketForwarding(`WebSocket forwarding disabled - not forwarding: ${data.address}`);
+      }
     }
     if (!data.connectionId && oscService) {
       oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
@@ -431,6 +437,17 @@ ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
   debug.info('OSC explicitly enabled by user');
+  // Ensure any existing service is properly cleaned up before creating new one
+  if (oscService) {
+    debug.info('Cleaning up existing OSC service before enabling...');
+    try {
+      oscService.stop();
+      oscService = null;
+      global.oscService = null;
+    } catch (error) {
+      debug.logError(`Error cleaning up existing OSC service: ${error.message}`);
+    }
+  }
   // Force initialization of OSC service
   initOscServer();
   initOscClient();
@@ -441,7 +458,9 @@ ipcMain.handle('disable-osc', () => {
   debug.logOscServerStateChange(false);
   try {
     if (oscService) {
+      debug.info('Stopping OSC service and all additional connections...');
       oscService.stop();
+      oscService = null;
       global.oscService = null;
     }
   } catch (error) {
@@ -450,15 +469,24 @@ ipcMain.handle('disable-osc', () => {
   try {
     if (oscServer) {
       oscServer.close();
-      oscServer = undefined;
+      oscServer = null;
     }
   } catch (error) {
     debug.logError(`Error closing OSC server: ${error.message}`);
+  }
+  try {
+    if (oscClient) {
+      oscClient.close();
+      oscClient = null;
+    }
+  } catch (error) {
+    debug.logError(`Error closing OSC client: ${error.message}`);
   }
   sendToRenderer('osc-server-status', { 
     status: 'disabled', 
     port: serverConfig.localOscPort 
   });
+  debug.info('OSC service fully disabled - all connections closed');
   return { success: true, message: 'OSC disabled' };
 });
 app.whenReady().then(() => {
@@ -472,6 +500,9 @@ app.whenReady().then(() => {
   // Ensure serverConfig has appSettings
   if (!serverConfig.appSettings) {
     serverConfig.appSettings = appSettings || {};
+  } else {
+    // Merge app settings to ensure all settings are available
+    serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
   // Initialize OSC server based on config
   oscEnabled = appSettings.enableOscOnStartup;
@@ -509,6 +540,7 @@ function cleanup(source = 'unknown') {
   try {
     if (oscService) {
       oscService.stop();
+      oscService = null;
       global.oscService = null;
     }
   } catch (error) {
@@ -517,7 +549,7 @@ function cleanup(source = 'unknown') {
   try {
     if (oscServer) {
       oscServer.close();
-      oscServer = undefined;
+      oscServer = null;
     }
   } catch (error) {
     debug.logError(`Error closing OSC server: ${error.message}`);
@@ -525,7 +557,7 @@ function cleanup(source = 'unknown') {
   try {
     if (oscClient) {
       oscClient.close();
-      oscClient = undefined;
+      oscClient = null;
     }
   } catch (error) {
     debug.logError(`Error closing OSC client: ${error.message}`);
@@ -533,7 +565,7 @@ function cleanup(source = 'unknown') {
   try {
     if (wsManager) {
       wsManager.disconnect();
-      wsManager = undefined;
+      wsManager = null;
     }
   } catch (error) {
     debug.logError(`Error disconnecting WebSocket: ${error.message}`);

@@ -210,6 +210,7 @@ class OscService extends EventEmitter {
   }
   
   stop() {
+    // Stop primary port
     if (this.primaryUdpPort && this.isListening && this.primaryUdpPort._handle) {
       try {
         this.primaryUdpPort.close();
@@ -220,20 +221,24 @@ class OscService extends EventEmitter {
       }
     }
     
-    // Stop additional ports
-    this.additionalPorts.forEach((portData) => {
-      if (portData.server && portData.server._handle) {
+    // Stop and clean up all additional ports
+    this.additionalPorts.forEach((portData, connectionId) => {
+      if (portData.server) {
         try {
-          portData.server.close();
+          if (portData.server._handle) {
+            portData.server.close();
+          }
         } catch (err) {
           if (err.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
             console.error('Error closing additional server:', err);
           }
         }
       }
-      if (portData.client && portData.client._handle) {
+      if (portData.client) {
         try {
-          portData.client.close();
+          if (portData.client._handle) {
+            portData.client.close();
+          }
         } catch (err) {
           if (err.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
             console.error('Error closing additional client:', err);
@@ -241,9 +246,14 @@ class OscService extends EventEmitter {
         }
       }
     });
+    // Clear the additional ports map to ensure they're fully cleaned up
+    this.additionalPorts.clear();
+    // Reset the primary UDP port to null to ensure it's fully cleaned up
+    this.primaryUdpPort = null;
     
     this.isListening = false;
     this.emit('stopped');
+    console.log('OSC Service stopped - all connections closed');
     return true;
   }
   
