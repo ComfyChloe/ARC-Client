@@ -10,6 +10,7 @@ class WebSocketManager {
             autoReconnect: true,
             reconnectDelay: 3000,
             maxReconnectAttempts: 5
+            // For development with self-signed certificates, add: rejectUnauthorized: false
         };
         this.reconnectAttempts = 0;
         this.eventHandlers = new Map();
@@ -34,9 +35,10 @@ class WebSocketManager {
                 reconnection: this.connectionConfig.autoReconnect,
                 reconnectionDelay: this.connectionConfig.reconnectDelay,
                 reconnectionAttempts: this.connectionConfig.maxReconnectAttempts,
-                // SSL/TLS configuration for WSS
                 secure: socketUrl.startsWith('wss://'),
-                rejectUnauthorized: true // Validate SSL certificates
+                rejectUnauthorized: true,
+                forceNew: true
+                // For development with self-signed certificates, pass rejectUnauthorized: false in connectionConfig
             });
             await this.setupEventHandlers();
             return new Promise((resolve, reject) => {
@@ -58,6 +60,17 @@ class WebSocketManager {
                     clearTimeout(timeout);
                     this.isConnected = false;
                     this.isAuthenticated = false;
+                    console.error('WebSocket connection error details:', {
+                        message: error.message,
+                        type: error.type,
+                        description: error.description,
+                        context: error.context,
+                        req: error.req ? {
+                            url: error.req.url,
+                            method: error.req.method,
+                            headers: error.req.headers
+                        } : undefined
+                    });
                     reject(new Error(`Connection failed: ${error.message}`));
                 });
                 this.socket.connect();
@@ -88,6 +101,12 @@ class WebSocketManager {
             this.isConnected = false;
             this.isAuthenticated = false;
             this.reconnectAttempts++;
+            console.error('WebSocket connection error:', {
+                message: error.message,
+                attempts: this.reconnectAttempts,
+                maxAttempts: this.connectionConfig.maxReconnectAttempts,
+                serverUrl: this.connectionConfig.serverUrl
+            });
             this.emit('connection-error', { 
                 error: error.message,
                 attempts: this.reconnectAttempts,
