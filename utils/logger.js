@@ -1,13 +1,14 @@
 const path = require('path');
 const fs = require('fs');
+const { app } = require('electron');
 class Logger {
   constructor() {
-    this.logDir = path.join(__dirname, '..', 'logs');
+    this.logDir = path.join(app.getPath('userData'), 'logs');
     this.ensureLogDirectory();
   }
   ensureLogDirectory() {
     if (!fs.existsSync(this.logDir)) {
-      fs.mkdirSync(this.logDir);
+      fs.mkdirSync(this.logDir, { recursive: true });
     }
   }
   logError(error) {

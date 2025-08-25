@@ -6,7 +6,7 @@ class WebSocketManager {
         this.isAuthenticated = false;
         this.currentUser = null;
         this.connectionConfig = {
-            serverUrl: 'ws://localhost:48255',
+            serverUrl: 'wss://avatar.comfychloe.uk:48255',
             autoReconnect: true,
             reconnectDelay: 3000,
             maxReconnectAttempts: 5
@@ -33,7 +33,10 @@ class WebSocketManager {
                 autoConnect: false,
                 reconnection: this.connectionConfig.autoReconnect,
                 reconnectionDelay: this.connectionConfig.reconnectDelay,
-                reconnectionAttempts: this.connectionConfig.maxReconnectAttempts
+                reconnectionAttempts: this.connectionConfig.maxReconnectAttempts,
+                secure: socketUrl.startsWith('wss://'),
+                rejectUnauthorized: true,
+                forceNew: true
             });
             await this.setupEventHandlers();
             return new Promise((resolve, reject) => {
@@ -55,6 +58,17 @@ class WebSocketManager {
                     clearTimeout(timeout);
                     this.isConnected = false;
                     this.isAuthenticated = false;
+                    console.error('WebSocket connection error details:', {
+                        message: error.message,
+                        type: error.type,
+                        description: error.description,
+                        context: error.context,
+                        req: error.req ? {
+                            url: error.req.url,
+                            method: error.req.method,
+                            headers: error.req.headers
+                        } : undefined
+                    });
                     reject(new Error(`Connection failed: ${error.message}`));
                 });
                 this.socket.connect();
@@ -85,6 +99,12 @@ class WebSocketManager {
             this.isConnected = false;
             this.isAuthenticated = false;
             this.reconnectAttempts++;
+            console.error('WebSocket connection error:', {
+                message: error.message,
+                attempts: this.reconnectAttempts,
+                maxAttempts: this.connectionConfig.maxReconnectAttempts,
+                serverUrl: this.connectionConfig.serverUrl
+            });
             this.emit('connection-error', { 
                 error: error.message,
                 attempts: this.reconnectAttempts,

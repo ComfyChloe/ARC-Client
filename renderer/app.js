@@ -34,7 +34,7 @@ async function loadConfig() {
         document.getElementById('target-address-settings').value = config.targetOscAddress;
         const serverUrlInput = document.getElementById('server-url-settings');
         if (serverUrlInput) {
-            serverUrlInput.value = config.websocketServerUrl || 'ws://localhost:48255';
+            serverUrlInput.value = config.websocketServerUrl || 'wss://avatar.comfychloe.uk:48255';
         }
         if (config.additionalOscConnections) {
             additionalOscConnections = config.additionalOscConnections;
