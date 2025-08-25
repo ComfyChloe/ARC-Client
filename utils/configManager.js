@@ -10,7 +10,7 @@ class ConfigManager {
       targetOscPort: 9000,
       targetOscAddress: '127.0.0.1',
       additionalOscConnections: [],
-      websocketServerUrl: 'ws://localhost:48255',
+      websocketServerUrl: 'wss://avatar.comfychloe.uk:48255',
       autoConnect: false,
       logLevel: 'info',
       appSettings: {

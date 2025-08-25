@@ -191,26 +191,32 @@ class OscService extends EventEmitter {
     }
   }
   stop() {
-    if (this.primaryUdpPort && this.isListening) {
+    if (this.primaryUdpPort && this.isListening && this.primaryUdpPort._handle) {
       try {
         this.primaryUdpPort.close();
       } catch (error) {
-        this.emit('error', error);
+        if (error.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
+          this.emit('error', error);
+        }
       }
     }
     this.additionalPorts.forEach((portData) => {
-      if (portData.server) {
+      if (portData.server && portData.server._handle) {
         try {
           portData.server.close();
         } catch (err) {
-          console.warn('Error closing additional server:', err);
+          if (err.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
+            console.error('Error closing additional server:', err);
+          }
         }
       }
-      if (portData.client) {
+      if (portData.client && portData.client._handle) {
         try {
           portData.client.close();
         } catch (err) {
-          console.warn('Error closing additional client:', err);
+          if (err.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
+            console.error('Error closing additional client:', err);
+          }
         }
       }
     });
