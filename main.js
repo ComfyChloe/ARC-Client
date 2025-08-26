@@ -51,23 +51,50 @@ function createWindow() {
   } else {
     mainWindow.loadFile('renderer/index.html');
   }
-  // Save window state on resize and move
+  // Save window state on resize and move with throttling to prevent excessive saves
+  let saveWindowStateTimeout;
   const saveWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    const bounds = mainWindow.getBounds();
-    const isMaximized = mainWindow.isMaximized();
-    configManager.updateWindowState({
-      width: bounds.width,
-      height: bounds.height,
-      x: bounds.x,
-      y: bounds.y,
-      maximized: isMaximized
-    });
+    // Clear any existing timeout
+    if (saveWindowStateTimeout) {
+      clearTimeout(saveWindowStateTimeout);
+    }
+    // Set a new timeout to save after 100ms delay
+    saveWindowStateTimeout = setTimeout(() => {
+      const bounds = mainWindow.getBounds();
+      const isMaximized = mainWindow.isMaximized();
+      configManager.updateWindowState({
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        maximized: isMaximized
+      });
+      saveWindowStateTimeout = undefined;
+    }, 100);
   };
   mainWindow.on('resize', saveWindowState);
   mainWindow.on('move', saveWindowState);
   mainWindow.on('maximize', saveWindowState);
   mainWindow.on('unmaximize', saveWindowState);
+  mainWindow.on('close', () => {
+    // Save final window state immediately when closing
+    if (saveWindowStateTimeout) {
+      clearTimeout(saveWindowStateTimeout);
+      saveWindowStateTimeout = undefined;
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const bounds = mainWindow.getBounds();
+      const isMaximized = mainWindow.isMaximized();
+      configManager.updateWindowState({
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        maximized: isMaximized
+      });
+    }
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
