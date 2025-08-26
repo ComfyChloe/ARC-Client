@@ -77,7 +77,7 @@ function setupEventListeners() {
         updateWebSocketForwardingStatus(wsForwardingEnabled);
         // Apply auto-connect setting if enabled
         if (settings.autoConnect) {
-            const username = document.getElementById('username').value;
+            const username = document.getElementById('username').value.trim().toLowerCase();
             const password = document.getElementById('password').value;
             if (username && password) {
                 console.log('Auto-connect is enabled, attempting to connect...');
@@ -325,7 +325,7 @@ async function authenticate() {
         disconnect();
         return;
     }
-    const username = document.getElementById('username').value;
+    const username = document.getElementById('username').value.trim().toLowerCase();
     const password = document.getElementById('password').value;
     if (!username || !password) {
         debugLog('Please enter username and password', 'error');
