@@ -277,19 +277,6 @@ async function updateOscPorts() {
     }
 }
 
-async function updateAdditionalOscConnections() {
-    try {
-        const currentConfig = await window.electronAPI.getServerConfig();
-        const updatedConfig = {
-            ...currentConfig,
-            additionalOscConnections: additionalOscConnections
-        };
-        await window.electronAPI.setConfig(updatedConfig);
-        debugLog(`Additional OSC connections updated - ${additionalOscConnections.length} connections configured`);
-    } catch (error) {
-        debugLog(`Error updating additional OSC connections: ${error.message}`, 'error');
-    }
-}
 async function toggleOscServer() {
     try {
         if (oscEnabled) {
@@ -782,7 +769,7 @@ window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('websocket-server-message');
     window.electronAPI.removeAllListeners('app-settings');
 });
-function addOscConnection(type) {
+async function addOscConnection(type) {
     if (additionalOscConnections.length >= maxAdditionalConnections) {
         debugLog(`Maximum ${maxAdditionalConnections} additional connections allowed`, 'error');
         return;
@@ -792,25 +779,87 @@ function addOscConnection(type) {
         type: type, // 'incoming' or 'outgoing'
         port: null,
         address: '127.0.0.1',
-        enabled: true,
+        enabled: false, // Default to disabled for new connections
         name: '' // Optional user-defined name
     };
     additionalOscConnections.push(newConnection);
+    
+    // Apply the change immediately
+    try {
+        const currentConfig = await window.electronAPI.getServerConfig();
+        const updatedConfig = {
+            ...currentConfig,
+            additionalOscConnections: additionalOscConnections
+        };
+        await window.electronAPI.setConfig(updatedConfig);
+        debugLog(`Added new ${type} OSC connection slot (${additionalOscConnections.length}/${maxAdditionalConnections}) - configuration updated`);
+    } catch (error) {
+        debugLog(`Error adding OSC connection: ${error.message}`, 'error');
+    }
+    
     renderAdditionalOscConnections();
-    debugLog(`Added new ${type} OSC connection slot (${additionalOscConnections.length}/${maxAdditionalConnections})`);
 }
-function removeOscConnection(id) {
+async function removeOscConnection(id) {
     additionalOscConnections = additionalOscConnections.filter(conn => conn.id !== id);
+    
+    // Apply the change immediately
+    try {
+        const currentConfig = await window.electronAPI.getServerConfig();
+        const updatedConfig = {
+            ...currentConfig,
+            additionalOscConnections: additionalOscConnections
+        };
+        await window.electronAPI.setConfig(updatedConfig);
+        debugLog(`Removed OSC connection - configuration updated`);
+    } catch (error) {
+        debugLog(`Error removing OSC connection: ${error.message}`, 'error');
+    }
+    
     renderAdditionalOscConnections();
-    debugLog(`Removed OSC connection`);
 }
-function updateOscConnection(id, field, value) {
+async function toggleOscConnection(id, enabled) {
+    try {
+        const connection = additionalOscConnections.find(conn => conn.id === id);
+        if (connection) {
+            connection.enabled = enabled;
+            // Update the configuration immediately
+            const currentConfig = await window.electronAPI.getServerConfig();
+            const updatedConfig = {
+                ...currentConfig,
+                additionalOscConnections: additionalOscConnections
+            };
+            await window.electronAPI.setConfig(updatedConfig);
+            // Re-render to update the UI
+            renderAdditionalOscConnections();
+            debugLog(`${connection.name || 'Connection'} ${enabled ? 'enabled' : 'disabled'} - configuration updated`);
+        }
+    } catch (error) {
+        debugLog(`Error toggling OSC connection: ${error.message}`, 'error');
+    }
+}
+
+async function updateOscConnection(id, field, value) {
     const connection = additionalOscConnections.find(conn => conn.id === id);
     if (connection) {
         if (field === 'port') {
             connection[field] = value ? parseInt(value) : null;
         } else {
             connection[field] = value;
+        }
+        
+        // Apply changes immediately if it's a critical field
+        if (field === 'port' || field === 'address') {
+            try {
+                const currentConfig = await window.electronAPI.getServerConfig();
+                const updatedConfig = {
+                    ...currentConfig,
+                    additionalOscConnections: additionalOscConnections
+                };
+                await window.electronAPI.setConfig(updatedConfig);
+                debugLog(`${connection.name || 'Connection'} ${field} updated to ${value} - configuration applied`);
+            } catch (error) {
+                debugLog(`Error updating OSC connection ${field}: ${error.message}`, 'error');
+            }
         }
     }
 }
@@ -968,11 +1017,13 @@ function createConnectionElement(connection, index, typeLabel) {
                        placeholder="${defaultAddress}">
             </div>
             
-            <div style="display: flex; align-items: center; margin-top: 5px;">
-                <input type="checkbox" ${connection.enabled ? 'checked' : ''} 
-                       onchange="updateOscConnection('${connection.id}', 'enabled', this.checked)"
-                       style="margin-right: 8px; transform: scale(1.1);">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555; margin: 0;">Connection Active</label>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
+                <label style="font-size: 0.85em; font-weight: 600; color: #555; margin: 0;">Connection Status:</label>
+                <button class="btn ${connection.enabled ? 'btn-danger' : 'btn-success'}" 
+                        onclick="toggleOscConnection('${connection.id}', ${!connection.enabled})"
+                        style="padding: 4px 12px; font-size: 12px; min-width: 70px;">
+                    ${connection.enabled ? 'Disable' : 'Enable'}
+                </button>
             </div>
         </div>
     `;
