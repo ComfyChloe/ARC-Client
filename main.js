@@ -164,6 +164,12 @@ function initWebSocket() {
     wsManager.on('osc-data', (data) => {
       sendToRenderer('websocket-osc-data', data);
       // debug.logWebSocketConnection(`Received OSC data: ${data.address} = ${data.value}`);
+      // Check if WebSocket forwarding is enabled before processing data from server
+      const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
+      if (!wsForwardingEnabled) {
+        debug.logWebSocketForwarding(`WebSocket forwarding disabled - ignoring incoming OSC data: ${data.address} = ${data.value}`);
+        return;
+      }
       // Forward received OSC data to VRChat via normal OSC
       if (oscService && oscService.getStatus().isListening) {
         try {
