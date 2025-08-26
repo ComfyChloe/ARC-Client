@@ -17,6 +17,13 @@ class ConfigManager {
         enableOscOnStartup: false,
         enableWebSocketForwarding: false,
       },
+      windowState: {
+        width: 1200,
+        height: 800,
+        x: undefined,
+        y: undefined,
+        maximized: false
+      },
       // Version for future migration support
       configVersion: 1
     };
@@ -95,6 +102,10 @@ class ConfigManager {
     const oldOscStartup = this.config.appSettings.enableOscOnStartup;
     this.config.appSettings.enableOscOnStartup = 
       settings.enableOscOnStartup ?? this.config.appSettings.enableOscOnStartup;
+    // Update WebSocket forwarding (transmit) setting
+    if (settings.enableWebSocketForwarding !== undefined) {
+      this.config.appSettings.enableWebSocketForwarding = settings.enableWebSocketForwarding;
+    }
     // Log any changes to the OSC startup setting
     if (oldOscStartup !== this.config.appSettings.enableOscOnStartup) {
       debug.info(`OSC startup setting changed: ${oldOscStartup} -> ${this.config.appSettings.enableOscOnStartup}`);
@@ -103,6 +114,27 @@ class ConfigManager {
     const saveResult = this.saveConfig();
     debug.info(`Config save result: ${saveResult}`);
     return saveResult;
+  }
+  // Window state management
+  getWindowState() {
+    return {
+      width: this.config.windowState?.width || 1200,
+      height: this.config.windowState?.height || 800,
+      x: this.config.windowState?.x,
+      y: this.config.windowState?.y,
+      maximized: this.config.windowState?.maximized || false
+    };
+  }
+  updateWindowState(windowState) {
+    if (!this.config.windowState) {
+      this.config.windowState = {};
+    }
+    this.config.windowState = {
+      ...this.config.windowState,
+      ...windowState
+    };
+    debug.info(`Window state updated: ${JSON.stringify(this.config.windowState)}`);
+    return this.saveConfig();
   }
 }
 module.exports = new ConfigManager();

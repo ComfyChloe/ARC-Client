@@ -24,9 +24,12 @@ let serverConfig = configManager.getServerConfig();
 let isShuttingDown = false;
 let hasShownCriticalError = false;
 function createWindow() {
+  const windowState = configManager.getWindowState();
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -35,14 +38,36 @@ function createWindow() {
     },
     icon: path.join(__dirname, 'assets', 'icon.png'),
     title: 'ARC-OSC Client'
-  });
+  })
+  // Restore maximized state if it was maximized
+  if (windowState.maximized) {
+    mainWindow.maximize();
+  }
   mainWindow.setMenuBarVisibility(false);
+
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile('renderer/index.html');
   }
+  // Save window state on resize and move
+  const saveWindowState = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const bounds = mainWindow.getBounds();
+    const isMaximized = mainWindow.isMaximized();
+    configManager.updateWindowState({
+      width: bounds.width,
+      height: bounds.height,
+      x: bounds.x,
+      y: bounds.y,
+      maximized: isMaximized
+    });
+  };
+  mainWindow.on('resize', saveWindowState);
+  mainWindow.on('move', saveWindowState);
+  mainWindow.on('maximize', saveWindowState);
+  mainWindow.on('unmaximize', saveWindowState);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -306,6 +331,17 @@ ipcMain.handle('set-app-settings', (event, newSettings) => {
     debug.error('Failed to save app settings to config file');
   }
   return configManager.getAppSettings();
+});
+ipcMain.handle('get-window-state', () => {
+  return configManager.getWindowState();
+});
+ipcMain.handle('set-window-state', (event, windowState) => {
+  const result = configManager.updateWindowState(windowState);
+  debug.info(`Window state updated: ${JSON.stringify(windowState)}`);
+  if (!result) {
+    debug.error('Failed to save window state to config file');
+  }
+  return result;
 });
 ipcMain.handle('get-debug-stats', () => {
   return debug.getStats();

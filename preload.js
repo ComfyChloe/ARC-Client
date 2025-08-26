@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setConfig: (config) => ipcRenderer.invoke('set-config', config),
   getAppSettings: () => ipcRenderer.invoke('get-app-settings'),
   setAppSettings: (settings) => ipcRenderer.invoke('set-app-settings', settings),
+  getWindowState: () => ipcRenderer.invoke('get-window-state'),
+  setWindowState: (windowState) => ipcRenderer.invoke('set-window-state', windowState),
   enableOsc: () => ipcRenderer.invoke('enable-osc'),
   disableOsc: () => ipcRenderer.invoke('disable-osc'),
   getOscStatus: () => ipcRenderer.invoke('get-osc-status'),
