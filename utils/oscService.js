@@ -211,7 +211,7 @@ class OscService extends EventEmitter {
   
   stop() {
     // Stop primary port
-    if (this.primaryUdpPort && this.isListening && this.primaryUdpPort._handle) {
+    if (this.primaryUdpPort && this.isListening) {
       try {
         this.primaryUdpPort.close();
       } catch (error) {
