@@ -18,7 +18,8 @@ class ConfigManager {
         enableOscOnStartup: false,
         enableWebSocketForwarding: false,
         enableOscLogging: true,
-        theme: 'light'
+        theme: 'light',
+        lastUsername: ''
       },
       windowState: {
         width: 1200,
@@ -93,7 +94,8 @@ class ConfigManager {
       logLevel: this.config.logLevel || 'info',
       enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false,
       enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
-      theme: this.config.appSettings?.theme || 'light'
+      theme: this.config.appSettings?.theme || 'light',
+      lastUsername: this.config.appSettings?.lastUsername || ''
     };
   }
   updateAppSettings(settings) {
@@ -113,6 +115,9 @@ class ConfigManager {
     // Update theme setting
     if (settings.theme !== undefined) {
       this.config.appSettings.theme = settings.theme;
+    }
+    if (settings.lastUsername !== undefined) {
+      this.config.appSettings.lastUsername = settings.lastUsername;
     }
     // Log any changes to the OSC startup setting
     if (oldOscStartup !== this.config.appSettings.enableOscOnStartup) {

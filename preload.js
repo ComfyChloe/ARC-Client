@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWebSocketStatus: () => ipcRenderer.invoke('websocket-get-status'),
   getWebSocketForwardingStatus: () => ipcRenderer.invoke('websocket-get-forwarding-status'),
   setWebSocketForwarding: (enabled) => ipcRenderer.invoke('websocket-set-forwarding', enabled),
+  // Username storage API
+  getLastUsername: () => ipcRenderer.invoke('get-last-username'),
+  setLastUsername: (username) => ipcRenderer.invoke('set-last-username', username),
   // Parameter blacklist API
   getParameterBlacklist: () => ipcRenderer.invoke('get-parameter-blacklist'),
   addBlacklistPattern: (pattern) => ipcRenderer.invoke('add-blacklist-pattern', pattern),

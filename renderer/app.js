@@ -21,6 +21,7 @@ const MAX_LOG_ENTRIES = 25; // Maximum log entries to keep in DOM
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     await loadAppSettings();
+    await loadLastUsername();
     await loadTheme();
     setupEventListeners();
     setupExtrasDropdown();
@@ -52,7 +53,47 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
     }, 100);
-    
+    // Add username auto-save functionality and Enter key support
+    setTimeout(() => {
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        if (usernameInput) {
+            let saveTimeout;
+            // Auto-save username as user types
+            usernameInput.addEventListener('input', (e) => {
+                // Clear previous timeout
+                if (saveTimeout) {
+                    clearTimeout(saveTimeout);
+                }
+                // Debounce the save operation to avoid excessive calls
+                saveTimeout = setTimeout(async () => {
+                    const username = e.target.value.trim().toLowerCase();
+                    if (username) {
+                        try {
+                            await window.electronAPI.setLastUsername(username);
+                        } catch (error) {
+                            // Silently fail - don't spam user with save errors
+                            console.warn('Could not auto-save username:', error.message);
+                        }
+                    }
+                }, 1000); // Save 1 second after user stops typing
+            });
+            // Enter key support for username field
+            usernameInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    authenticate();
+                }
+            });
+        }
+        // Enter key support for password field
+        if (passwordInput) {
+            passwordInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    authenticate();
+                }
+            });
+        }
+    }, 100);
     // Set up periodic OSC log buffer flushing
     setInterval(() => {
         if (oscLogBuffer.length > 0) {
@@ -493,6 +534,13 @@ async function authenticate() {
             currentUser = result.user;
             debugLog(`Successfully authenticated as ${username}`);
             updateUI();
+            // Save the username for next time
+            try {
+                await window.electronAPI.setLastUsername(username);
+                debugLog(`Username saved for future use`);
+            } catch (saveError) {
+                debugLog(`Could not save username: ${saveError.message}`, 'warning');
+            }
         } else {
             debugLog(`Authentication failed: ${result.error}`, 'error');
             updateServerConnectionStatus('error');
@@ -1017,6 +1065,18 @@ async function loadAppSettings() {
         debugLog('Application settings loaded from saved config');
     } catch (error) {
         debugLog(`Error loading app settings: ${error.message}`, 'error');
+    }
+}
+async function loadLastUsername() {
+    try {
+        const lastUsername = await window.electronAPI.getLastUsername();
+        const usernameInput = document.getElementById('username');
+        if (usernameInput && lastUsername) {
+            usernameInput.value = lastUsername;
+            debugLog(`Last username loaded: ${lastUsername}`);
+        }
+    } catch (error) {
+        debugLog(`Error loading last username: ${error.message}`, 'error');
     }
 }
 window.addEventListener('beforeunload', () => {

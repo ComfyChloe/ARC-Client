@@ -457,6 +457,20 @@ ipcMain.handle('set-osc-forwarding', (event, enabled) => {
   }
   return { success: false, error: 'OSC service not initialized' };
 });
+ipcMain.handle('get-last-username', () => {
+  const appSettings = configManager.getAppSettings();
+  return appSettings.lastUsername || '';
+});
+ipcMain.handle('set-last-username', (event, username) => {
+  try {
+    const result = configManager.updateAppSettings({ lastUsername: username });
+    debug.info(`Last username saved: ${username}`);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to save last username: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
 ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
