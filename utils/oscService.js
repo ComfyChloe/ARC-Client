@@ -57,7 +57,11 @@ class OscService extends EventEmitter {
     console.log(`Setting up ${this.additionalConnections.length} additional OSC connections`);
     this.setupAdditionalPorts();
   }
-  
+  updateAdditionalConnections(connections) {
+    this.additionalConnections = connections || [];
+    console.log(`Updating ${this.additionalConnections.length} additional OSC connections (enabled: ${this.additionalConnections.filter(c => c.enabled).length})`);
+    this.setupAdditionalPorts();
+  }
   setupAdditionalPorts() {
     // Clean up existing additional ports
     this.additionalPorts.forEach((portData, portId) => {
@@ -78,10 +82,14 @@ class OscService extends EventEmitter {
     });
     this.additionalPorts.clear();
     
-    // Setup new additional ports
+    // Setup new additional ports only for enabled connections
     this.additionalConnections.forEach(connection => {
-      if (!connection.enabled || !connection.port) return;
-      
+      // Skip if connection is disabled or missing required fields
+      if (!connection.enabled || !connection.port) {
+        console.log(`Skipping connection ${connection.name || connection.id}: enabled=${connection.enabled}, port=${connection.port}`);
+        return;
+      }
+      console.log(`Setting up ${connection.type} connection: ${connection.name || connection.id} on port ${connection.port}`);
       const portData = {};
       
       if (connection.type === 'incoming') {
@@ -93,6 +101,7 @@ class OscService extends EventEmitter {
           });
           
           portData.server.on("ready", () => {
+            console.log(`Additional incoming port ready: ${connection.name} on ${connection.port}`);
             this.emit('additionalPortReady', {
               connectionId: connection.id,
               type: 'incoming',
@@ -107,6 +116,7 @@ class OscService extends EventEmitter {
           });
           
           portData.server.on("error", (error) => {
+            console.error(`Additional incoming port error for ${connection.name}:`, error);
             this.emit('additionalPortError', {
               connectionId: connection.id,
               type: 'incoming',
@@ -120,6 +130,7 @@ class OscService extends EventEmitter {
             portData.server.open();
           }
         } catch (error) {
+          console.error(`Failed to create incoming port for ${connection.name}:`, error);
           this.emit('additionalPortError', {
             connectionId: connection.id,
             type: 'incoming',
@@ -139,6 +150,7 @@ class OscService extends EventEmitter {
           });
           
           portData.client.on("ready", () => {
+            console.log(`Additional outgoing port ready: ${connection.name} to ${connection.address}:${connection.port}`);
             this.emit('additionalPortReady', {
               connectionId: connection.id,
               type: 'outgoing',
@@ -149,6 +161,7 @@ class OscService extends EventEmitter {
           });
           
           portData.client.on("error", (error) => {
+            console.error(`Additional outgoing port error for ${connection.name}:`, error);
             this.emit('additionalPortError', {
               connectionId: connection.id,
               type: 'outgoing',
@@ -162,6 +175,7 @@ class OscService extends EventEmitter {
             portData.client.open();
           }
         } catch (error) {
+          console.error(`Failed to create outgoing port for ${connection.name}:`, error);
           this.emit('additionalPortError', {
             connectionId: connection.id,
             type: 'outgoing',
@@ -174,6 +188,8 @@ class OscService extends EventEmitter {
       
       this.additionalPorts.set(connection.id, portData);
     });
+    
+    console.log(`Setup complete: ${this.additionalPorts.size} additional ports active`);
   }
   
   start() {
@@ -185,19 +201,22 @@ class OscService extends EventEmitter {
       this.primaryUdpPort.open();
       
       // Start additional ports
-      this.additionalPorts.forEach((portData) => {
+      this.additionalPorts.forEach((portData, connectionId) => {
+        const connection = this.additionalConnections.find(c => c.id === connectionId);
         if (portData.server) {
           try {
             portData.server.open();
+            console.log(`Opened additional incoming port for ${connection?.name || connectionId}`);
           } catch (err) {
-            console.warn('Error opening additional server:', err);
+            console.warn(`Error opening additional incoming port for ${connection?.name || connectionId}:`, err);
           }
         }
         if (portData.client) {
           try {
             portData.client.open();
+            console.log(`Opened additional outgoing port for ${connection?.name || connectionId}`);
           } catch (err) {
-            console.warn('Error opening additional client:', err);
+            console.warn(`Error opening additional outgoing port for ${connection?.name || connectionId}:`, err);
           }
         }
       });
@@ -315,8 +334,10 @@ class OscService extends EventEmitter {
     const outgoingConnections = this.additionalConnections.filter(conn => 
       conn.type === 'outgoing' && conn.enabled
     );
+    
     // Create the message once
     const message = this.formatOscMessage(address, value, type);
+    
     outgoingConnections.forEach(connection => {
       const portData = this.additionalPorts.get(connection.id);
       if (portData && portData.client) {
@@ -325,10 +346,14 @@ class OscService extends EventEmitter {
           this.emit('messageSent', { address, value, type, connectionId: connection.id });
           successCount++;
         } catch (error) {
+          console.error(`Error broadcasting to ${connection.name}:`, error);
           this.emit('error', error);
         }
+      } else {
+        console.warn(`Outgoing connection ${connection.name} not available for broadcast`);
       }
     });
+    
     return successCount;
   }
   formatOscMessage(address, value, type) {

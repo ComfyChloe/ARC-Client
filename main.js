@@ -368,8 +368,28 @@ ipcMain.handle('set-config', (event, newConfig) => {
       debug.info(`WebSocket configuration updated to: ${serverConfig.websocketServerUrl}`);
     }
   }
-  initOscServer();
-  initOscClient();
+
+  // Check if only additional connections changed, if so, just update them
+  const portsChanged = (oldConfig.localOscPort !== serverConfig.localOscPort) ||
+                       (oldConfig.targetOscPort !== serverConfig.targetOscPort) ||
+                       (oldConfig.targetOscAddress !== serverConfig.targetOscAddress);
+  
+  const additionalConnectionsChanged = JSON.stringify(oldConfig.additionalOscConnections || []) !== 
+                                       JSON.stringify(serverConfig.additionalOscConnections || []);
+  
+  if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
+    // Only additional connections changed, update them efficiently
+    debug.info('Only additional connections changed, updating without restarting OSC service');
+    oscService.updateAdditionalConnections(serverConfig.additionalOscConnections);
+  } else if (portsChanged || !oscEnabled) {
+    // Ports changed or OSC service needs full restart
+    debug.info('OSC configuration changed, restarting OSC service');
+    initOscServer();
+    initOscClient();
+  } else if (!additionalConnectionsChanged) {
+    debug.info('No OSC configuration changes detected');
+  }
+  
   return serverConfig;
 });
 ipcMain.handle('get-app-settings', () => {
