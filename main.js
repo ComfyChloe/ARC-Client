@@ -43,12 +43,17 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, 'assets', 'icon.png'),
-    title: 'ARC-OSC Client'
+    title: 'ARC-OSC Client',
+    show: false // Start hidden so we can control when it appears
   })
   // Restore maximized state if it was maximized
   if (windowState.maximized) {
     mainWindow.maximize();
   }
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
   mainWindow.setMenuBarVisibility(false);
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
