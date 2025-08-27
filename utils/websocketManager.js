@@ -18,6 +18,11 @@ class WebSocketManager {
     setConfig(config) {
         this.connectionConfig = { ...this.connectionConfig, ...config };
     }
+    updateServerUrl(url, persistent = true) {
+        this.connectionConfig.serverUrl = url;
+        this.connectionConfig.persistent = persistent;
+        return { success: true, url, persistent };
+    }
     async connect(credentials = {}) {
         if (this.socket && this.isConnected) {
             return { success: true, message: 'Already connected' };

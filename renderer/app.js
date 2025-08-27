@@ -39,6 +39,8 @@ async function loadConfig() {
         const serverUrlInput = document.getElementById('server-url-settings');
         if (serverUrlInput) {
             serverUrlInput.value = config.websocketServerUrl || 'wss://avatar.comfychloe.uk:48255';
+            // Detect and update the current server status
+            detectCurrentServer();
         }
         if (config.additionalOscConnections) {
             additionalOscConnections = config.additionalOscConnections;
@@ -258,9 +260,125 @@ async function updateConfigFromSettings() {
             websocketServerUrl: document.getElementById('server-url-settings').value
         };
         await window.electronAPI.setConfig(config);
+        // Update the current server status after configuration update
+        detectCurrentServer();
         debugLog('Server configuration updated');
     } catch (error) {
         debugLog(`Error updating server config: ${error.message}`, 'error');
+    }
+}
+async function switchToServer(serverType) {
+    try {
+        let serverUrl;
+        let serverName;
+        switch (serverType) {
+            case 'live':
+                serverUrl = 'wss://avatar.comfychloe.uk:48255';
+                serverName = 'ARC-Live';
+                break;
+            case 'beta':
+                serverUrl = 'wss://beta.avatar.comfychloe.uk:48255';
+                serverName = 'ARC-Beta';
+                break;
+            case 'custom':
+                serverUrl = 'wss://127.0.0.1:48255';
+                serverName = 'Custom (Dev)';
+                break;
+            default:
+                throw new Error('Unknown server type');
+        }
+        // Update the URL input field
+        document.getElementById('server-url-settings').value = serverUrl;
+        // Update the current server status
+        updateCurrentServerStatus(serverName, serverType);
+        // Disconnect if currently connected
+        const wasConnected = isConnected;
+        if (wasConnected) {
+            debugLog(`Disconnecting from current server to switch to ${serverName}...`);
+            await window.electronAPI.websocketDisconnect();
+        }
+        // Update the configuration
+        const config = {
+            websocketServerUrl: serverUrl
+        };
+        // For custom server, don't persist the configuration
+        if (serverType !== 'custom') {
+            await window.electronAPI.setConfig(config);
+            debugLog(`Switched to ${serverName} (${serverUrl}) - configuration saved`);
+        } else {
+            // Just update the WebSocket manager configuration without saving to file
+            await window.electronAPI.setConfig(config);
+            debugLog(`Switched to ${serverName} (${serverUrl}) - configuration NOT saved (dev mode)`);
+        }
+        // Auto-reconnect if we were previously connected
+        if (wasConnected && currentUser) {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            if (username && password) {
+                debugLog(`Auto-reconnecting to ${serverName}...`);
+                setTimeout(async () => {
+                    try {
+                        await authenticate();
+                        debugLog(`Successfully reconnected to ${serverName}`);
+                    } catch (error) {
+                        debugLog(`Failed to reconnect to ${serverName}: ${error.message}`, 'error');
+                    }
+                }, 1000);
+            }
+        }
+    } catch (error) {
+        debugLog(`Error switching servers: ${error.message}`, 'error');
+    }
+}
+function updateCurrentServerStatus(serverName, serverType) {
+    const statusElement = document.getElementById('current-server-status');
+    const nameElement = document.getElementById('current-server-name');
+    if (nameElement) {
+        nameElement.textContent = serverName;
+    }
+    if (statusElement) {
+        // Update border color based on server type
+        let borderColor = '#3498db'; // default blue
+        switch (serverType) {
+            case 'live':
+                borderColor = '#3498db'; // blue
+                break;
+            case 'beta':
+                borderColor = '#95a5a6'; // grey
+                break;
+            case 'custom':
+                borderColor = '#f39c12'; // orange
+                break;
+        }
+        statusElement.style.borderLeftColor = borderColor;
+    }
+    // Update button active states
+    updateServerButtonStates(serverType);
+}
+function updateServerButtonStates(activeServerType) {
+    // Remove active class from all buttons
+    const buttons = ['server-btn-live', 'server-btn-beta', 'server-btn-custom'];
+    buttons.forEach(buttonId => {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.classList.remove('active');
+        }
+    });
+    // Add active class to the current server button
+    const activeButtonId = `server-btn-${activeServerType}`;
+    const activeButton = document.getElementById(activeButtonId);
+    if (activeButton) {
+        activeButton.classList.add('active');
+    }
+}
+function detectCurrentServer() {
+    const serverUrl = document.getElementById('server-url-settings').value;
+    if (serverUrl.includes('beta.avatar.comfychloe.uk')) {
+        updateCurrentServerStatus('ARC-Beta', 'beta');
+    } else if (serverUrl.includes('127.0.0.1')) {
+        updateCurrentServerStatus('Custom (Dev)', 'custom');
+    } else {
+        updateCurrentServerStatus('ARC-Live', 'live');
     }
 }
 async function updateOscPorts() {

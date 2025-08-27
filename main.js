@@ -21,6 +21,10 @@ let oscService;
 let oscEnabled = false;
 let wsManager;
 let serverConfig = configManager.getServerConfig();
+// On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
+if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
+  serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
+  debug.info('Custom WebSocket URL detected on startup, reset to live server');
 let isShuttingDown = false;
 let hasShownCriticalError = false;
 function createWindow() {
@@ -331,8 +335,21 @@ ipcMain.handle('set-config', (event, newConfig) => {
     debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
   debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
-  // Save the updated config to file
-  configManager.updateConfig(serverConfig);
+  
+  // Check if this is a custom/dev URL that shouldn't persist
+  const isCustomUrl = newConfig.websocketServerUrl && newConfig.websocketServerUrl.includes('127.0.0.1');
+  
+  // Save the updated config to file (excluding custom URLs)
+  if (!isCustomUrl) {
+    configManager.updateConfig(serverConfig);
+  } else {
+    // For custom URLs, save everything except the websocket URL
+    const configToSave = { ...serverConfig };
+    delete configToSave.websocketServerUrl;
+    configManager.updateConfig(configToSave);
+    debug.info('Custom/dev WebSocket URL not persisted to config file');
+  }
+  
   // Update WebSocket configuration if URL changed
   if (newConfig.websocketServerUrl && oldConfig.websocketServerUrl !== newConfig.websocketServerUrl) {
     debug.info(`WebSocket URL changed from ${oldConfig.websocketServerUrl} to ${newConfig.websocketServerUrl}`);
