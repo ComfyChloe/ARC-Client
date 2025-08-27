@@ -167,12 +167,26 @@
                 <p>View application logs and activity</p>
             </div>
             <div class="card">
-                <h3>Activity Log</h3>
-                <div class="log-container" id="log-container">
+                <h3>Client Logs</h3>
+                <div class="log-container" id="client-log-container">
                     Welcome to ARC-OSC Client<br>
                     Configure your settings and connect to get started<br>
                 </div>
-                <button class="btn btn-primary" onclick="clearLogs()" style="margin-top: 10px;">Clear Logs</button>
+                <button class="btn btn-primary" onclick="clearClientLogs()" style="margin-top: 10px;">Clear Client Logs</button>
+            </div>
+            <div class="card">
+                <h3>OSC Received</h3>
+                <div class="log-container" id="osc-received-log-container">
+                    No OSC data received yet<br>
+                </div>
+                <button class="btn btn-primary" onclick="clearOscReceivedLogs()" style="margin-top: 10px;">Clear OSC Received</button>
+            </div>
+            <div class="card">
+                <h3>OSC Forwarded (to ARC Server)</h3>
+                <div class="log-container" id="osc-forwarded-log-container">
+                    No OSC data forwarded yet<br>
+                </div>
+                <button class="btn btn-primary" onclick="clearOscForwardedLogs()" style="margin-top: 10px;">Clear OSC Forwarded</button>
             </div>
         </div>
 
@@ -244,6 +258,22 @@
 
                 <div id="additional-osc-connections">
                     <!-- Dynamic connections will be added here -->
+                </div>
+            </div>
+            <div class="card">
+                <h3>Parameter Blacklist</h3>
+                <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
+                    Block specific parameters from being forwarded to the ARC server. Use * as a wildcard (e.g., /avatar/parameters/FT* to block all parameters starting with FT).
+                </p>
+                <div class="form-group">
+                    <label for="blacklist-pattern">Parameter Pattern</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="blacklist-pattern" placeholder="/avatar/parameters/FT*" style="flex: 1;">
+                        <button class="btn btn-success" onclick="addBlacklistPattern()">Add Pattern</button>
+                    </div>
+                </div>
+                <div id="blacklist-patterns" style="margin-top: 15px;">
+                    <!-- Blacklist patterns will be shown here -->
                 </div>
             </div>
         </div>

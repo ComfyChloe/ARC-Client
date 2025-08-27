@@ -21,9 +21,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWebSocketStatus: () => ipcRenderer.invoke('websocket-get-status'),
   getWebSocketForwardingStatus: () => ipcRenderer.invoke('websocket-get-forwarding-status'),
   setWebSocketForwarding: (enabled) => ipcRenderer.invoke('websocket-set-forwarding', enabled),
+  // Parameter blacklist API
+  getParameterBlacklist: () => ipcRenderer.invoke('get-parameter-blacklist'),
+  addBlacklistPattern: (pattern) => ipcRenderer.invoke('add-blacklist-pattern', pattern),
+  removeBlacklistPattern: (pattern) => ipcRenderer.invoke('remove-blacklist-pattern', pattern),
+  clearParameterBlacklist: () => ipcRenderer.invoke('clear-parameter-blacklist'),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
+  },
+  onOscForwarded: (callback) => {
+    ipcRenderer.on('osc-forwarded', (event, data) => callback(data));
   },
   onOscServerStatus: (callback) => {
     ipcRenderer.on('osc-server-status', (event, data) => callback(data));

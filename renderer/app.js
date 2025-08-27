@@ -53,7 +53,10 @@ async function loadConfig() {
 }
 function setupEventListeners() {
     window.electronAPI.onOscReceived((data) => {
-        debugLog(`OSC Received: ${data.address} = ${data.value}`);
+        oscReceivedLog(data.address, data.value, data.connectionId);
+    });
+    window.electronAPI.onOscForwarded((data) => {
+        oscForwardedLog(data.address, data.value, data.connectionId);
     });
     window.electronAPI.onOscServerStatus((data) => {
         console.log('OSC Server status update:', data);
@@ -123,7 +126,7 @@ function setupEventListeners() {
         updateParameterList();
     });
     window.electronAPI.onWebSocketOscData((data) => {
-        debugLog(`WebSocket OSC: ${data.address} = ${data.value}`);
+        debugLog(`WebSocket OSC received from server: ${data.address} = ${data.value}`);
     });
     window.electronAPI.onWebSocketAvatarChange((data) => {
         currentAvatar = data;
@@ -586,7 +589,7 @@ function showTab(tabName) {
     event.target.classList.add('active');
 }
 function debugLog(message, type = 'info') {
-    const container = document.getElementById('log-container');
+    const container = document.getElementById('client-log-container');
     const timestamp = new Date().toLocaleTimeString();
     let color = '#00ff00'; // Default green
     if (type === 'error') color = '#ff0000';
@@ -600,9 +603,44 @@ function debugLog(message, type = 'info') {
         container.removeChild(container.firstChild);
     }
 }
+function oscReceivedLog(address, value, connectionId = null) {
+    const container = document.getElementById('osc-received-log-container');
+    const timestamp = new Date().toLocaleTimeString();
+    const connectionText = connectionId ? ` (conn: ${connectionId})` : '';
+    const logEntry = document.createElement('div');
+    logEntry.style.color = '#00ff00';
+    logEntry.innerHTML = `[${timestamp}] ${address} = ${value}${connectionText}`;
+    container.appendChild(logEntry);
+    container.scrollTop = container.scrollHeight;
+    while (container.children.length > 100) {
+        container.removeChild(container.firstChild);
+    }
+}
+function oscForwardedLog(address, value, connectionId = null) {
+    const container = document.getElementById('osc-forwarded-log-container');
+    const timestamp = new Date().toLocaleTimeString();
+    const connectionText = connectionId ? ` (conn: ${connectionId})` : '';
+    const logEntry = document.createElement('div');
+    logEntry.style.color = '#00aaff';
+    logEntry.innerHTML = `[${timestamp}] ${address} = ${value}${connectionText}`;
+    container.appendChild(logEntry);
+    container.scrollTop = container.scrollHeight;
+    while (container.children.length > 100) {
+        container.removeChild(container.firstChild);
+    }
+}
+function clearClientLogs() {
+    document.getElementById('client-log-container').innerHTML = '';
+    debugLog('Client logs cleared');
+}
+function clearOscReceivedLogs() {
+    document.getElementById('osc-received-log-container').innerHTML = 'No OSC data received yet<br>';
+}
+function clearOscForwardedLogs() {
+    document.getElementById('osc-forwarded-log-container').innerHTML = 'No OSC data forwarded yet<br>';
+}
 function clearLogs() {
-    document.getElementById('log-container').innerHTML = '';
-    debugLog('Logs cleared');
+    clearClientLogs();
 }
 function updateOscPortsFromSettings() {
     return updateOscPorts();
@@ -1161,3 +1199,82 @@ function createConnectionElement(connection, index, typeLabel) {
     
     return connectionDiv;
 }
+// Parameter Blacklist Management
+async function loadParameterBlacklist() {
+    try {
+        const patterns = await window.electronAPI.getParameterBlacklist();
+        renderBlacklistPatterns(patterns);
+    } catch (error) {
+        debugLog(`Error loading parameter blacklist: ${error.message}`, 'error');
+    }
+}
+function renderBlacklistPatterns(patterns) {
+    const container = document.getElementById('blacklist-patterns');
+    if (patterns.length === 0) {
+        container.innerHTML = '<p style="color: #666; font-style: italic;">No patterns configured</p>';
+        return;
+    }
+    const patternsHtml = patterns.map(pattern => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
+                    background-color: #f8f9fa; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #007bff;">
+            <span style="font-family: monospace; color: #495057;">${pattern}</span>
+            <button class="btn btn-danger" onclick="removeBlacklistPattern('${pattern}')" 
+                    style="padding: 2px 8px; font-size: 12px;">Remove</button>
+        </div>
+    `).join('');
+
+    container.innerHTML = patternsHtml;
+}
+async function addBlacklistPattern() {
+    const input = document.getElementById('blacklist-pattern');
+    const pattern = input.value.trim();
+    if (!pattern) {
+        debugLog('Please enter a pattern to blacklist', 'warning');
+        return;
+    }
+    try {
+        const result = await window.electronAPI.addBlacklistPattern(pattern);
+        if (result.success) {
+            input.value = '';
+            renderBlacklistPatterns(result.patterns);
+            debugLog(`Added blacklist pattern: ${pattern}`);
+        } else {
+            debugLog(result.error || 'Failed to add pattern', 'error');
+        }
+    } catch (error) {
+        debugLog(`Error adding blacklist pattern: ${error.message}`, 'error');
+    }
+}
+async function removeBlacklistPattern(pattern) {
+    try {
+        const result = await window.electronAPI.removeBlacklistPattern(pattern);
+        if (result.success) {
+            renderBlacklistPatterns(result.patterns);
+            debugLog(`Removed blacklist pattern: ${pattern}`);
+        } else {
+            debugLog(result.error || 'Failed to remove pattern', 'error');
+        }
+    } catch (error) {
+        debugLog(`Error removing blacklist pattern: ${error.message}`, 'error');
+    }
+}
+// Add Enter key support for blacklist input
+document.addEventListener('DOMContentLoaded', () => {
+    // ...existing code...
+    // Load blacklist when page loads
+    setTimeout(() => {
+        loadParameterBlacklist();
+    }, 500);
+    
+    // Add Enter key support for blacklist input
+    setTimeout(() => {
+        const blacklistInput = document.getElementById('blacklist-pattern');
+        if (blacklistInput) {
+            blacklistInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    addBlacklistPattern();
+                }
+            });
+        }
+    }, 100);
+});

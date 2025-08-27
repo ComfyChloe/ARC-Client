@@ -10,6 +10,7 @@ app.setPath('userData', userDataPath);
 const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
+const parameterBlacklist = require('./utils/parameterBlacklist');
 // Logger will be loaded after app is ready
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
@@ -242,14 +243,26 @@ function initOscServer() {
     const wsConnected = wsManager && wsManager.isConnected;
     const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
     if (wsConnected && wsForwardingEnabled) {
-      try {
-        const result = wsManager.sendOscData({
-          address: data.address,
-          value: data.value
-        });
-        debug.logWebSocketForwarding(`${data.address} = ${data.value} (result: ${JSON.stringify(result)})`);
-      } catch (error) {
-        debug.logError(`Failed to forward OSC to WebSocket: ${error.message}`);
+      // Check if the parameter is blacklisted before forwarding
+      if (!parameterBlacklist.isBlacklisted(data.address)) {
+        try {
+          const result = wsManager.sendOscData({
+            address: data.address,
+            value: data.value
+          });
+          debug.logWebSocketForwarding(`${data.address} = ${data.value} (result: ${JSON.stringify(result)})`);
+          // Send forwarded message to renderer for the new forwarded log
+          sendToRenderer('osc-forwarded', { 
+            address: data.address, 
+            value: data.value,
+            connectionId: data.connectionId,
+            timestamp: Date.now()
+          });
+        } catch (error) {
+          debug.logError(`Failed to forward OSC to WebSocket: ${error.message}`);
+        }
+      } else {
+        debug.logWebSocketForwarding(`Parameter blacklisted - not forwarding: ${data.address}`);
       }
     } else {
       if (wsConnected && !wsForwardingEnabled) {
@@ -541,6 +554,51 @@ ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
     return { success: false, error: error.message };
   }
 });
+// Parameter blacklist IPC handlers
+ipcMain.handle('get-parameter-blacklist', () => {
+  return parameterBlacklist.getPatterns();
+});
+ipcMain.handle('add-blacklist-pattern', (event, pattern) => {
+  try {
+    const success = parameterBlacklist.addPattern(pattern);
+    if (success) {
+      // Save to config
+      const patterns = parameterBlacklist.getPatterns();
+      configManager.updateConfig({ parameterBlacklist: patterns });
+      debug.info(`Added blacklist pattern: ${pattern}`);
+    }
+    return { success, patterns: parameterBlacklist.getPatterns() };
+  } catch (error) {
+    debug.logError(`Failed to add blacklist pattern: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('remove-blacklist-pattern', (event, pattern) => {
+  try {
+    const success = parameterBlacklist.removePattern(pattern);
+    if (success) {
+      // Save to config
+      const patterns = parameterBlacklist.getPatterns();
+      configManager.updateConfig({ parameterBlacklist: patterns });
+      debug.info(`Removed blacklist pattern: ${pattern}`);
+    }
+    return { success, patterns: parameterBlacklist.getPatterns() };
+  } catch (error) {
+    debug.logError(`Failed to remove blacklist pattern: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('clear-parameter-blacklist', () => {
+  try {
+    parameterBlacklist.clear();
+    configManager.updateConfig({ parameterBlacklist: [] });
+    debug.info('Cleared parameter blacklist');
+    return { success: true, patterns: [] };
+  } catch (error) {
+    debug.logError(`Failed to clear blacklist: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
 ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
@@ -605,6 +663,9 @@ app.whenReady().then(() => {
   
   // Get app settings from config
   const appSettings = configManager.getAppSettings();
+  // Load parameter blacklist from config
+  const config = configManager.getConfig();
+  parameterBlacklist.loadBlacklist(config.parameterBlacklist || []);
   // Ensure serverConfig has appSettings
   if (!serverConfig.appSettings) {
     serverConfig.appSettings = appSettings || {};

@@ -13,6 +13,7 @@ class ConfigManager {
       websocketServerUrl: 'wss://avatar.comfychloe.uk:48255',
       autoConnect: false,
       logLevel: 'info',
+      parameterBlacklist: [],
       appSettings: {
         enableOscOnStartup: false,
         enableWebSocketForwarding: false,
