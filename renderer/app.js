@@ -271,6 +271,7 @@ async function switchToServer(serverType) {
     try {
         let serverUrl;
         let serverName;
+        
         switch (serverType) {
             case 'live':
                 serverUrl = 'wss://avatar.comfychloe.uk:48255';
@@ -287,20 +288,25 @@ async function switchToServer(serverType) {
             default:
                 throw new Error('Unknown server type');
         }
+        
         // Update the URL input field
         document.getElementById('server-url-settings').value = serverUrl;
+        
         // Update the current server status
         updateCurrentServerStatus(serverName, serverType);
+        
         // Disconnect if currently connected
         const wasConnected = isConnected;
         if (wasConnected) {
             debugLog(`Disconnecting from current server to switch to ${serverName}...`);
             await window.electronAPI.websocketDisconnect();
         }
+        
         // Update the configuration
         const config = {
             websocketServerUrl: serverUrl
         };
+        
         // For custom server, don't persist the configuration
         if (serverType !== 'custom') {
             await window.electronAPI.setConfig(config);
@@ -310,6 +316,7 @@ async function switchToServer(serverType) {
             await window.electronAPI.setConfig(config);
             debugLog(`Switched to ${serverName} (${serverUrl}) - configuration NOT saved (dev mode)`);
         }
+        
         // Auto-reconnect if we were previously connected
         if (wasConnected && currentUser) {
             const username = document.getElementById('username').value;
@@ -326,6 +333,7 @@ async function switchToServer(serverType) {
                 }, 1000);
             }
         }
+        
     } catch (error) {
         debugLog(`Error switching servers: ${error.message}`, 'error');
     }
@@ -333,9 +341,11 @@ async function switchToServer(serverType) {
 function updateCurrentServerStatus(serverName, serverType) {
     const statusElement = document.getElementById('current-server-status');
     const nameElement = document.getElementById('current-server-name');
+    
     if (nameElement) {
         nameElement.textContent = serverName;
     }
+    
     if (statusElement) {
         // Update border color based on server type
         let borderColor = '#3498db'; // default blue
@@ -352,6 +362,7 @@ function updateCurrentServerStatus(serverName, serverType) {
         }
         statusElement.style.borderLeftColor = borderColor;
     }
+    
     // Update button active states
     updateServerButtonStates(serverType);
 }
@@ -361,18 +372,20 @@ function updateServerButtonStates(activeServerType) {
     buttons.forEach(buttonId => {
         const button = document.getElementById(buttonId);
         if (button) {
-            button.classList.remove('active');
+            button.classList.remove('server-btn-active');
         }
     });
+    
     // Add active class to the current server button
     const activeButtonId = `server-btn-${activeServerType}`;
     const activeButton = document.getElementById(activeButtonId);
     if (activeButton) {
-        activeButton.classList.add('active');
+        activeButton.classList.add('server-btn-active');
     }
 }
 function detectCurrentServer() {
     const serverUrl = document.getElementById('server-url-settings').value;
+    
     if (serverUrl.includes('beta.avatar.comfychloe.uk')) {
         updateCurrentServerStatus('ARC-Beta', 'beta');
     } else if (serverUrl.includes('127.0.0.1')) {
