@@ -132,6 +132,16 @@
                         <option value="error">Error</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label for="enable-osc-logging">Enable OSC Data Logging</label>
+                    <select id="enable-osc-logging">
+                        <option value="false">Disabled (Recommended for Performance)</option>
+                        <option value="true">Enabled</option>
+                    </select>
+                    <small style="color: #666; font-size: 0.85em; margin-top: 5px; display: block;">
+                        Disabling OSC logging significantly reduces disk I/O and improves performance
+                    </small>
+                </div>
                 <button class="btn btn-primary" onclick="updateAppSettings()">Update Application Settings</button>
             </div>
         </div>
@@ -165,6 +175,21 @@
             <div class="header">
                 <h1>Logs</h1>
                 <p>View application logs and activity</p>
+            </div>
+            <div class="card" style="margin-bottom: 10px; padding: 10px; background-color: #f8f9fa; border-left: 4px solid #17a2b8;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>OSC Data Logging Status:</strong> 
+                        <span id="osc-logging-status" style="font-weight: bold;">Enabled</span>
+                        <br>
+                        <small style="color: #666;">
+                            Disable OSC logging in Settings to reduce disk I/O and improve performance
+                        </small>
+                    </div>
+                    <button class="btn btn-warning" onclick="toggleOscLoggingQuick()" id="osc-logging-toggle-btn" style="padding: 6px 12px; font-size: 12px;">
+                        Disable OSC Logging
+                    </button>
+                </div>
             </div>
             <div class="card">
                 <h3>Client Logs</h3>

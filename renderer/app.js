@@ -9,6 +9,12 @@ let currentUser = null;
 let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
+// OSC Logging rate limiting
+let oscLogBuffer = [];
+let lastOscLogFlush = 0;
+let oscLoggingEnabled = true; // Default to true for backward compatibility
+const OSC_LOG_BUFFER_SIZE = 50;
+const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
 // Websocket connection states end
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
@@ -43,6 +49,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
     }, 100);
+    
+    // Set up periodic OSC log buffer flushing
+    setInterval(() => {
+        if (oscLogBuffer.length > 0) {
+            flushOscLogBuffer();
+        }
+    }, OSC_LOG_FLUSH_INTERVAL);
 });
 async function loadConfig() {
     try {
@@ -619,30 +632,85 @@ function debugLog(message, type = 'info') {
     }
 }
 function oscReceivedLog(address, value, connectionId = null) {
-    const container = document.getElementById('osc-received-log-container');
-    const timestamp = new Date().toLocaleTimeString();
-    const connectionText = connectionId ? ` (conn: ${connectionId})` : '';
-    const logEntry = document.createElement('div');
-    logEntry.style.color = '#00ff00';
-    logEntry.innerHTML = `[${timestamp}] ${address} = ${value}${connectionText}`;
-    container.appendChild(logEntry);
-    container.scrollTop = container.scrollHeight;
-    while (container.children.length > 100) {
-        container.removeChild(container.firstChild);
+    // Skip logging if OSC logging is disabled
+    if (!oscLoggingEnabled) return;
+    // Add to buffer instead of immediate logging
+    oscLogBuffer.push({
+        type: 'received',
+        address,
+        value,
+        connectionId,
+        timestamp: Date.now()
+    });
+    // If buffer is full or enough time has passed, flush it
+    const now = Date.now();
+    if (oscLogBuffer.length >= OSC_LOG_BUFFER_SIZE || (now - lastOscLogFlush) >= OSC_LOG_FLUSH_INTERVAL) {
+        flushOscLogBuffer();
     }
 }
 function oscForwardedLog(address, value, connectionId = null) {
-    const container = document.getElementById('osc-forwarded-log-container');
-    const timestamp = new Date().toLocaleTimeString();
-    const connectionText = connectionId ? ` (conn: ${connectionId})` : '';
-    const logEntry = document.createElement('div');
-    logEntry.style.color = '#00aaff';
-    logEntry.innerHTML = `[${timestamp}] ${address} = ${value}${connectionText}`;
-    container.appendChild(logEntry);
-    container.scrollTop = container.scrollHeight;
-    while (container.children.length > 100) {
-        container.removeChild(container.firstChild);
+    // Skip logging if OSC logging is disabled
+    if (!oscLoggingEnabled) return;
+    // Add to buffer instead of immediate logging
+    oscLogBuffer.push({
+        type: 'forwarded',
+        address,
+        value,
+        connectionId,
+        timestamp: Date.now()
+    });
+    // If buffer is full or enough time has passed, flush it
+    const now = Date.now();
+    if (oscLogBuffer.length >= OSC_LOG_BUFFER_SIZE || (now - lastOscLogFlush) >= OSC_LOG_FLUSH_INTERVAL) {
+        flushOscLogBuffer();
     }
+}
+function flushOscLogBuffer() {
+    if (oscLogBuffer.length === 0) return;
+    const receivedContainer = document.getElementById('osc-received-log-container');
+    const forwardedContainer = document.getElementById('osc-forwarded-log-container');
+    // Group messages by type for batch DOM updates
+    const received = oscLogBuffer.filter(msg => msg.type === 'received');
+    const forwarded = oscLogBuffer.filter(msg => msg.type === 'forwarded');
+    // Batch update received logs
+    if (received.length > 0 && receivedContainer) {
+        const fragment = document.createDocumentFragment();
+        received.forEach(msg => {
+            const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+            const connectionText = msg.connectionId ? ` (conn: ${msg.connectionId})` : '';
+            const logEntry = document.createElement('div');
+            logEntry.style.color = '#00ff00';
+            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}${connectionText}`;
+            fragment.appendChild(logEntry);
+        });
+        receivedContainer.appendChild(fragment);
+        receivedContainer.scrollTop = receivedContainer.scrollHeight;
+        // Trim logs to prevent memory bloat
+        while (receivedContainer.children.length > 100) {
+            receivedContainer.removeChild(receivedContainer.firstChild);
+        }
+    }
+    // Batch update forwarded logs
+    if (forwarded.length > 0 && forwardedContainer) {
+        const fragment = document.createDocumentFragment();
+        forwarded.forEach(msg => {
+            const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+            const connectionText = msg.connectionId ? ` (conn: ${msg.connectionId})` : '';
+            const logEntry = document.createElement('div');
+            logEntry.style.color = '#00aaff';
+            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}${connectionText}`;
+            fragment.appendChild(logEntry);
+        });
+        forwardedContainer.appendChild(fragment);
+        forwardedContainer.scrollTop = forwardedContainer.scrollHeight;
+        // Trim logs to prevent memory bloat
+        while (forwardedContainer.children.length > 100) {
+            forwardedContainer.removeChild(forwardedContainer.firstChild);
+        }
+    }
+    // Clear buffer and update flush time
+    oscLogBuffer = [];
+    lastOscLogFlush = Date.now();
 }
 function clearClientLogs() {
     document.getElementById('client-log-container').innerHTML = '';
@@ -801,6 +869,8 @@ function showLogsView() {
         requestAnimationFrame(() => {
             logsView.style.opacity = '1';
         });
+        // Update OSC logging status when logs view is shown
+        updateOscLoggingStatus();
     }, 300);
     // Reset all navigation buttons
     [navMain, navOsc, navSettings].forEach(nav => {
@@ -900,15 +970,15 @@ async function updateAppSettings() {
         const autoConnect = document.getElementById('auto-connect').value === 'true';
         const logLevel = document.getElementById('log-level').value;
         const enableOscOnStartup = document.getElementById('enable-osc-startup')?.value === 'true';
-        
+        const enableOscLogging = document.getElementById('enable-osc-logging')?.value === 'true';
         const settings = {
             autoConnect,
             logLevel,
-            enableOscOnStartup
+            enableOscOnStartup,
+            enableOscLogging
         };
-        
         await window.electronAPI.setAppSettings(settings);
-        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}`);
+        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}, OSC logging: ${enableOscLogging}`);
     } catch (error) {
         debugLog(`Error updating app settings: ${error.message}`, 'error');
     }
@@ -919,23 +989,25 @@ async function loadAppSettings() {
         const autoConnectSelect = document.getElementById('auto-connect');
         const logLevelSelect = document.getElementById('log-level');
         const enableOscStartupSelect = document.getElementById('enable-osc-startup');
-        
+        const enableOscLoggingSelect = document.getElementById('enable-osc-logging');
         if (autoConnectSelect) {
             autoConnectSelect.value = settings.autoConnect ? 'true' : 'false';
         }
-        
         if (logLevelSelect) {
             logLevelSelect.value = settings.logLevel || 'info';
         }
-        
         if (enableOscStartupSelect) {
             enableOscStartupSelect.value = settings.enableOscOnStartup ? 'true' : 'false';
         }
-        
+        if (enableOscLoggingSelect) {
+            enableOscLoggingSelect.value = settings.enableOscLogging !== false ? 'true' : 'false'; // Default to true for backward compatibility
+        }
+        // Set global OSC logging state
+        oscLoggingEnabled = settings.enableOscLogging !== false; // Default to true for backward compatibility
+        updateOscLoggingStatus();
         // Initialize WebSocket forwarding status from settings
         wsForwardingEnabled = settings.enableWebSocketForwarding || false;
         updateWebSocketForwardingStatus(wsForwardingEnabled);
-        
         debugLog('Application settings loaded from saved config');
     } catch (error) {
         debugLog(`Error loading app settings: ${error.message}`, 'error');
@@ -1022,7 +1094,6 @@ async function toggleOscConnection(id, enabled) {
         debugLog(`Error toggling OSC connection: ${error.message}`, 'error');
     }
 }
-
 async function toggleOscConnectionWebSocketForwarding(id, enabled) {
     try {
         const connection = additionalOscConnections.find(conn => conn.id === id);
@@ -1043,7 +1114,6 @@ async function toggleOscConnectionWebSocketForwarding(id, enabled) {
         debugLog(`Error toggling OSC connection WebSocket forwarding: ${error.message}`, 'error');
     }
 }
-
 async function updateOscConnection(id, field, value) {
     const connection = additionalOscConnections.find(conn => conn.id === id);
     if (connection) {
@@ -1052,7 +1122,6 @@ async function updateOscConnection(id, field, value) {
         } else {
             connection[field] = value;
         }
-        
         // Apply changes immediately if it's a critical field
         if (field === 'port' || field === 'address') {
             try {
@@ -1074,42 +1143,32 @@ function renderAdditionalOscConnections() {
     const addIncomingBtn = document.getElementById('add-incoming-btn');
     const addOutgoingBtn = document.getElementById('add-outgoing-btn');
     const countSpan = document.getElementById('connection-count');
-    
     if (!container || !addIncomingBtn || !addOutgoingBtn || !countSpan) {
         console.warn('OSC connection elements not found in DOM');
         return;
     }
-    
     if (additionalOscConnections.length === 0) {
         container.innerHTML = '<p style="text-align: center; color: #999; font-style: italic; padding: 40px;">No additional connections configured</p>';
         countSpan.textContent = '0/20 additional connections';
         return;
     }
-    
     container.innerHTML = '';
-    
     const incomingConnections = additionalOscConnections.filter(conn => conn.type === 'incoming');
     const outgoingConnections = additionalOscConnections.filter(conn => conn.type === 'outgoing');
-    
     const columnsContainer = document.createElement('div');
     columnsContainer.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 20px;';
-    
     const incomingColumn = document.createElement('div');
     incomingColumn.style.cssText = 'min-height: 100px;';
-    
     const outgoingColumn = document.createElement('div');
     outgoingColumn.style.cssText = 'min-height: 100px;';
-    
     const incomingHeader = document.createElement('h5');
     incomingHeader.style.cssText = 'margin: 0 0 15px 0; color: #27ae60; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #27ae60;';
     incomingHeader.innerHTML = '📥 Incoming <span style="font-size: 0.8em; margin-left: 10px; color: #666;">(' + incomingConnections.length + ')</span>';
     incomingColumn.appendChild(incomingHeader);
-    
     const outgoingHeader = document.createElement('h5');
     outgoingHeader.style.cssText = 'margin: 0 0 15px 0; color: #e74c3c; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #e74c3c;';
     outgoingHeader.innerHTML = '📤 Outgoing <span style="font-size: 0.8em; margin-left: 10px; color: #666;">(' + outgoingConnections.length + ')</span>';
     outgoingColumn.appendChild(outgoingHeader);
-    
     if (incomingConnections.length === 0) {
         const emptyState = document.createElement('p');
         emptyState.style.cssText = 'text-align: center; color: #999; font-style: italic; padding: 20px; border: 2px dashed #ddd; border-radius: 5px; margin-top: 10px;';
@@ -1120,7 +1179,6 @@ function renderAdditionalOscConnections() {
             incomingColumn.appendChild(createConnectionElement(connection, index + 1, 'Incoming'));
         });
     }
-    
     if (outgoingConnections.length === 0) {
         const emptyState = document.createElement('p');
         emptyState.style.cssText = 'text-align: center; color: #999; font-style: italic; padding: 20px; border: 2px dashed #ddd; border-radius: 5px; margin-top: 10px;';
@@ -1131,16 +1189,13 @@ function renderAdditionalOscConnections() {
             outgoingColumn.appendChild(createConnectionElement(connection, index + 1, 'Outgoing'));
         });
     }
-    
     columnsContainer.appendChild(incomingColumn);
     columnsContainer.appendChild(outgoingColumn);
     container.appendChild(columnsContainer);
-    
     const maxReached = additionalOscConnections.length >= maxAdditionalConnections;
     addIncomingBtn.disabled = maxReached;
     addOutgoingBtn.disabled = maxReached;
     countSpan.textContent = `${additionalOscConnections.length}/${maxAdditionalConnections} additional connections`;
-    
     if (maxReached) {
         addIncomingBtn.textContent = '+ Maximum Reached';
         addIncomingBtn.className = 'btn btn-secondary';
@@ -1153,7 +1208,6 @@ function renderAdditionalOscConnections() {
         addOutgoingBtn.className = 'btn btn-success';
     }
 }
-
 function createConnectionElement(connection, index, typeLabel) {
     const connectionDiv = document.createElement('div');
     connectionDiv.className = 'osc-connection-item';
@@ -1165,26 +1219,21 @@ function createConnectionElement(connection, index, typeLabel) {
         background-color: ${connection.type === 'incoming' ? '#f8fff8' : '#fff8f8'};
         transition: box-shadow 0.2s ease;
     `;
-    
     connectionDiv.onmouseenter = () => {
         connectionDiv.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
     };
     connectionDiv.onmouseleave = () => {
         connectionDiv.style.boxShadow = 'none';
     };
-    
     const portLabel = connection.type === 'incoming' ? 'Listen Port' : 'Target Port';
     const addressLabel = connection.type === 'incoming' ? 'Listen Address' : 'Target Address';
     const defaultAddress = connection.type === 'incoming' ? '0.0.0.0' : '127.0.0.1';
-    
     if (!connection.address) {
         connection.address = defaultAddress;
     }
-    
     const statusBadge = connection.enabled ? 
         '<span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Enabled</span>' :
         '<span style="background: #95a5a6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Disabled</span>';
-    
     connectionDiv.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
             <div style="flex: 1;">
@@ -1244,7 +1293,6 @@ function createConnectionElement(connection, index, typeLabel) {
             ` : ''}
         </div>
     `;
-    
     return connectionDiv;
 }
 // Parameter Blacklist Management
@@ -1304,5 +1352,40 @@ async function removeBlacklistPattern(pattern) {
         }
     } catch (error) {
         debugLog(`Error removing blacklist pattern: ${error.message}`, 'error');
+    }
+}
+function updateOscLoggingStatus() {
+    const statusElement = document.getElementById('osc-logging-status');
+    const toggleBtn = document.getElementById('osc-logging-toggle-btn');
+    if (statusElement) {
+        statusElement.textContent = oscLoggingEnabled ? 'Enabled' : 'Disabled';
+        statusElement.style.color = oscLoggingEnabled ? '#28a745' : '#dc3545';
+    }
+    if (toggleBtn) {
+        toggleBtn.textContent = oscLoggingEnabled ? 'Disable OSC Logging' : 'Enable OSC Logging';
+        toggleBtn.className = oscLoggingEnabled ? 'btn btn-warning' : 'btn btn-success';
+    }
+}
+async function toggleOscLoggingQuick() {
+    try {
+        oscLoggingEnabled = !oscLoggingEnabled;
+        // Update the settings in the backend
+        const currentSettings = await window.electronAPI.getAppSettings();
+        currentSettings.enableOscLogging = oscLoggingEnabled;
+        await window.electronAPI.setAppSettings(currentSettings);
+        // Update the UI
+        updateOscLoggingStatus();
+        // Update the settings form if it exists
+        const enableOscLoggingSelect = document.getElementById('enable-osc-logging');
+        if (enableOscLoggingSelect) {
+            enableOscLoggingSelect.value = oscLoggingEnabled ? 'true' : 'false';
+        }
+        // Clear existing OSC log buffers when disabling
+        if (!oscLoggingEnabled) {
+            oscLogBuffer = [];
+        }
+        debugLog(`OSC logging ${oscLoggingEnabled ? 'enabled' : 'disabled'} - this will ${oscLoggingEnabled ? 'increase' : 'reduce'} disk I/O`);
+    } catch (error) {
+        debugLog(`Error toggling OSC logging: ${error.message}`, 'error');
     }
 }

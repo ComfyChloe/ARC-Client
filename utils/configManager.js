@@ -17,6 +17,7 @@ class ConfigManager {
       appSettings: {
         enableOscOnStartup: false,
         enableWebSocketForwarding: false,
+        enableOscLogging: true,
       },
       windowState: {
         width: 1200,

@@ -22,7 +22,6 @@ let oscService;
 let oscEnabled = false;
 let wsManager;
 let serverConfig = configManager.getServerConfig();
-
 // On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
 if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
   serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
@@ -51,7 +50,6 @@ function createWindow() {
     mainWindow.maximize();
   }
   mainWindow.setMenuBarVisibility(false);
-
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
     mainWindow.webContents.openDevTools();
@@ -212,6 +210,8 @@ function initWebSocket() {
     });
   }
 }
+// OSC message rate limiting for debug logging
+let oscMessageCounter = 0;
 function initOscServer() {
   if (oscService) {
     debug.info('Stopping existing OSC service before reinitialization...');
@@ -238,7 +238,12 @@ function initOscServer() {
     debug.logAdditionalConnections(serverConfig.additionalOscConnections);
   });
   oscService.on('messageReceived', (data) => {
-    debug.oscMessageReceived(data.address, data.value, data.type);
+    // Reduce debug logging frequency for OSC messages to prevent excessive I/O
+    // Only log every 100th message or if it's the first message
+    oscMessageCounter++;
+    if (oscMessageCounter === 1 || oscMessageCounter % 100 === 0) {
+      debug.oscMessageReceived(data.address, data.value, data.type);
+    }
     // Only forward to WebSocket if both OSC and WebSocket forwarding are enabled
     const wsConnected = wsManager && wsManager.isConnected;
     let wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
@@ -362,10 +367,8 @@ ipcMain.handle('set-config', (event, newConfig) => {
     debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
   debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
-  
   // Check if this is a custom/dev URL that shouldn't persist
   const isCustomUrl = newConfig.websocketServerUrl && newConfig.websocketServerUrl.includes('127.0.0.1');
-  
   // Save the updated config to file (excluding custom URLs)
   if (!isCustomUrl) {
     configManager.updateConfig(serverConfig);
@@ -376,7 +379,6 @@ ipcMain.handle('set-config', (event, newConfig) => {
     configManager.updateConfig(configToSave);
     debug.info('Custom/dev WebSocket URL not persisted to config file');
   }
-  
   // Update WebSocket configuration if URL changed
   if (newConfig.websocketServerUrl && oldConfig.websocketServerUrl !== newConfig.websocketServerUrl) {
     debug.info(`WebSocket URL changed from ${oldConfig.websocketServerUrl} to ${newConfig.websocketServerUrl}`);
@@ -393,15 +395,12 @@ ipcMain.handle('set-config', (event, newConfig) => {
       debug.info(`WebSocket configuration updated to: ${serverConfig.websocketServerUrl}`);
     }
   }
-
   // Check if only additional connections changed, if so, just update them
   const portsChanged = (oldConfig.localOscPort !== serverConfig.localOscPort) ||
                        (oldConfig.targetOscPort !== serverConfig.targetOscPort) ||
                        (oldConfig.targetOscAddress !== serverConfig.targetOscAddress);
-  
   const additionalConnectionsChanged = JSON.stringify(oldConfig.additionalOscConnections || []) !== 
                                        JSON.stringify(serverConfig.additionalOscConnections || []);
-  
   if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
     // Only additional connections changed, update them efficiently
     debug.info('Only additional connections changed, updating without restarting OSC service');
@@ -414,7 +413,6 @@ ipcMain.handle('set-config', (event, newConfig) => {
   } else if (!additionalConnectionsChanged) {
     debug.info('No OSC configuration changes detected');
   }
-  
   return serverConfig;
 });
 ipcMain.handle('get-app-settings', () => {
@@ -669,10 +667,8 @@ ipcMain.handle('disable-osc', () => {
 });
 app.whenReady().then(() => {
   debug.logAppStartup();
-  
   // Load logger after app is ready
   logger = require('./utils/logger');
-  
   // Get app settings from config
   const appSettings = configManager.getAppSettings();
   // Load parameter blacklist from config
