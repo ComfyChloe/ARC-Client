@@ -104,7 +104,7 @@
                         <button id="server-btn-beta" class="btn btn-secondary" onclick="switchToServer('beta')" style="flex: 1; min-width: 120px;">ARC-Beta</button>
                         <button id="server-btn-custom" class="btn btn-warning" onclick="switchToServer('custom')" style="flex: 1; min-width: 120px;">Custom (Dev)</button>
                     </div>
-                    <div id="current-server-status" style="padding: 8px; background-color: #f8f9fa; border-radius: 4px; border-left: 4px solid #3498db; margin-bottom: 10px; font-size: 0.9em;">
+                    <div id="current-server-status" class="server-status-box" style="padding: 8px; background-color: #f8f9fa; border-radius: 4px; border-left: 4px solid #3498db; margin-bottom: 10px; font-size: 0.9em;">
                         <strong>Current Server:</strong> <span id="current-server-name">ARC-Live</span>
                     </div>
                 </div>
@@ -182,7 +182,7 @@
                 <h1>Logs</h1>
                 <p>View application logs and activity</p>
             </div>
-            <div class="card" style="margin-bottom: 10px; padding: 10px; background-color: #f8f9fa; border-left: 4px solid #17a2b8;">
+            <div class="card osc-logging-status-box" style="margin-bottom: 10px; padding: 10px; background-color: #f8f9fa; border-left: 4px solid #17a2b8;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <strong>OSC Data Logging Status:</strong> 
@@ -275,7 +275,7 @@
                 </p>
                 
                 <!-- Controls moved to top -->
-                <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
+                <div class="osc-connection-controls" style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
                             <button class="btn btn-success" onclick="addOscConnection('incoming')" id="add-incoming-btn" style="margin-right: 10px;">+ Add Incoming</button>
@@ -294,8 +294,12 @@
             <div class="card">
                 <h3>Parameter Blacklist</h3>
                 <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
-                    Block specific parameters from being forwarded to the ARC server. Use * as a wildcard (e.g., /avatar/parameters/FT* to block all parameters starting with FT).
+                    Block excessive parameters from being sent to the ARC server.
                 </p>
+                <p>Use * as a wildcard (e.g., /avatar/parameters/Hue/* to block all parameters after /avatar/parameters/Hue/).
+                </p><br>
+                <p>View the Logs section of the app and check what data is being sent in excess to ARC and consider blacklisting those parameters.
+                </p><br>
                 <div class="form-group">
                     <label for="blacklist-pattern">Parameter Pattern</label>
                     <div style="display: flex; gap: 10px;">

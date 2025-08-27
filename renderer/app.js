@@ -1168,7 +1168,7 @@ function renderAdditionalOscConnections() {
     const outgoingColumn = document.createElement('div');
     outgoingColumn.style.cssText = 'min-height: 100px;';
     const isDarkTheme = document.body.classList.contains('dark-theme');
-    const textColor = isDarkTheme ? '#bdc3c7' : '#666';
+    const textColor = isDarkTheme ? '#b0b0b0' : '#666';
     const incomingHeader = document.createElement('h5');
     incomingHeader.style.cssText = 'margin: 0 0 15px 0; color: #27ae60; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #27ae60;';
     incomingHeader.innerHTML = '📥 Incoming <span style="font-size: 0.8em; margin-left: 10px; color: ' + textColor + ';">(' + incomingConnections.length + ')</span>';
@@ -1243,8 +1243,8 @@ function createConnectionElement(connection, index, typeLabel) {
         '<span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Enabled</span>' :
         '<span style="background: #95a5a6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Disabled</span>';
     const isDarkTheme = document.body.classList.contains('dark-theme');
-    const smallTextColor = isDarkTheme ? '#bdc3c7' : '#666';
-    const headerTextColor = isDarkTheme ? '#ecf0f1' : '#2c3e50';
+    const smallTextColor = isDarkTheme ? '#b0b0b0' : '#666';
+    const headerTextColor = isDarkTheme ? '#e0e0e0' : '#2c3e50';
     connectionDiv.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
             <div style="flex: 1;">
@@ -1319,7 +1319,7 @@ function renderBlacklistPatterns(patterns) {
     const container = document.getElementById('blacklist-patterns');
     if (patterns.length === 0) {
         const isDarkTheme = document.body.classList.contains('dark-theme');
-        const textColor = isDarkTheme ? '#bdc3c7' : '#666';
+        const textColor = isDarkTheme ? '#b0b0b0' : '#666';
         container.innerHTML = `<p style="color: ${textColor}; font-style: italic;">No patterns configured</p>`;
         return;
     }
