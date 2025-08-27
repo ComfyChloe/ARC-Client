@@ -241,7 +241,15 @@ function initOscServer() {
     debug.oscMessageReceived(data.address, data.value, data.type);
     // Only forward to WebSocket if both OSC and WebSocket forwarding are enabled
     const wsConnected = wsManager && wsManager.isConnected;
-    const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
+    let wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
+    // If this message comes from an additional connection, check its individual forwarding setting
+    if (data.connectionId) {
+      const connection = serverConfig.additionalOscConnections?.find(conn => conn.id === data.connectionId);
+      if (connection && connection.type === 'incoming') {
+        // For incoming additional connections, use their individual WebSocket forwarding setting
+        wsForwardingEnabled = connection.enableWebSocketForwarding || false;
+      }
+    }
     if (wsConnected && wsForwardingEnabled) {
       // Check if the parameter is blacklisted before forwarding
       if (!parameterBlacklist.isBlacklisted(data.address)) {
@@ -266,7 +274,11 @@ function initOscServer() {
       }
     } else {
       if (wsConnected && !wsForwardingEnabled) {
-        // debug.logWebSocketForwarding(`WebSocket forwarding disabled - not forwarding: ${data.address}`);
+        if (data.connectionId) {
+          debug.logWebSocketForwarding(`Additional connection WebSocket forwarding disabled - not forwarding: ${data.address}`);
+        } else {
+          // debug.logWebSocketForwarding(`WebSocket forwarding disabled - not forwarding: ${data.address}`);
+        }
       }
     }
     if (!data.connectionId && oscService) {

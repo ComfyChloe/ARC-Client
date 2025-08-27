@@ -28,6 +28,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     navSettings.classList.remove('active');
     navSettings.disabled = false;
     debugLog('Application initialized');
+    // Load blacklist when page loads
+    setTimeout(() => {
+        loadParameterBlacklist();
+    }, 500);
+    // Add Enter key support for blacklist input
+    setTimeout(() => {
+        const blacklistInput = document.getElementById('blacklist-pattern');
+        if (blacklistInput) {
+            blacklistInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    addBlacklistPattern();
+                }
+            });
+        }
+    }, 100);
 });
 async function loadConfig() {
     try {
@@ -949,7 +964,8 @@ async function addOscConnection(type) {
         port: null,
         address: '127.0.0.1',
         enabled: false, // Default to disabled for new connections
-        name: '' // Optional user-defined name
+        name: '', // Optional user-defined name
+        enableWebSocketForwarding: false // Default to disabled for WebSocket forwarding
     };
     additionalOscConnections.push(newConnection);
     
@@ -1004,6 +1020,27 @@ async function toggleOscConnection(id, enabled) {
         }
     } catch (error) {
         debugLog(`Error toggling OSC connection: ${error.message}`, 'error');
+    }
+}
+
+async function toggleOscConnectionWebSocketForwarding(id, enabled) {
+    try {
+        const connection = additionalOscConnections.find(conn => conn.id === id);
+        if (connection) {
+            connection.enableWebSocketForwarding = enabled;
+            // Update the configuration immediately
+            const currentConfig = await window.electronAPI.getServerConfig();
+            const updatedConfig = {
+                ...currentConfig,
+                additionalOscConnections: additionalOscConnections
+            };
+            await window.electronAPI.setConfig(updatedConfig);
+            // Re-render to update the UI
+            renderAdditionalOscConnections();
+            debugLog(`${connection.name || 'Connection'} WebSocket forwarding ${enabled ? 'enabled' : 'disabled'} - configuration updated`);
+        }
+    } catch (error) {
+        debugLog(`Error toggling OSC connection WebSocket forwarding: ${error.message}`, 'error');
     }
 }
 
@@ -1194,6 +1231,17 @@ function createConnectionElement(connection, index, typeLabel) {
                     ${connection.enabled ? 'Disable' : 'Enable'}
                 </button>
             </div>
+            
+            ${connection.type === 'incoming' ? `
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
+                <label style="font-size: 0.85em; font-weight: 600; color: #555; margin: 0;">ARC Server Forward:</label>
+                <button class="btn ${connection.enableWebSocketForwarding ? 'btn-danger' : 'btn-success'}" 
+                        onclick="toggleOscConnectionWebSocketForwarding('${connection.id}', ${!connection.enableWebSocketForwarding})"
+                        style="padding: 4px 12px; font-size: 12px; min-width: 70px;">
+                    ${connection.enableWebSocketForwarding ? 'Disable' : 'Enable'}
+                </button>
+            </div>
+            ` : ''}
         </div>
     `;
     
@@ -1258,23 +1306,3 @@ async function removeBlacklistPattern(pattern) {
         debugLog(`Error removing blacklist pattern: ${error.message}`, 'error');
     }
 }
-// Add Enter key support for blacklist input
-document.addEventListener('DOMContentLoaded', () => {
-    // ...existing code...
-    // Load blacklist when page loads
-    setTimeout(() => {
-        loadParameterBlacklist();
-    }, 500);
-    
-    // Add Enter key support for blacklist input
-    setTimeout(() => {
-        const blacklistInput = document.getElementById('blacklist-pattern');
-        if (blacklistInput) {
-            blacklistInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    addBlacklistPattern();
-                }
-            });
-        }
-    }, 100);
-});
