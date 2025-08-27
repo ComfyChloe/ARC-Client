@@ -52,10 +52,10 @@
                 <button class="btn btn-primary" id="nav-settings" onclick="showSettingsView()" style="width: 100%;">Settings</button>
             </div>
             <div class="sidebar-section" id="avatar-section" style="display: none;">
-                <h3>Current Avatar</h3>
+                <h3>Avatar - (Server Side)</h3>
                 <div class="avatar-info" id="avatar-info">
-                    <div id="avatar-id">No avatar selected</div>
-                    <div id="parameter-count">0 parameters</div>
+                    <div id="avatar-name" style="font-weight: bold; margin-bottom: 5px;">No avatar detected</div>
+                    <div id="avatar-id" style="font-size: 0.85em; color: #bdc3c7; word-break: break-all;">ID: Not available</div>
                 </div>
             </div>
             <div class="sidebar-section" id="auth-section">
@@ -211,6 +211,13 @@
                     No OSC data received yet<br>
                 </div>
                 <button class="btn btn-primary" onclick="clearOscReceivedLogs()" style="margin-top: 10px;">Clear OSC Received</button>
+            </div>
+            <div class="card">
+                <h3>OSC Received (from ARC Server)</h3>
+                <div class="log-container" id="osc-arc-received-log-container">
+                    No OSC data received from ARC Server yet<br>
+                </div>
+                <button class="btn btn-primary" onclick="clearOscArcReceivedLogs()" style="margin-top: 10px;">Clear OSC from ARC</button>
             </div>
             <div class="card">
                 <h3>OSC Forwarded (to ARC Server)</h3>

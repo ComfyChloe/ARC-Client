@@ -168,6 +168,7 @@ function setupEventListeners() {
     // WebSocket event listeners
     window.electronAPI.onWebSocketStatus((data) => {
         console.log('WebSocket status update:', data);
+        debugLog(`WebSocket status changed to: ${data.status}`);
         updateServerConnectionStatus(data.status);
         if (data.status === 'connected') {
             isConnected = true;
@@ -199,11 +200,22 @@ function setupEventListeners() {
     });
     window.electronAPI.onWebSocketOscData((data) => {
         debugLog(`WebSocket OSC received from server: ${data.address} = ${data.value}`);
+        // Add to ARC received log
+        addToOscArcReceivedLog(data.address, data.value);
     });
     window.electronAPI.onWebSocketAvatarChange((data) => {
-        currentAvatar = data;
+        console.log('Avatar change received:', data);
+        // Store the full avatar data including ID, name, and username
+        currentAvatar = {
+            id: data.id,
+            name: data.name, // Server-provided name
+            username: data.username,
+            // Use server-provided name or fall back to extracted display name
+            displayName: data.name || getDisplayNameFromAvatarId(data.id)
+        };
         updateAvatarDisplay();
-        debugLog(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+        const displayName = data.name ? `${data.name} (${data.id})` : data.id;
+        debugLog(`Avatar changed: ${displayName} for user ${data.username}`);
     });
     window.electronAPI.onWebSocketParameterUpdate((data) => {
         if (data.parameters) {
@@ -274,6 +286,8 @@ function updateWebSocketForwardingStatus(enabled) {
     }
 }
 function updateServerConnectionStatus(status) {
+    console.log('updateServerConnectionStatus called with:', status);
+    debugLog(`Connection status update: ${status}`);
     const indicator = document.getElementById('server-status');
     const text = document.getElementById('server-status-text');
     indicator.className = 'status-indicator';
@@ -569,22 +583,46 @@ async function disconnect() {
 }
 function updateAvatarDisplay() {
     const avatarSection = document.getElementById('avatar-section');
-    const avatarInfo = document.getElementById('avatar-info');
+    const avatarName = document.getElementById('avatar-name');
     const avatarId = document.getElementById('avatar-id');
-    const parameterCount = document.getElementById('parameter-count');
     
     if (isAuthenticated && currentAvatar) {
         avatarSection.style.display = 'block';
-        avatarId.textContent = currentAvatar.avatarId || currentAvatar.name || 'Unknown Avatar';
-        const paramCount = Object.keys(parameters).length;
-        parameterCount.textContent = `${paramCount} parameters`;
+        // Display the human-readable name or fallback to "Unknown Avatar"
+        avatarName.textContent = currentAvatar.displayName || 'Unknown Avatar';
+        // Display the full avatar ID
+        avatarId.textContent = `ID: ${currentAvatar.id}`;
+        avatarId.style.display = 'block';
     } else if (isAuthenticated) {
         avatarSection.style.display = 'block';
-        avatarId.textContent = 'No avatar detected';
-        parameterCount.textContent = '0 parameters';
+        avatarName.textContent = 'No avatar detected';
+        avatarId.textContent = 'ID: Not available';
+        avatarId.style.display = 'block';
     } else {
         avatarSection.style.display = 'none';
     }
+}
+// Helper function to extract a human-readable name from avatar ID
+function getDisplayNameFromAvatarId(avatarId) {
+    if (!avatarId || typeof avatarId !== 'string') {
+        return null;
+    }
+    // VRChat avatar IDs typically start with "avtr_" followed by a UUID
+    // TODO: In the future, this could be enhanced to:
+    // 1. Query the server for known avatar names from the config
+    // 2. Store local avatar name cache from uploaded JSON files
+    // 3. Use VRChat API to resolve avatar names
+    if (avatarId.startsWith('avtr_')) {
+        // Extract the UUID part and show first 8 characters for readability
+        const uuid = avatarId.substring(5); // Remove "avtr_" prefix
+        const shortId = uuid.substring(0, 8);
+        return `Avatar ${shortId}`;
+    }
+    // For other avatar ID formats, just return the first 16 characters
+    if (avatarId.length > 16) {
+        return `${avatarId.substring(0, 16)}...`;
+    }
+    return avatarId;
 }
 function updateParameterList() {
     const parameterList = document.getElementById('parameter-list');
@@ -769,6 +807,26 @@ function clearClientLogs() {
 }
 function clearOscReceivedLogs() {
     document.getElementById('osc-received-log-container').innerHTML = 'No OSC data received yet<br>';
+}
+function clearOscArcReceivedLogs() {
+    document.getElementById('osc-arc-received-log-container').innerHTML = 'No OSC data received from ARC Server yet<br>';
+}
+function addToOscArcReceivedLog(address, value) {
+    const container = document.getElementById('osc-arc-received-log-container');
+    if (container) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        logEntry.style.color = '#ff8c00'; // Orange color to distinguish from regular OSC
+        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}`;
+        container.appendChild(logEntry);
+        // Auto-scroll to bottom
+        container.scrollTop = container.scrollHeight;
+        // Limit log entries to prevent memory issues
+        const entries = container.children;
+        if (entries.length > 500) {
+            container.removeChild(entries[0]);
+        }
+    }
 }
 function clearOscForwardedLogs() {
     document.getElementById('osc-forwarded-log-container').innerHTML = 'No OSC data forwarded yet<br>';

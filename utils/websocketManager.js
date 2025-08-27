@@ -134,6 +134,7 @@ class WebSocketManager {
             this.emit('osc-data', data);
         });
         this.socket.on('avatar-change', (data) => {
+            console.log('WebSocket received avatar-change:', data);
             this.emit('avatar-change', data);
         });
         this.socket.on('parameter-update', (data) => {

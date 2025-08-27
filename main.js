@@ -204,8 +204,10 @@ function initWebSocket() {
       }
     });
     wsManager.on('avatar-change', (data) => {
+      console.log('Main process received avatar-change:', data);
       sendToRenderer('websocket-avatar-change', data);
-      debug.logWebSocketConnection(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+      const displayName = data.name ? `${data.name} (${data.id})` : data.id;
+      debug.logWebSocketConnection(`Avatar changed: ${displayName} for user ${data.username || 'Unknown'}`);
     });
     wsManager.on('parameter-update', (data) => {
       sendToRenderer('websocket-parameter-update', data);
