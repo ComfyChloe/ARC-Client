@@ -179,5 +179,11 @@ class Debugger {
   }
   logWebSocketForwarding(message) {
   }
+  logMemoryUsage(memoryInfo) {
+    this.warn('Memory usage status', memoryInfo);
+  }
+  logMemoryCleanup(details) {
+    this.info('Memory cleanup performed', details);
+  }
 }
 module.exports = new Debugger();

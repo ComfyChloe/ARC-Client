@@ -461,6 +461,34 @@ ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
 });
+ipcMain.handle('get-memory-stats', () => {
+  const memoryUsage = process.memoryUsage();
+  return {
+    rss: Math.round(memoryUsage.rss / 1024 / 1024),
+    heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+    heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+    external: Math.round(memoryUsage.external / 1024 / 1024),
+    parameterCount: oscService ? Object.keys(oscService.getParameters()).length : 0
+  };
+});
+ipcMain.handle('force-memory-cleanup', () => {
+  try {
+    if (global.gc) {
+      global.gc();
+    }
+    if (oscService && typeof oscService.cleanupOldParameters === 'function') {
+      oscService.cleanupOldParameters();
+    }
+    const memoryUsage = process.memoryUsage();
+    debug.logMemoryCleanup({
+      heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+      parameterCount: oscService ? Object.keys(oscService.getParameters()).length : 0
+    });
+    return { success: true, message: 'Memory cleanup performed' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 ipcMain.handle('websocket-connect', async (event, credentials) => {
   try {
     initWebSocket();
@@ -686,6 +714,8 @@ app.whenReady().then(() => {
   debug.info(`OSC startup state from config: ${oscEnabled ? 'enabled' : 'disabled'}`);
   // Important: Window before initializing OSC service
   createWindow();
+  // Set up periodic memory management
+  setupMemoryManagement();
   // Initialize OSC after a short delay to ensure the window is ready
   setTimeout(() => {
     if (oscEnabled) {
@@ -708,6 +738,35 @@ app.whenReady().then(() => {
     }
   });
 });
+function setupMemoryManagement() {
+  // Set up periodic garbage collection and memory cleanup
+  setInterval(() => {
+    try {
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc();
+      }
+      // Clean up OSC parameters if service exists
+      if (oscService && typeof oscService.cleanupOldParameters === 'function') {
+        oscService.cleanupOldParameters();
+      }
+      // Log memory usage periodically
+      const memoryUsage = process.memoryUsage();
+      const memoryMB = {
+        rss: Math.round(memoryUsage.rss / 1024 / 1024),
+        heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+        external: Math.round(memoryUsage.external / 1024 / 1024)
+      };
+      // Only log if memory usage is concerning
+      if (memoryUsage.heapUsed > 200 * 1024 * 1024) { // Over 200MB heap
+        debug.warn('High memory usage detected', memoryMB);
+      }
+    } catch (error) {
+      debug.logError(`Memory management error: ${error.message}`);
+    }
+  }, 60000); // Every minute
+}
 function cleanup(source = 'unknown') {
   if (isShuttingDown) {
     return;

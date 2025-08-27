@@ -12,6 +12,12 @@ class OscService extends EventEmitter {
     this.parameters = {};
     this.additionalConnections = [];
     this.forwardFromAdditionalToPrimary = true;
+    // Memory management settings
+    this.maxParameterCount = 10000; // Limit parameter storage
+    this.parameterCleanupInterval = 300000; // 5 minutes
+    this.lastParameterCleanup = Date.now();
+    // Start parameter cleanup timer
+    this.setupParameterCleanup();
   }
   initialize(localPort = null, targetPort = 9000, targetAddress = '127.0.0.1') {
     this.targetPort = targetPort;
@@ -229,9 +235,16 @@ class OscService extends EventEmitter {
   }
   
   stop() {
+    // Clear parameter cleanup timer
+    if (this.parameterCleanupTimer) {
+      clearInterval(this.parameterCleanupTimer);
+      this.parameterCleanupTimer = null;
+    }
     // Stop primary port
     if (this.primaryUdpPort && this.isListening) {
       try {
+        // Remove all event listeners to prevent memory leaks
+        this.primaryUdpPort.removeAllListeners();
         this.primaryUdpPort.close();
       } catch (error) {
         if (error.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
@@ -244,6 +257,8 @@ class OscService extends EventEmitter {
     this.additionalPorts.forEach((portData, connectionId) => {
       if (portData.server) {
         try {
+          // Remove all event listeners to prevent memory leaks
+          portData.server.removeAllListeners();
           if (portData.server._handle) {
             portData.server.close();
           }
@@ -255,6 +270,8 @@ class OscService extends EventEmitter {
       }
       if (portData.client) {
         try {
+          // Remove all event listeners to prevent memory leaks
+          portData.client.removeAllListeners();
           if (portData.client._handle) {
             portData.client.close();
           }
@@ -289,7 +306,9 @@ class OscService extends EventEmitter {
         type = 'bool';
         value = true;
       }
-      this.parameters[address] = { value, type };
+      // Add timestamp to parameter and check for cleanup
+      this.parameters[address] = { value, type, timestamp: Date.now() };
+      this.checkParameterCleanup();
       if (connectionId !== null && this.forwardFromAdditionalToPrimary && this.primaryUdpPort && this.isListening) {
         try {
           // Forward the exact original message without reformatting
@@ -441,6 +460,49 @@ class OscService extends EventEmitter {
   clearParameters() {
     this.parameters = {};
     this.emit('parametersCleared');
+  }
+  setupParameterCleanup() {
+    // Set up periodic cleanup to prevent memory leaks
+    this.parameterCleanupTimer = setInterval(() => {
+      this.cleanupOldParameters();
+    }, this.parameterCleanupInterval);
+  }
+  checkParameterCleanup() {
+    const parameterCount = Object.keys(this.parameters).length;
+    if (parameterCount > this.maxParameterCount) {
+      console.log(`Parameter count (${parameterCount}) exceeded limit (${this.maxParameterCount}), cleaning up old parameters`);
+      this.cleanupOldParameters();
+    }
+  }
+  cleanupOldParameters() {
+    const now = Date.now();
+    const maxAge = 600000; // 10 minutes
+    let cleanedCount = 0;
+    // Remove parameters older than maxAge
+    Object.keys(this.parameters).forEach(address => {
+      const param = this.parameters[address];
+      if (param.timestamp && (now - param.timestamp) > maxAge) {
+        delete this.parameters[address];
+        cleanedCount++;
+      }
+    });
+    // If still too many parameters, keep only the most recent half
+    const currentCount = Object.keys(this.parameters).length;
+    if (currentCount > this.maxParameterCount) {
+      const sortedEntries = Object.entries(this.parameters)
+        .filter(([_, param]) => param.timestamp)
+        .sort(([_, a], [__, b]) => b.timestamp - a.timestamp)
+        .slice(0, Math.floor(this.maxParameterCount / 2));
+      this.parameters = {};
+      sortedEntries.forEach(([address, param]) => {
+        this.parameters[address] = param;
+      });
+      cleanedCount += currentCount - sortedEntries.length;
+    }
+    if (cleanedCount > 0) {
+      console.log(`Cleaned up ${cleanedCount} old parameters, ${Object.keys(this.parameters).length} remaining`);
+    }
+    this.lastParameterCleanup = now;
   }
   findAvailablePort(startPort, endPort) {
     const net = require('net');

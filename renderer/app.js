@@ -14,8 +14,9 @@ let currentTheme = 'light';
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
 let oscLoggingEnabled = true; // Default to true for backward compatibility
-const OSC_LOG_BUFFER_SIZE = 50;
+const OSC_LOG_BUFFER_SIZE = 25; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
+const MAX_LOG_ENTRIES = 25; // Maximum log entries to keep in DOM
 // Websocket connection states end
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
@@ -687,8 +688,8 @@ function flushOscLogBuffer() {
         });
         receivedContainer.appendChild(fragment);
         receivedContainer.scrollTop = receivedContainer.scrollHeight;
-        // Trim logs to prevent memory bloat
-        while (receivedContainer.children.length > 100) {
+        // Trim logs to prevent memory bloat - use MAX_LOG_ENTRIES
+        while (receivedContainer.children.length > MAX_LOG_ENTRIES) {
             receivedContainer.removeChild(receivedContainer.firstChild);
         }
     }
@@ -705,8 +706,8 @@ function flushOscLogBuffer() {
         });
         forwardedContainer.appendChild(fragment);
         forwardedContainer.scrollTop = forwardedContainer.scrollHeight;
-        // Trim logs to prevent memory bloat
-        while (forwardedContainer.children.length > 100) {
+        // Trim logs to prevent memory bloat - use MAX_LOG_ENTRIES
+        while (forwardedContainer.children.length > MAX_LOG_ENTRIES) {
             forwardedContainer.removeChild(forwardedContainer.firstChild);
         }
     }
