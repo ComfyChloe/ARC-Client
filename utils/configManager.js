@@ -18,6 +18,7 @@ class ConfigManager {
         enableOscOnStartup: false,
         enableWebSocketForwarding: false,
         enableOscLogging: true,
+        theme: 'light'
       },
       windowState: {
         width: 1200,
@@ -91,7 +92,8 @@ class ConfigManager {
       autoConnect: this.config.autoConnect || false,
       logLevel: this.config.logLevel || 'info',
       enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false,
-      enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false
+      enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
+      theme: this.config.appSettings?.theme || 'light'
     };
   }
   updateAppSettings(settings) {
@@ -107,6 +109,10 @@ class ConfigManager {
     // Update WebSocket forwarding (transmit) setting
     if (settings.enableWebSocketForwarding !== undefined) {
       this.config.appSettings.enableWebSocketForwarding = settings.enableWebSocketForwarding;
+    }
+    // Update theme setting
+    if (settings.theme !== undefined) {
+      this.config.appSettings.theme = settings.theme;
     }
     // Log any changes to the OSC startup setting
     if (oldOscStartup !== this.config.appSettings.enableOscOnStartup) {

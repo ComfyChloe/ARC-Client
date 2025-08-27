@@ -10,7 +10,13 @@
     <div class="app-container">
         <div class="sidebar">
             <div class="sidebar-section">
-                <h3>Connection Status</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3>Connection Status</h3>
+                    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                        <span class="theme-toggle-sun">☀</span>
+                        <span class="theme-toggle-moon">🌙</span>
+                    </button>
+                </div>
                 <div class="connection-status">
                     <span class="status-indicator status-disconnected" id="server-status"></span>
                     <span id="server-status-text">Disconnected</span>

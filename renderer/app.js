@@ -9,6 +9,7 @@ let currentUser = null;
 let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
+let currentTheme = 'light';
 // OSC Logging rate limiting
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
@@ -19,6 +20,7 @@ const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     await loadAppSettings();
+    await loadTheme();
     setupEventListeners();
     setupExtrasDropdown();
     const navMain = document.getElementById('nav-main');
@@ -1005,6 +1007,9 @@ async function loadAppSettings() {
         // Set global OSC logging state
         oscLoggingEnabled = settings.enableOscLogging !== false; // Default to true for backward compatibility
         updateOscLoggingStatus();
+        // Apply theme from settings
+        currentTheme = settings.theme || 'light';
+        applyTheme(currentTheme);
         // Initialize WebSocket forwarding status from settings
         wsForwardingEnabled = settings.enableWebSocketForwarding || false;
         updateWebSocketForwardingStatus(wsForwardingEnabled);
@@ -1161,13 +1166,15 @@ function renderAdditionalOscConnections() {
     incomingColumn.style.cssText = 'min-height: 100px;';
     const outgoingColumn = document.createElement('div');
     outgoingColumn.style.cssText = 'min-height: 100px;';
+    const isDarkTheme = document.body.classList.contains('dark-theme');
+    const textColor = isDarkTheme ? '#bdc3c7' : '#666';
     const incomingHeader = document.createElement('h5');
     incomingHeader.style.cssText = 'margin: 0 0 15px 0; color: #27ae60; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #27ae60;';
-    incomingHeader.innerHTML = '📥 Incoming <span style="font-size: 0.8em; margin-left: 10px; color: #666;">(' + incomingConnections.length + ')</span>';
+    incomingHeader.innerHTML = '📥 Incoming <span style="font-size: 0.8em; margin-left: 10px; color: ' + textColor + ';">(' + incomingConnections.length + ')</span>';
     incomingColumn.appendChild(incomingHeader);
     const outgoingHeader = document.createElement('h5');
     outgoingHeader.style.cssText = 'margin: 0 0 15px 0; color: #e74c3c; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #e74c3c;';
-    outgoingHeader.innerHTML = '📤 Outgoing <span style="font-size: 0.8em; margin-left: 10px; color: #666;">(' + outgoingConnections.length + ')</span>';
+    outgoingHeader.innerHTML = '📤 Outgoing <span style="font-size: 0.8em; margin-left: 10px; color: ' + textColor + ';">(' + outgoingConnections.length + ')</span>';
     outgoingColumn.appendChild(outgoingHeader);
     if (incomingConnections.length === 0) {
         const emptyState = document.createElement('p');
@@ -1234,14 +1241,17 @@ function createConnectionElement(connection, index, typeLabel) {
     const statusBadge = connection.enabled ? 
         '<span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Enabled</span>' :
         '<span style="background: #95a5a6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Disabled</span>';
+    const isDarkTheme = document.body.classList.contains('dark-theme');
+    const smallTextColor = isDarkTheme ? '#bdc3c7' : '#666';
+    const headerTextColor = isDarkTheme ? '#ecf0f1' : '#2c3e50';
     connectionDiv.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
             <div style="flex: 1;">
-                <h6 style="margin: 0 0 5px 0; color: #2c3e50; font-size: 0.95em;">
+                <h6 style="margin: 0 0 5px 0; color: ${headerTextColor}; font-size: 0.95em;">
                     ${connection.name || `Connection ${index}`}
                 </h6>
                 <div style="margin-bottom: 8px;">${statusBadge}</div>
-                <small style="color: #666; font-size: 0.8em; line-height: 1.3;">
+                <small style="color: ${smallTextColor}; font-size: 0.8em; line-height: 1.3;">
                     ${connection.type === 'incoming' ? '🔽 Receives OSC data' : '🔼 Sends OSC data'}
                 </small>
             </div>
@@ -1250,14 +1260,14 @@ function createConnectionElement(connection, index, typeLabel) {
         
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555;">Connection Name</label>
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor};">Connection Name</label>
                 <input type="text" placeholder="e.g. TouchOSC, SteamVR.." value="${connection.name || ''}" 
                        onchange="updateOscConnection('${connection.id}', 'name', this.value)"
                        style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;">
             </div>
             
             <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555;">${portLabel}</label>
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor};">${portLabel}</label>
                 <input type="number" placeholder="9040" value="${connection.port || ''}" 
                        onchange="updateOscConnection('${connection.id}', 'port', this.value)"
                        style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;"
@@ -1265,7 +1275,7 @@ function createConnectionElement(connection, index, typeLabel) {
             </div>
             
             <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555;">${addressLabel}</label>
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor};">${addressLabel}</label>
                 <input type="text" value="${connection.address}" 
                        onchange="updateOscConnection('${connection.id}', 'address', this.value)"
                        style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;"
@@ -1273,7 +1283,7 @@ function createConnectionElement(connection, index, typeLabel) {
             </div>
             
             <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555; margin: 0;">Connection Status:</label>
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor}; margin: 0;">Connection Status:</label>
                 <button class="btn ${connection.enabled ? 'btn-danger' : 'btn-success'}" 
                         onclick="toggleOscConnection('${connection.id}', ${!connection.enabled})"
                         style="padding: 4px 12px; font-size: 12px; min-width: 70px;">
@@ -1283,7 +1293,7 @@ function createConnectionElement(connection, index, typeLabel) {
             
             ${connection.type === 'incoming' ? `
             <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555; margin: 0;">ARC Server Forward:</label>
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor}; margin: 0;">ARC Server Forward:</label>
                 <button class="btn ${connection.enableWebSocketForwarding ? 'btn-danger' : 'btn-success'}" 
                         onclick="toggleOscConnectionWebSocketForwarding('${connection.id}', ${!connection.enableWebSocketForwarding})"
                         style="padding: 4px 12px; font-size: 12px; min-width: 70px;">
@@ -1307,7 +1317,9 @@ async function loadParameterBlacklist() {
 function renderBlacklistPatterns(patterns) {
     const container = document.getElementById('blacklist-patterns');
     if (patterns.length === 0) {
-        container.innerHTML = '<p style="color: #666; font-style: italic;">No patterns configured</p>';
+        const isDarkTheme = document.body.classList.contains('dark-theme');
+        const textColor = isDarkTheme ? '#bdc3c7' : '#666';
+        container.innerHTML = `<p style="color: ${textColor}; font-style: italic;">No patterns configured</p>`;
         return;
     }
     const patternsHtml = patterns.map(pattern => `
@@ -1387,5 +1399,39 @@ async function toggleOscLoggingQuick() {
         debugLog(`OSC logging ${oscLoggingEnabled ? 'enabled' : 'disabled'} - this will ${oscLoggingEnabled ? 'increase' : 'reduce'} disk I/O`);
     } catch (error) {
         debugLog(`Error toggling OSC logging: ${error.message}`, 'error');
+    }
+}
+async function loadTheme() {
+    try {
+        const settings = await window.electronAPI.getAppSettings();
+        currentTheme = settings.theme || 'light';
+        applyTheme(currentTheme);
+        debugLog(`Theme loaded: ${currentTheme}`);
+    } catch (error) {
+        debugLog(`Error loading theme: ${error.message}`, 'error');
+        currentTheme = 'light';
+        applyTheme(currentTheme);
+    }
+}
+function applyTheme(theme) {
+    const body = document.body;
+    if (theme === 'dark') {
+        body.classList.add('dark-theme');
+    } else {
+        body.classList.remove('dark-theme');
+    }
+    currentTheme = theme;
+}
+async function toggleTheme() {
+    try {
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        applyTheme(newTheme);
+        // Save the theme setting
+        const currentSettings = await window.electronAPI.getAppSettings();
+        currentSettings.theme = newTheme;
+        await window.electronAPI.setAppSettings(currentSettings);
+        debugLog(`Theme switched to ${newTheme} mode`);
+    } catch (error) {
+        debugLog(`Error toggling theme: ${error.message}`, 'error');
     }
 }
