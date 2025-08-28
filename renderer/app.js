@@ -14,9 +14,14 @@ let currentTheme = 'light';
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
 let oscLoggingEnabled = true; // Default to true for backward compatibility
-const OSC_LOG_BUFFER_SIZE = 25; // Reduced for better memory management
+const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
-const MAX_LOG_ENTRIES = 25; // Maximum log entries to keep in DOM
+const MAX_LOG_ENTRIES = 10000; // Maximum log entries to keep in DOM
+// Float rate limiting (similar to server implementation)
+const FLOAT_THROTTLE_INTERVAL = 750; // ms
+let lastFloatLogTimes = new Map(); // Track last log time per address
+let pendingFloatTimeouts = new Map(); // Track pending timeouts for float logging
+let lastFloatValues = new Map(); // Store latest values for delayed logging
 // Websocket connection states end
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
@@ -179,6 +184,8 @@ function setupEventListeners() {
             currentUser = null;
             currentAvatar = null;
             parameters = {};
+            // Clear float rate limiting data on WebSocket disconnect
+            clearFloatRateLimitingData();
             debugLog('Disconnected from WebSocket server');
             updateUI();
             updateAvatarDisplay();
@@ -199,7 +206,6 @@ function setupEventListeners() {
         updateParameterList();
     });
     window.electronAPI.onWebSocketOscData((data) => {
-        debugLog(`WebSocket OSC received from server: ${data.address} = ${data.value}`);
         // Add to ARC received log
         addToOscArcReceivedLog(data.address, data.value);
     });
@@ -572,6 +578,8 @@ async function disconnect() {
         currentUser = null;
         currentAvatar = null;
         parameters = {};
+        // Clear float rate limiting data on disconnect
+        clearFloatRateLimitingData();
         updateUI();
         updateAvatarDisplay();
         updateParameterList();
@@ -720,10 +728,99 @@ function debugLog(message, type = 'info') {
         container.removeChild(container.firstChild);
     }
 }
+// Helper function to determine if a value is a float
+function isFloatValue(value) {
+    // Check if it's a number and has decimal places, or if it's a string representation of a float
+    if (typeof value === 'number') {
+        return !Number.isInteger(value);
+    }
+    if (typeof value === 'string') {
+        const num = parseFloat(value);
+        return !isNaN(num) && value.includes('.') && !Number.isInteger(num);
+    }
+    return false;
+}
+// Handle float OSC logging with rate limiting (similar to server implementation)
+function handleFloatOscLog(type, address, value, connectionId) {
+    const key = `${type}-${address}`;
+    const now = Date.now();
+    const lastLogTime = lastFloatLogTimes.get(key) || 0;
+    // Store the latest value for this address/type combination
+    lastFloatValues.set(key, { type, address, value, connectionId, timestamp: now });
+    // Clear any existing timeout for this key
+    if (pendingFloatTimeouts.has(key)) {
+        clearTimeout(pendingFloatTimeouts.get(key));
+    }
+    // If enough time has passed since last log, log immediately
+    if (now - lastLogTime >= FLOAT_THROTTLE_INTERVAL) {
+        logFloatValueImmediate(type, address, value, connectionId);
+        lastFloatLogTimes.set(key, now);
+        return;
+    }
+    // Otherwise, set a timeout to log the final value after the throttle interval
+    const timeoutId = setTimeout(() => {
+        const finalData = lastFloatValues.get(key);
+        if (finalData) {
+            logFloatValueImmediate(finalData.type, finalData.address, finalData.value, finalData.connectionId);
+            lastFloatLogTimes.set(key, Date.now());
+        }
+        pendingFloatTimeouts.delete(key);
+    }, FLOAT_THROTTLE_INTERVAL);
+    pendingFloatTimeouts.set(key, timeoutId);
+}
+// Immediately log a float value to the appropriate container
+function logFloatValueImmediate(type, address, value, connectionId) {
+    const timestamp = new Date().toLocaleTimeString();
+    const connectionText = connectionId ? ` (conn: ${connectionId})` : '';
+    let container, color;
+    switch (type) {
+        case 'received':
+            container = document.getElementById('osc-received-log-container');
+            color = '#00ff00';
+            break;
+        case 'forwarded':
+            container = document.getElementById('osc-forwarded-log-container');
+            color = '#00aaff';
+            break;
+        case 'arc-received':
+            container = document.getElementById('osc-arc-received-log-container');
+            color = '#ff8c00';
+            break;
+        default:
+            return;
+    }
+    if (container) {
+        const logEntry = document.createElement('div');
+        logEntry.style.color = color;
+        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}${connectionText}`;
+        container.appendChild(logEntry);
+        // Auto-scroll to bottom
+        container.scrollTop = container.scrollHeight;
+        // Limit log entries to prevent memory issues
+        const maxEntries = type === 'arc-received' ? 500 : MAX_LOG_ENTRIES;
+        while (container.children.length > maxEntries) {
+            container.removeChild(container.firstChild);
+        }
+    }
+}
+// Clear float rate limiting data to prevent memory leaks
+function clearFloatRateLimitingData() {
+    // Clear all pending timeouts
+    pendingFloatTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    lastFloatLogTimes.clear();
+    pendingFloatTimeouts.clear();
+    lastFloatValues.clear();
+    debugLog('Float rate limiting data cleared');
+}
 function oscReceivedLog(address, value, connectionId = null) {
     // Skip logging if OSC logging is disabled
     if (!oscLoggingEnabled) return;
-    // Add to buffer instead of immediate logging
+    // Check if this is a float value and apply rate limiting
+    if (isFloatValue(value)) {
+        handleFloatOscLog('received', address, value, connectionId);
+        return;
+    }
+    // Add to buffer for non-float values
     oscLogBuffer.push({
         type: 'received',
         address,
@@ -740,7 +837,12 @@ function oscReceivedLog(address, value, connectionId = null) {
 function oscForwardedLog(address, value, connectionId = null) {
     // Skip logging if OSC logging is disabled
     if (!oscLoggingEnabled) return;
-    // Add to buffer instead of immediate logging
+    // Check if this is a float value and apply rate limiting
+    if (isFloatValue(value)) {
+        handleFloatOscLog('forwarded', address, value, connectionId);
+        return;
+    }
+    // Add to buffer for non-float values
     oscLogBuffer.push({
         type: 'forwarded',
         address,
@@ -812,6 +914,13 @@ function clearOscArcReceivedLogs() {
     document.getElementById('osc-arc-received-log-container').innerHTML = 'No OSC data received from ARC Server yet<br>';
 }
 function addToOscArcReceivedLog(address, value) {
+    // Apply float rate limiting for ARC received logs as well
+    if (isFloatValue(value)) {
+        handleFloatOscLog('arc-received', address, value, null);
+        return;
+    }
+    
+    // Immediate logging for non-float values
     const container = document.getElementById('osc-arc-received-log-container');
     if (container) {
         const timestamp = new Date().toLocaleTimeString();
