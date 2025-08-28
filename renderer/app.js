@@ -212,6 +212,15 @@ function setupEventListeners() {
     });
     window.electronAPI.onWebSocketAvatarChange((data) => {
         console.log('Avatar change received:', data);
+        // Handle avatar unload (null/empty avatar)
+        if (!data.id || data.id === null) {
+            currentAvatar = null;
+            parameters = {}; // Clear parameters when avatar is unloaded
+            updateAvatarDisplay();
+            updateParameterList();
+            debugLog(`Avatar unloaded for user ${data.username}`);
+            return;
+        }
         // Store the full avatar data including ID, name, and username
         currentAvatar = {
             id: data.id,
@@ -590,10 +599,32 @@ async function disconnect() {
         debugLog(`Disconnect error: ${error.message}`, 'error');
     }
 }
+async function unloadAvatar() {
+    if (!isAuthenticated || !isConnected) {
+        debugLog('Cannot unload avatar: not connected to server', 'error');
+        return;
+    }
+    try {
+        debugLog('Unloading current avatar...');
+        // Send a special OSC message to VRChat to "change" to a null avatar
+        // This simulates VRChat sending /avatar/change with a null or empty value
+        const result = await window.electronAPI.sendWebSocketMessage('avatar-unload', {
+            username: currentUser.username
+        });
+        if (result && result.success) {
+            debugLog('Avatar unload request sent successfully');
+        } else {
+            debugLog(`Avatar unload failed: ${result?.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error unloading avatar: ${error.message}`, 'error');
+    }
+}
 function updateAvatarDisplay() {
     const avatarSection = document.getElementById('avatar-section');
     const avatarName = document.getElementById('avatar-name');
     const avatarId = document.getElementById('avatar-id');
+    const unloadBtn = document.getElementById('avatar-unload-btn');
     
     if (isAuthenticated && currentAvatar) {
         avatarSection.style.display = 'block';
@@ -602,13 +633,19 @@ function updateAvatarDisplay() {
         // Display the full avatar ID
         avatarId.textContent = `ID: ${currentAvatar.id}`;
         avatarId.style.display = 'block';
+        // Show the unload button when an avatar is loaded
+        unloadBtn.style.display = 'block';
     } else if (isAuthenticated) {
         avatarSection.style.display = 'block';
         avatarName.textContent = 'No avatar detected';
         avatarId.textContent = 'ID: Not available';
         avatarId.style.display = 'block';
+        // Hide the unload button when no avatar is detected
+        unloadBtn.style.display = 'none';
     } else {
         avatarSection.style.display = 'none';
+        // Hide the unload button when not authenticated
+        unloadBtn.style.display = 'none';
     }
 }
 // Helper function to extract a human-readable name from avatar ID
