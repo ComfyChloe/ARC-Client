@@ -206,8 +206,9 @@ function setupEventListeners() {
         updateParameterList();
     });
     window.electronAPI.onWebSocketOscData((data) => {
-        // Add to ARC received log
-        addToOscArcReceivedLog(data.address, data.value);
+        if (wsForwardingEnabled) {
+            addToOscArcReceivedLog(data.address, data.value);
+        }
     });
     window.electronAPI.onWebSocketAvatarChange((data) => {
         console.log('Avatar change received:', data);
