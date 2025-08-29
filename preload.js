@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setConfig: (config) => ipcRenderer.invoke('set-config', config),
   getAppSettings: () => ipcRenderer.invoke('get-app-settings'),
   setAppSettings: (settings) => ipcRenderer.invoke('set-app-settings', settings),
+  getWindowState: () => ipcRenderer.invoke('get-window-state'),
+  setWindowState: (windowState) => ipcRenderer.invoke('set-window-state', windowState),
   enableOsc: () => ipcRenderer.invoke('enable-osc'),
   disableOsc: () => ipcRenderer.invoke('disable-osc'),
   getOscStatus: () => ipcRenderer.invoke('get-osc-status'),
@@ -18,8 +20,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWebSocketStatus: () => ipcRenderer.invoke('websocket-get-status'),
   getWebSocketForwardingStatus: () => ipcRenderer.invoke('websocket-get-forwarding-status'),
   setWebSocketForwarding: (enabled) => ipcRenderer.invoke('websocket-set-forwarding', enabled),
+  getLastUsername: () => ipcRenderer.invoke('get-last-username'),
+  setLastUsername: (username) => ipcRenderer.invoke('set-last-username', username),
+  getParameterBlacklist: () => ipcRenderer.invoke('get-parameter-blacklist'),
+  addBlacklistPattern: (pattern) => ipcRenderer.invoke('add-blacklist-pattern', pattern),
+  removeBlacklistPattern: (pattern) => ipcRenderer.invoke('remove-blacklist-pattern', pattern),
+  clearParameterBlacklist: () => ipcRenderer.invoke('clear-parameter-blacklist'),
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
+  },
+  onOscForwarded: (callback) => {
+    ipcRenderer.on('osc-forwarded', (event, data) => callback(data));
   },
   onOscServerStatus: (callback) => {
     ipcRenderer.on('osc-server-status', (event, data) => callback(data));

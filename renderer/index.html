@@ -10,7 +10,13 @@
     <div class="app-container">
         <div class="sidebar">
             <div class="sidebar-section">
-                <h3>Connection Status</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3>Connection Status</h3>
+                    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                        <span class="theme-toggle-sun">☀</span>
+                        <span class="theme-toggle-moon">🌙</span>
+                    </button>
+                </div>
                 <div class="connection-status">
                     <span class="status-indicator status-disconnected" id="server-status"></span>
                     <span id="server-status-text">Disconnected</span>
@@ -19,7 +25,12 @@
                     <span class="status-indicator status-disconnected" id="osc-status"></span>
                     <span id="osc-status-text">OSC Status: Off</span>
                 </div>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="ws-forwarding-status"></span>
+                    <span id="ws-forwarding-status-text">ARC Server Transmit: Off</span>
+                </div>
                 <button class="btn btn-primary" id="osc-toggle-btn" onclick="toggleOscServer()" style="width: 100%; margin-top: 10px;">Enable OSC</button>
+                <button class="btn btn-primary" id="ws-forwarding-toggle-btn" onclick="toggleWebSocketForwarding()" style="width: 100%; margin-top: 10px;">Enable ARC Server Transmit</button>
             </div>
             <div class="sidebar-section navigation-section">
                 <h3>Navigation</h3>
@@ -41,11 +52,12 @@
                 <button class="btn btn-primary" id="nav-settings" onclick="showSettingsView()" style="width: 100%;">Settings</button>
             </div>
             <div class="sidebar-section" id="avatar-section" style="display: none;">
-                <h3>Current Avatar</h3>
+                <h3>Avatar - (Server Side)</h3>
                 <div class="avatar-info" id="avatar-info">
-                    <div id="avatar-id">No avatar selected</div>
-                    <div id="parameter-count">0 parameters</div>
+                    <div id="avatar-name" style="font-weight: bold; margin-bottom: 5px;">No avatar detected</div>
+                    <div id="avatar-id" style="font-size: 0.85em; color: #bdc3c7; word-break: break-all;">ID: Not available</div>
                 </div>
+                <button class="btn btn-warning" id="avatar-unload-btn" onclick="unloadAvatar()" style="width: 100%; margin-top: 10px; display: none;">Unload Avatar</button>
             </div>
             <div class="sidebar-section" id="auth-section">
                 <h3>Authentication</h3>
@@ -86,6 +98,17 @@
             <div class="card">
                 <h3>Server Configuration</h3>
                 <div class="form-group">
+                    <label>Quick Server Selection</label>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                        <button id="server-btn-live" class="btn btn-primary" onclick="switchToServer('live')" style="flex: 1; min-width: 120px;">ARC-Live</button>
+                        <button id="server-btn-beta" class="btn btn-secondary" onclick="switchToServer('beta')" style="flex: 1; min-width: 120px;">ARC-Beta</button>
+                        <button id="server-btn-custom" class="btn btn-warning" onclick="switchToServer('custom')" style="flex: 1; min-width: 120px;">Custom (Dev)</button>
+                    </div>
+                    <div id="current-server-status" class="server-status-box" style="padding: 8px; background-color: #f8f9fa; border-radius: 4px; border-left: 4px solid #3498db; margin-bottom: 10px; font-size: 0.9em;">
+                        <strong>Current Server:</strong> <span id="current-server-name">ARC-Live</span>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label for="server-url-settings">WebSocket Server URL</label>
                     <input type="text" id="server-url-settings" value="wss://avatar.comfychloe.uk:48255">
                 </div>
@@ -114,6 +137,16 @@
                         <option value="warning">Warning</option>
                         <option value="error">Error</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label for="enable-osc-logging">Enable OSC Data Logging</label>
+                    <select id="enable-osc-logging">
+                        <option value="false">Disabled (Recommended for Performance)</option>
+                        <option value="true">Enabled</option>
+                    </select>
+                    <small style="color: #666; font-size: 0.85em; margin-top: 5px; display: block;">
+                        Disabling OSC logging significantly reduces disk I/O and improves performance
+                    </small>
                 </div>
                 <button class="btn btn-primary" onclick="updateAppSettings()">Update Application Settings</button>
             </div>
@@ -149,13 +182,49 @@
                 <h1>Logs</h1>
                 <p>View application logs and activity</p>
             </div>
+            <div class="card osc-logging-status-box" style="margin-bottom: 10px; padding: 10px; background-color: #f8f9fa; border-left: 4px solid #17a2b8;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>OSC Data Logging Status:</strong> 
+                        <span id="osc-logging-status" style="font-weight: bold;">Enabled</span>
+                        <br>
+                        <small style="color: #666;">
+                            Disable OSC logging in Settings to reduce disk I/O and improve performance
+                        </small>
+                    </div>
+                    <button class="btn btn-warning" onclick="toggleOscLoggingQuick()" id="osc-logging-toggle-btn" style="padding: 6px 12px; font-size: 12px;">
+                        Disable OSC Logging
+                    </button>
+                </div>
+            </div>
             <div class="card">
-                <h3>Activity Log</h3>
-                <div class="log-container" id="log-container">
+                <h3>Client Logs</h3>
+                <div class="log-container" id="client-log-container">
                     Welcome to ARC-OSC Client<br>
                     Configure your settings and connect to get started<br>
                 </div>
-                <button class="btn btn-primary" onclick="clearLogs()" style="margin-top: 10px;">Clear Logs</button>
+                <button class="btn btn-primary" onclick="clearClientLogs()" style="margin-top: 10px;">Clear Client Logs</button>
+            </div>
+            <div class="card">
+                <h3>OSC Received</h3>
+                <div class="log-container" id="osc-received-log-container">
+                    No OSC data received yet<br>
+                </div>
+                <button class="btn btn-primary" onclick="clearOscReceivedLogs()" style="margin-top: 10px;">Clear OSC Received</button>
+            </div>
+            <div class="card">
+                <h3>OSC Received (from ARC Server)</h3>
+                <div class="log-container" id="osc-arc-received-log-container">
+                    No OSC data received from ARC Server yet<br>
+                </div>
+                <button class="btn btn-primary" onclick="clearOscArcReceivedLogs()" style="margin-top: 10px;">Clear OSC from ARC</button>
+            </div>
+            <div class="card">
+                <h3>OSC Forwarded (to ARC Server)</h3>
+                <div class="log-container" id="osc-forwarded-log-container">
+                    No OSC data forwarded yet<br>
+                </div>
+                <button class="btn btn-primary" onclick="clearOscForwardedLogs()" style="margin-top: 10px;">Clear OSC Forwarded</button>
             </div>
         </div>
         <div class="main-content view-transition" id="osc-view" style="display: none;">
@@ -208,7 +277,7 @@
                     Configure additional OSC endpoints for advanced routing. Create separate incoming connections to receive OSC data from multiple sources, 
                     and outgoing connections to send data to multiple applications.
                 </p>
-                <div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
+                <div class="osc-connection-controls" style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
                             <button class="btn btn-success" onclick="addOscConnection('incoming')" id="add-incoming-btn" style="margin-right: 10px;">+ Add Incoming</button>
@@ -216,13 +285,32 @@
                         </div>
                         <div style="display: flex; align-items: center; gap: 15px;">
                             <span id="connection-count" style="color: #666; font-size: 0.9em;">0/20 additional connections</span>
-                            <button class="btn btn-primary" onclick="updateAdditionalOscConnections()">Update Connections</button>
                         </div>
                     </div>
                 </div>
 
                 <div id="additional-osc-connections">
                     <!-- Dynamic connections -->
+                </div>
+            </div>
+            <div class="card">
+                <h3>Parameter Blacklist</h3>
+                <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
+                    Block excessive parameters from being sent to the ARC server.
+                </p>
+                <p>Use * as a wildcard (e.g., /avatar/parameters/Hue/* to block all parameters after /avatar/parameters/Hue/).
+                </p><br>
+                <p>View the Logs section of the app and check what data is being sent in excess to ARC and consider blacklisting those parameters.
+                </p><br>
+                <div class="form-group">
+                    <label for="blacklist-pattern">Parameter Pattern</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="blacklist-pattern" placeholder="/avatar/parameters/FT*" style="flex: 1;">
+                        <button class="btn btn-success" onclick="addBlacklistPattern()">Add Pattern</button>
+                    </div>
+                </div>
+                <div id="blacklist-patterns" style="margin-top: 15px;">
+                    <!-- Blacklist patterns -->
                 </div>
             </div>
         </div>

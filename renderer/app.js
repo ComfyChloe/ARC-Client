@@ -1,15 +1,29 @@
 let additionalOscConnections = [];
 let maxAdditionalConnections = 20;
 let oscEnabled = false;
+let wsForwardingEnabled = false;
 let isConnected = false;
 let isAuthenticated = false;
 let currentUser = null;
 let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
+let currentTheme = 'light';
+let oscLogBuffer = [];
+let lastOscLogFlush = 0;
+let oscLoggingEnabled = true;
+const OSC_LOG_BUFFER_SIZE = 100;
+const OSC_LOG_FLUSH_INTERVAL = 1000;
+const MAX_LOG_ENTRIES = 10000;
+const FLOAT_THROTTLE_INTERVAL = 750;
+let lastFloatLogTimes = new Map();
+let pendingFloatTimeouts = new Map();
+let lastFloatValues = new Map();
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     await loadAppSettings();
+    await loadLastUsername();
+    await loadTheme();
     setupEventListeners();
     setupExtrasDropdown();
     const navMain = document.getElementById('nav-main');
@@ -25,6 +39,59 @@ document.addEventListener('DOMContentLoaded', async () => {
     navSettings.classList.remove('active');
     navSettings.disabled = false;
     debugLog('Application initialized');
+    setTimeout(() => {
+        loadParameterBlacklist();
+    }, 500);
+    setTimeout(() => {
+        const blacklistInput = document.getElementById('blacklist-pattern');
+        if (blacklistInput) {
+            blacklistInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    addBlacklistPattern();
+                }
+            });
+        }
+    }, 100);
+    setTimeout(() => {
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        if (usernameInput) {
+            let saveTimeout;
+            usernameInput.addEventListener('input', (e) => {
+                // Clear previous timeout
+                if (saveTimeout) {
+                    clearTimeout(saveTimeout);
+                }
+                saveTimeout = setTimeout(async () => {
+                    const username = e.target.value.trim().toLowerCase();
+                    if (username) {
+                        try {
+                            await window.electronAPI.setLastUsername(username);
+                        } catch (error) {
+                            console.warn('Could not auto-save username:', error.message);
+                        }
+                    }
+                }, 1000);
+            });
+            usernameInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    authenticate();
+                }
+            });
+        }
+        if (passwordInput) {
+            passwordInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    authenticate();
+                }
+            });
+        }
+    }, 100);
+    setInterval(() => {
+        if (oscLogBuffer.length > 0) {
+            flushOscLogBuffer();
+        }
+    }, OSC_LOG_FLUSH_INTERVAL);
 });
 async function loadConfig() {
     try {
@@ -35,6 +102,7 @@ async function loadConfig() {
         const serverUrlInput = document.getElementById('server-url-settings');
         if (serverUrlInput) {
             serverUrlInput.value = config.websocketServerUrl || 'wss://avatar.comfychloe.uk:48255';
+            detectCurrentServer();
         }
         if (config.additionalOscConnections) {
             additionalOscConnections = config.additionalOscConnections;
@@ -47,7 +115,10 @@ async function loadConfig() {
 }
 function setupEventListeners() {
     window.electronAPI.onOscReceived((data) => {
-        debugLog(`OSC Received: ${data.address} = ${data.value}`);
+        oscReceivedLog(data.address, data.value, data.connectionId);
+    });
+    window.electronAPI.onOscForwarded((data) => {
+        oscForwardedLog(data.address, data.value, data.connectionId);
     });
     window.electronAPI.onOscServerStatus((data) => {
         console.log('OSC Server status update:', data);
@@ -66,8 +137,10 @@ function setupEventListeners() {
     window.electronAPI.onAppSettings((settings) => {
         console.log('Received app settings from main process:', settings);
         appSettings = settings;
+        wsForwardingEnabled = settings.enableWebSocketForwarding || false;
+        updateWebSocketForwardingStatus(wsForwardingEnabled);
         if (settings.autoConnect) {
-            const username = document.getElementById('username').value;
+            const username = document.getElementById('username').value.trim().toLowerCase();
             const password = document.getElementById('password').value;
             if (username && password) {
                 console.log('Auto-connect is enabled, attempting to connect...');
@@ -80,6 +153,7 @@ function setupEventListeners() {
     });
     window.electronAPI.onWebSocketStatus((data) => {
         console.log('WebSocket status update:', data);
+        debugLog(`WebSocket status changed to: ${data.status}`);
         updateServerConnectionStatus(data.status);
         if (data.status === 'connected') {
             isConnected = true;
@@ -90,6 +164,7 @@ function setupEventListeners() {
             currentUser = null;
             currentAvatar = null;
             parameters = {};
+            clearFloatRateLimitingData();
             debugLog('Disconnected from WebSocket server');
             updateUI();
             updateAvatarDisplay();
@@ -110,12 +185,29 @@ function setupEventListeners() {
         updateParameterList();
     });
     window.electronAPI.onWebSocketOscData((data) => {
-        debugLog(`WebSocket OSC: ${data.address} = ${data.value}`);
+        if (wsForwardingEnabled) {
+            addToOscArcReceivedLog(data.address, data.value);
+        }
     });
     window.electronAPI.onWebSocketAvatarChange((data) => {
-        currentAvatar = data;
+        console.log('Avatar change received:', data);
+        if (!data.id || data.id === null) {
+            currentAvatar = null;
+            parameters = {};
+            updateAvatarDisplay();
+            updateParameterList();
+            debugLog(`Avatar unloaded for user ${data.username}`);
+            return;
+        }
+        currentAvatar = {
+            id: data.id,
+            name: data.name,
+            username: data.username,
+            displayName: data.name || getDisplayNameFromAvatarId(data.id)
+        };
         updateAvatarDisplay();
-        debugLog(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+        const displayName = data.name ? `${data.name} (${data.id})` : data.id;
+        debugLog(`Avatar changed: ${displayName} for user ${data.username}`);
     });
     window.electronAPI.onWebSocketParameterUpdate((data) => {
         if (data.parameters) {
@@ -162,7 +254,31 @@ function updateOscStatus(status, port) {
             oscEnabled = false;
     }
 }
+function updateWebSocketForwardingStatus(enabled) {
+    const indicator = document.getElementById('ws-forwarding-status');
+    const text = document.getElementById('ws-forwarding-status-text');
+    const toggleBtn = document.getElementById('ws-forwarding-toggle-btn');
+    if (!indicator || !text || !toggleBtn) {
+        return;
+    }
+    indicator.className = 'status-indicator';
+    if (enabled) {
+        indicator.classList.add('status-connected');
+        text.textContent = 'ARC Server Transmit: Enabled';
+        toggleBtn.textContent = 'Disable ARC Server Transmit';
+        toggleBtn.className = 'btn btn-danger';
+        wsForwardingEnabled = true;
+    } else {
+        indicator.classList.add('status-disconnected');
+        text.textContent = 'ARC Server Transmit: Disabled';
+        toggleBtn.textContent = 'Enable ARC Server Transmit';
+        toggleBtn.className = 'btn btn-primary';
+        wsForwardingEnabled = false;
+    }
+}
 function updateServerConnectionStatus(status) {
+    console.log('updateServerConnectionStatus called with:', status);
+    debugLog(`Connection status update: ${status}`);
     const indicator = document.getElementById('server-status');
     const text = document.getElementById('server-status-text');
     indicator.className = 'status-indicator';
@@ -224,9 +340,114 @@ async function updateConfigFromSettings() {
             websocketServerUrl: document.getElementById('server-url-settings').value
         };
         await window.electronAPI.setConfig(config);
+        detectCurrentServer();
         debugLog('Server configuration updated');
     } catch (error) {
         debugLog(`Error updating server config: ${error.message}`, 'error');
+    }
+}
+async function switchToServer(serverType) {
+    try {
+        let serverUrl;
+        let serverName;
+        switch (serverType) {
+            case 'live':
+                serverUrl = 'wss://avatar.comfychloe.uk:48255';
+                serverName = 'ARC-Live';
+                break;
+            case 'beta':
+                serverUrl = 'wss://beta.avatar.comfychloe.uk:48255';
+                serverName = 'ARC-Beta';
+                break;
+            case 'custom':
+                serverUrl = 'wss://127.0.0.1:48255';
+                serverName = 'Custom (Dev)';
+                break;
+            default:
+                throw new Error('Unknown server type');
+        }
+        document.getElementById('server-url-settings').value = serverUrl;
+        updateCurrentServerStatus(serverName, serverType);
+        const wasConnected = isConnected;
+        if (wasConnected) {
+            debugLog(`Disconnecting from current server to switch to ${serverName}...`);
+            await window.electronAPI.websocketDisconnect();
+        }
+        const config = {
+            websocketServerUrl: serverUrl
+        };
+        if (serverType !== 'custom') {
+            await window.electronAPI.setConfig(config);
+            debugLog(`Switched to ${serverName} (${serverUrl}) - configuration saved`);
+        } else {
+            await window.electronAPI.setConfig(config);
+            debugLog(`Switched to ${serverName} (${serverUrl}) - configuration NOT saved (dev mode)`);
+        }
+        if (wasConnected && currentUser) {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            if (username && password) {
+                debugLog(`Auto-reconnecting to ${serverName}...`);
+                setTimeout(async () => {
+                    try {
+                        await authenticate();
+                        debugLog(`Successfully reconnected to ${serverName}`);
+                    } catch (error) {
+                        debugLog(`Failed to reconnect to ${serverName}: ${error.message}`, 'error');
+                    }
+                }, 1000);
+            }
+        }
+    } catch (error) {
+        debugLog(`Error switching servers: ${error.message}`, 'error');
+    }
+}
+function updateCurrentServerStatus(serverName, serverType) {
+    const statusElement = document.getElementById('current-server-status');
+    const nameElement = document.getElementById('current-server-name');
+    if (nameElement) {
+        nameElement.textContent = serverName;
+    }
+    if (statusElement) {
+        let borderColor = '#3498db';
+        switch (serverType) {
+            case 'live':
+                borderColor = '#3498db';
+                break;
+            case 'beta':
+                borderColor = '#95a5a6';
+                break;
+            case 'custom':
+                borderColor = '#f39c12';
+                break;
+        }
+        statusElement.style.borderLeftColor = borderColor;
+    }
+    updateServerButtonStates(serverType);
+}
+function updateServerButtonStates(activeServerType) {
+    const buttons = ['server-btn-live', 'server-btn-beta', 'server-btn-custom'];
+    buttons.forEach(buttonId => {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.classList.remove('server-btn-active');
+        }
+    });
+    const activeButtonId = `server-btn-${activeServerType}`;
+    const activeButton = document.getElementById(activeButtonId);
+    if (activeButton) {
+        activeButton.classList.add('server-btn-active');
+    }
+}
+function detectCurrentServer() {
+    const serverUrl = document.getElementById('server-url-settings').value;
+    
+    if (serverUrl.includes('beta.avatar.comfychloe.uk')) {
+        updateCurrentServerStatus('ARC-Beta', 'beta');
+    } else if (serverUrl.includes('127.0.0.1')) {
+        updateCurrentServerStatus('Custom (Dev)', 'custom');
+    } else {
+        updateCurrentServerStatus('ARC-Live', 'live');
     }
 }
 async function updateOscPorts() {
@@ -240,19 +461,6 @@ async function updateOscPorts() {
         debugLog('Primary OSC configuration updated - OSC services will restart');
     } catch (error) {
         debugLog(`Error updating primary OSC configuration: ${error.message}`, 'error');
-    }
-}
-async function updateAdditionalOscConnections() {
-    try {
-        const currentConfig = await window.electronAPI.getServerConfig();
-        const updatedConfig = {
-            ...currentConfig,
-            additionalOscConnections: additionalOscConnections
-        };
-        await window.electronAPI.setConfig(updatedConfig);
-        debugLog(`Additional OSC connections updated - ${additionalOscConnections.length} connections configured`);
-    } catch (error) {
-        debugLog(`Error updating additional OSC connections: ${error.message}`, 'error');
     }
 }
 async function toggleOscServer() {
@@ -270,12 +478,27 @@ async function toggleOscServer() {
         debugLog(`Error toggling OSC server: ${error.message}`, 'error');
     }
 }
+async function toggleWebSocketForwarding() {
+    try {
+        const newState = !wsForwardingEnabled;
+        const result = await window.electronAPI.setWebSocketForwarding(newState);
+        if (result.success) {
+            wsForwardingEnabled = result.enabled;
+            updateWebSocketForwardingStatus(wsForwardingEnabled);
+            debugLog(`ARC Server transmit ${wsForwardingEnabled ? 'enabled' : 'disabled'}`);
+        } else {
+            debugLog(`Error toggling ARC Server transmit: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error toggling ARC Server transmit: ${error.message}`, 'error');
+    }
+}
 async function authenticate() {
     if (isAuthenticated && isConnected) {
         disconnect();
         return;
     }
-    const username = document.getElementById('username').value;
+    const username = document.getElementById('username').value.trim().toLowerCase();
     const password = document.getElementById('password').value;
     if (!username || !password) {
         debugLog('Please enter username and password', 'error');
@@ -291,6 +514,12 @@ async function authenticate() {
             currentUser = result.user;
             debugLog(`Successfully authenticated as ${username}`);
             updateUI();
+            try {
+                await window.electronAPI.setLastUsername(username);
+                debugLog(`Username saved for future use`);
+            } catch (saveError) {
+                debugLog(`Could not save username: ${saveError.message}`, 'warning');
+            }
         } else {
             debugLog(`Authentication failed: ${result.error}`, 'error');
             updateServerConnectionStatus('error');
@@ -308,6 +537,7 @@ async function disconnect() {
         currentUser = null;
         currentAvatar = null;
         parameters = {};
+        clearFloatRateLimitingData();
         updateUI();
         updateAvatarDisplay();
         updateParameterList();
@@ -317,24 +547,61 @@ async function disconnect() {
         debugLog(`Disconnect error: ${error.message}`, 'error');
     }
 }
+async function unloadAvatar() {
+    if (!isAuthenticated || !isConnected) {
+        debugLog('Cannot unload avatar: not connected to server', 'error');
+        return;
+    }
+    try {
+        debugLog('Unloading current avatar...');
+        const result = await window.electronAPI.sendWebSocketMessage('avatar-unload', {
+            username: currentUser.username
+        });
+        if (result && result.success) {
+            debugLog('Avatar unload request sent successfully');
+        } else {
+            debugLog(`Avatar unload failed: ${result?.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error unloading avatar: ${error.message}`, 'error');
+    }
+}
 function updateAvatarDisplay() {
     const avatarSection = document.getElementById('avatar-section');
-    const avatarInfo = document.getElementById('avatar-info');
+    const avatarName = document.getElementById('avatar-name');
     const avatarId = document.getElementById('avatar-id');
-    const parameterCount = document.getElementById('parameter-count');
+    const unloadBtn = document.getElementById('avatar-unload-btn');
     
     if (isAuthenticated && currentAvatar) {
         avatarSection.style.display = 'block';
-        avatarId.textContent = currentAvatar.avatarId || currentAvatar.name || 'Unknown Avatar';
-        const paramCount = Object.keys(parameters).length;
-        parameterCount.textContent = `${paramCount} parameters`;
+        avatarName.textContent = currentAvatar.displayName || 'Unknown Avatar';
+        avatarId.textContent = `ID: ${currentAvatar.id}`;
+        avatarId.style.display = 'block';
+        unloadBtn.style.display = 'block';
     } else if (isAuthenticated) {
         avatarSection.style.display = 'block';
-        avatarId.textContent = 'No avatar detected';
-        parameterCount.textContent = '0 parameters';
+        avatarName.textContent = 'No avatar detected';
+        avatarId.textContent = 'ID: Not available';
+        avatarId.style.display = 'block';
+        unloadBtn.style.display = 'none';
     } else {
         avatarSection.style.display = 'none';
+        unloadBtn.style.display = 'none';
     }
+}
+function getDisplayNameFromAvatarId(avatarId) {
+    if (!avatarId || typeof avatarId !== 'string') {
+        return null;
+    }
+    if (avatarId.startsWith('avtr_')) {
+        const uuid = avatarId.substring(5);
+        const shortId = uuid.substring(0, 8);
+        return `Avatar ${shortId}`;
+    }
+    if (avatarId.length > 16) {
+        return `${avatarId.substring(0, 16)}...`;
+    }
+    return avatarId;
 }
 function updateParameterList() {
     const parameterList = document.getElementById('parameter-list');
@@ -417,7 +684,7 @@ function showTab(tabName) {
     event.target.classList.add('active');
 }
 function debugLog(message, type = 'info') {
-    const container = document.getElementById('log-container');
+    const container = document.getElementById('client-log-container');
     const timestamp = new Date().toLocaleTimeString();
     let color = '#00ff00'; // Default green
     if (type === 'error') color = '#ff0000';
@@ -431,9 +698,189 @@ function debugLog(message, type = 'info') {
         container.removeChild(container.firstChild);
     }
 }
+function isFloatValue(value) {
+    if (typeof value === 'number') {
+        return !Number.isInteger(value);
+    }
+    if (typeof value === 'string') {
+        const num = parseFloat(value);
+        return !isNaN(num) && value.includes('.') && !Number.isInteger(num);
+    }
+    return false;
+}
+function handleFloatOscLog(type, address, value, connectionId) {
+    const key = `${type}-${address}`;
+    const now = Date.now();
+    const lastLogTime = lastFloatLogTimes.get(key) || 0;
+    lastFloatValues.set(key, { type, address, value, connectionId, timestamp: now });
+    if (pendingFloatTimeouts.has(key)) {
+        clearTimeout(pendingFloatTimeouts.get(key));
+    }
+    if (now - lastLogTime >= FLOAT_THROTTLE_INTERVAL) {
+        logFloatValueImmediate(type, address, value, connectionId);
+        lastFloatLogTimes.set(key, now);
+        return;
+    }
+    const timeoutId = setTimeout(() => {
+        const finalData = lastFloatValues.get(key);
+        if (finalData) {
+            logFloatValueImmediate(finalData.type, finalData.address, finalData.value, finalData.connectionId);
+            lastFloatLogTimes.set(key, Date.now());
+        }
+        pendingFloatTimeouts.delete(key);
+    }, FLOAT_THROTTLE_INTERVAL);
+    pendingFloatTimeouts.set(key, timeoutId);
+}
+function logFloatValueImmediate(type, address, value, connectionId) {
+    const timestamp = new Date().toLocaleTimeString();
+    const connectionText = connectionId ? ` (conn: ${connectionId})` : '';
+    let container, color;
+    switch (type) {
+        case 'received':
+            container = document.getElementById('osc-received-log-container');
+            color = '#00ff00';
+            break;
+        case 'forwarded':
+            container = document.getElementById('osc-forwarded-log-container');
+            color = '#00aaff';
+            break;
+        case 'arc-received':
+            container = document.getElementById('osc-arc-received-log-container');
+            color = '#ff8c00';
+            break;
+        default:
+            return;
+    }
+    if (container) {
+        const logEntry = document.createElement('div');
+        logEntry.style.color = color;
+        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}${connectionText}`;
+        container.appendChild(logEntry);
+        container.scrollTop = container.scrollHeight;
+        const maxEntries = type === 'arc-received' ? 500 : MAX_LOG_ENTRIES;
+        while (container.children.length > maxEntries) {
+            container.removeChild(container.firstChild);
+        }
+    }
+}
+function clearFloatRateLimitingData() {
+    pendingFloatTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    lastFloatLogTimes.clear();
+    pendingFloatTimeouts.clear();
+    lastFloatValues.clear();
+    debugLog('Float rate limiting data cleared');
+}
+function oscReceivedLog(address, value, connectionId = null) {
+    if (!oscLoggingEnabled) return;
+    if (isFloatValue(value)) {
+        handleFloatOscLog('received', address, value, connectionId);
+        return;
+    }
+    oscLogBuffer.push({
+        type: 'received',
+        address,
+        value,
+        connectionId,
+        timestamp: Date.now()
+    });
+    const now = Date.now();
+    if (oscLogBuffer.length >= OSC_LOG_BUFFER_SIZE || (now - lastOscLogFlush) >= OSC_LOG_FLUSH_INTERVAL) {
+        flushOscLogBuffer();
+    }
+}
+function oscForwardedLog(address, value, connectionId = null) {
+    if (!oscLoggingEnabled) return;
+    if (isFloatValue(value)) {
+        handleFloatOscLog('forwarded', address, value, connectionId);
+        return;
+    }
+    oscLogBuffer.push({
+        type: 'forwarded',
+        address,
+        value,
+        connectionId,
+        timestamp: Date.now()
+    });
+    const now = Date.now();
+    if (oscLogBuffer.length >= OSC_LOG_BUFFER_SIZE || (now - lastOscLogFlush) >= OSC_LOG_FLUSH_INTERVAL) {
+        flushOscLogBuffer();
+    }
+}
+function flushOscLogBuffer() {
+    if (oscLogBuffer.length === 0) return;
+    const receivedContainer = document.getElementById('osc-received-log-container');
+    const forwardedContainer = document.getElementById('osc-forwarded-log-container');
+    const received = oscLogBuffer.filter(msg => msg.type === 'received');
+    const forwarded = oscLogBuffer.filter(msg => msg.type === 'forwarded');
+    if (received.length > 0 && receivedContainer) {
+        const fragment = document.createDocumentFragment();
+        received.forEach(msg => {
+            const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+            const connectionText = msg.connectionId ? ` (conn: ${msg.connectionId})` : '';
+            const logEntry = document.createElement('div');
+            logEntry.style.color = '#00ff00';
+            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}${connectionText}`;
+            fragment.appendChild(logEntry);
+        });
+        receivedContainer.appendChild(fragment);
+        receivedContainer.scrollTop = receivedContainer.scrollHeight;
+        while (receivedContainer.children.length > MAX_LOG_ENTRIES) {
+            receivedContainer.removeChild(receivedContainer.firstChild);
+        }
+    }
+    if (forwarded.length > 0 && forwardedContainer) {
+        const fragment = document.createDocumentFragment();
+        forwarded.forEach(msg => {
+            const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+            const connectionText = msg.connectionId ? ` (conn: ${msg.connectionId})` : '';
+            const logEntry = document.createElement('div');
+            logEntry.style.color = '#00aaff';
+            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}${connectionText}`;
+            fragment.appendChild(logEntry);
+        });
+        forwardedContainer.appendChild(fragment);
+        forwardedContainer.scrollTop = forwardedContainer.scrollHeight;
+        while (forwardedContainer.children.length > MAX_LOG_ENTRIES) {
+            forwardedContainer.removeChild(forwardedContainer.firstChild);
+        }
+    }
+    oscLogBuffer = [];
+    lastOscLogFlush = Date.now();
+}
+function clearClientLogs() {
+    document.getElementById('client-log-container').innerHTML = '';
+    debugLog('Client logs cleared');
+}
+function clearOscReceivedLogs() {
+    document.getElementById('osc-received-log-container').innerHTML = 'No OSC data received yet<br>';
+}
+function clearOscArcReceivedLogs() {
+    document.getElementById('osc-arc-received-log-container').innerHTML = 'No OSC data received from ARC Server yet<br>';
+}
+function addToOscArcReceivedLog(address, value) {
+    if (isFloatValue(value)) {
+        handleFloatOscLog('arc-received', address, value, null);
+        return;
+    }
+    const container = document.getElementById('osc-arc-received-log-container');
+    if (container) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        logEntry.style.color = '#ff8c00'; // Orange color to distinguish from regular OSC
+        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}`;
+        container.appendChild(logEntry);
+        container.scrollTop = container.scrollHeight;
+        const entries = container.children;
+        if (entries.length > 500) {
+            container.removeChild(entries[0]);
+        }
+    }
+}
+function clearOscForwardedLogs() {
+    document.getElementById('osc-forwarded-log-container').innerHTML = 'No OSC data forwarded yet<br>';
+}
 function clearLogs() {
-    document.getElementById('log-container').innerHTML = '';
-    debugLog('Logs cleared');
+    clearClientLogs();
 }
 function updateOscPortsFromSettings() {
     return updateOscPorts();
@@ -575,6 +1022,7 @@ function showLogsView() {
         requestAnimationFrame(() => {
             logsView.style.opacity = '1';
         });
+        updateOscLoggingStatus();
     }, 300);
     [navMain, navOsc, navSettings].forEach(nav => {
         nav.classList.remove('active');
@@ -670,13 +1118,15 @@ async function updateAppSettings() {
         const autoConnect = document.getElementById('auto-connect').value === 'true';
         const logLevel = document.getElementById('log-level').value;
         const enableOscOnStartup = document.getElementById('enable-osc-startup')?.value === 'true';
+        const enableOscLogging = document.getElementById('enable-osc-logging')?.value === 'true';
         const settings = {
             autoConnect,
             logLevel,
-            enableOscOnStartup
+            enableOscOnStartup,
+            enableOscLogging
         };
         await window.electronAPI.setAppSettings(settings);
-        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}`);
+        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}, OSC logging: ${enableOscLogging}`);
     } catch (error) {
         debugLog(`Error updating app settings: ${error.message}`, 'error');
     }
@@ -687,6 +1137,7 @@ async function loadAppSettings() {
         const autoConnectSelect = document.getElementById('auto-connect');
         const logLevelSelect = document.getElementById('log-level');
         const enableOscStartupSelect = document.getElementById('enable-osc-startup');
+        const enableOscLoggingSelect = document.getElementById('enable-osc-logging');
         if (autoConnectSelect) {
             autoConnectSelect.value = settings.autoConnect ? 'true' : 'false';
         }
@@ -696,9 +1147,30 @@ async function loadAppSettings() {
         if (enableOscStartupSelect) {
             enableOscStartupSelect.value = settings.enableOscOnStartup ? 'true' : 'false';
         }
+        if (enableOscLoggingSelect) {
+            enableOscLoggingSelect.value = settings.enableOscLogging !== false ? 'true' : 'false';
+        }
+        oscLoggingEnabled = settings.enableOscLogging !== false;
+        updateOscLoggingStatus();
+        currentTheme = settings.theme || 'light';
+        applyTheme(currentTheme);
+        wsForwardingEnabled = settings.enableWebSocketForwarding || false;
+        updateWebSocketForwardingStatus(wsForwardingEnabled);
         debugLog('Application settings loaded from saved config');
     } catch (error) {
         debugLog(`Error loading app settings: ${error.message}`, 'error');
+    }
+}
+async function loadLastUsername() {
+    try {
+        const lastUsername = await window.electronAPI.getLastUsername();
+        const usernameInput = document.getElementById('username');
+        if (usernameInput && lastUsername) {
+            usernameInput.value = lastUsername;
+            debugLog(`Last username loaded: ${lastUsername}`);
+        }
+    } catch (error) {
+        debugLog(`Error loading last username: ${error.message}`, 'error');
     }
 }
 window.addEventListener('beforeunload', () => {
@@ -713,7 +1185,7 @@ window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('websocket-server-message');
     window.electronAPI.removeAllListeners('app-settings');
 });
-function addOscConnection(type) {
+async function addOscConnection(type) {
     if (additionalOscConnections.length >= maxAdditionalConnections) {
         debugLog(`Maximum ${maxAdditionalConnections} additional connections allowed`, 'error');
         return;
@@ -723,25 +1195,95 @@ function addOscConnection(type) {
         type: type,
         port: null,
         address: '127.0.0.1',
-        enabled: true,
-        name: ''
+        enabled: false,
+        name: '',
+        enableWebSocketForwarding: false
     };
     additionalOscConnections.push(newConnection);
+    try {
+        const currentConfig = await window.electronAPI.getServerConfig();
+        const updatedConfig = {
+            ...currentConfig,
+            additionalOscConnections: additionalOscConnections
+        };
+        await window.electronAPI.setConfig(updatedConfig);
+        debugLog(`Added new ${type} OSC connection slot (${additionalOscConnections.length}/${maxAdditionalConnections}) - configuration updated`);
+    } catch (error) {
+        debugLog(`Error adding OSC connection: ${error.message}`, 'error');
+    }
     renderAdditionalOscConnections();
-    debugLog(`Added new ${type} OSC connection slot (${additionalOscConnections.length}/${maxAdditionalConnections})`);
 }
-function removeOscConnection(id) {
+async function removeOscConnection(id) {
     additionalOscConnections = additionalOscConnections.filter(conn => conn.id !== id);
+    try {
+        const currentConfig = await window.electronAPI.getServerConfig();
+        const updatedConfig = {
+            ...currentConfig,
+            additionalOscConnections: additionalOscConnections
+        };
+        await window.electronAPI.setConfig(updatedConfig);
+        debugLog(`Removed OSC connection - configuration updated`);
+    } catch (error) {
+        debugLog(`Error removing OSC connection: ${error.message}`, 'error');
+    }
     renderAdditionalOscConnections();
-    debugLog(`Removed OSC connection`);
 }
-function updateOscConnection(id, field, value) {
+async function toggleOscConnection(id, enabled) {
+    try {
+        const connection = additionalOscConnections.find(conn => conn.id === id);
+        if (connection) {
+            connection.enabled = enabled;
+            const currentConfig = await window.electronAPI.getServerConfig();
+            const updatedConfig = {
+                ...currentConfig,
+                additionalOscConnections: additionalOscConnections
+            };
+            await window.electronAPI.setConfig(updatedConfig);
+            renderAdditionalOscConnections();
+            debugLog(`${connection.name || 'Connection'} ${enabled ? 'enabled' : 'disabled'} - configuration updated`);
+        }
+    } catch (error) {
+        debugLog(`Error toggling OSC connection: ${error.message}`, 'error');
+    }
+}
+async function toggleOscConnectionWebSocketForwarding(id, enabled) {
+    try {
+        const connection = additionalOscConnections.find(conn => conn.id === id);
+        if (connection) {
+            connection.enableWebSocketForwarding = enabled;
+            const currentConfig = await window.electronAPI.getServerConfig();
+            const updatedConfig = {
+                ...currentConfig,
+                additionalOscConnections: additionalOscConnections
+            };
+            await window.electronAPI.setConfig(updatedConfig);
+            renderAdditionalOscConnections();
+            debugLog(`${connection.name || 'Connection'} WebSocket forwarding ${enabled ? 'enabled' : 'disabled'} - configuration updated`);
+        }
+    } catch (error) {
+        debugLog(`Error toggling OSC connection WebSocket forwarding: ${error.message}`, 'error');
+    }
+}
+async function updateOscConnection(id, field, value) {
     const connection = additionalOscConnections.find(conn => conn.id === id);
     if (connection) {
         if (field === 'port') {
             connection[field] = value ? parseInt(value) : null;
         } else {
             connection[field] = value;
+        }
+        if (field === 'port' || field === 'address') {
+            try {
+                const currentConfig = await window.electronAPI.getServerConfig();
+                const updatedConfig = {
+                    ...currentConfig,
+                    additionalOscConnections: additionalOscConnections
+                };
+                await window.electronAPI.setConfig(updatedConfig);
+                debugLog(`${connection.name || 'Connection'} ${field} updated to ${value} - configuration applied`);
+            } catch (error) {
+                debugLog(`Error updating OSC connection ${field}: ${error.message}`, 'error');
+            }
         }
     }
 }
@@ -750,7 +1292,6 @@ function renderAdditionalOscConnections() {
     const addIncomingBtn = document.getElementById('add-incoming-btn');
     const addOutgoingBtn = document.getElementById('add-outgoing-btn');
     const countSpan = document.getElementById('connection-count');
-    
     if (!container || !addIncomingBtn || !addOutgoingBtn || !countSpan) {
         console.warn('OSC connection elements not found in DOM');
         return;
@@ -769,13 +1310,15 @@ function renderAdditionalOscConnections() {
     incomingColumn.style.cssText = 'min-height: 100px;';
     const outgoingColumn = document.createElement('div');
     outgoingColumn.style.cssText = 'min-height: 100px;';
+    const isDarkTheme = document.body.classList.contains('dark-theme');
+    const textColor = isDarkTheme ? '#b0b0b0' : '#666';
     const incomingHeader = document.createElement('h5');
     incomingHeader.style.cssText = 'margin: 0 0 15px 0; color: #27ae60; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #27ae60;';
-    incomingHeader.innerHTML = '📥 Incoming <span style="font-size: 0.8em; margin-left: 10px; color: #666;">(' + incomingConnections.length + ')</span>';
+    incomingHeader.innerHTML = '📥 Incoming <span style="font-size: 0.8em; margin-left: 10px; color: ' + textColor + ';">(' + incomingConnections.length + ')</span>';
     incomingColumn.appendChild(incomingHeader);
     const outgoingHeader = document.createElement('h5');
     outgoingHeader.style.cssText = 'margin: 0 0 15px 0; color: #e74c3c; font-size: 1.1em; display: flex; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #e74c3c;';
-    outgoingHeader.innerHTML = '📤 Outgoing <span style="font-size: 0.8em; margin-left: 10px; color: #666;">(' + outgoingConnections.length + ')</span>';
+    outgoingHeader.innerHTML = '📤 Outgoing <span style="font-size: 0.8em; margin-left: 10px; color: ' + textColor + ';">(' + outgoingConnections.length + ')</span>';
     outgoingColumn.appendChild(outgoingHeader);
     if (incomingConnections.length === 0) {
         const emptyState = document.createElement('p');
@@ -842,14 +1385,17 @@ function createConnectionElement(connection, index, typeLabel) {
     const statusBadge = connection.enabled ? 
         '<span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Enabled</span>' :
         '<span style="background: #95a5a6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">Disabled</span>';
+    const isDarkTheme = document.body.classList.contains('dark-theme');
+    const smallTextColor = isDarkTheme ? '#b0b0b0' : '#666';
+    const headerTextColor = isDarkTheme ? '#e0e0e0' : '#2c3e50';
     connectionDiv.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
             <div style="flex: 1;">
-                <h6 style="margin: 0 0 5px 0; color: #2c3e50; font-size: 0.95em;">
+                <h6 style="margin: 0 0 5px 0; color: ${headerTextColor}; font-size: 0.95em;">
                     ${connection.name || `Connection ${index}`}
                 </h6>
                 <div style="margin-bottom: 8px;">${statusBadge}</div>
-                <small style="color: #666; font-size: 0.8em; line-height: 1.3;">
+                <small style="color: ${smallTextColor}; font-size: 0.8em; line-height: 1.3;">
                     ${connection.type === 'incoming' ? '🔽 Receives OSC data' : '🔼 Sends OSC data'}
                 </small>
             </div>
@@ -858,14 +1404,14 @@ function createConnectionElement(connection, index, typeLabel) {
         
         <div style="display: flex; flex-direction: column; gap: 10px;">
             <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555;">Connection Name</label>
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor};">Connection Name</label>
                 <input type="text" placeholder="e.g. TouchOSC, SteamVR.." value="${connection.name || ''}" 
                        onchange="updateOscConnection('${connection.id}', 'name', this.value)"
                        style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;">
             </div>
             
             <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555;">${portLabel}</label>
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor};">${portLabel}</label>
                 <input type="number" placeholder="9040" value="${connection.port || ''}" 
                        onchange="updateOscConnection('${connection.id}', 'port', this.value)"
                        style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;"
@@ -873,20 +1419,156 @@ function createConnectionElement(connection, index, typeLabel) {
             </div>
             
             <div class="form-group" style="margin-bottom: 0;">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555;">${addressLabel}</label>
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor};">${addressLabel}</label>
                 <input type="text" value="${connection.address}" 
                        onchange="updateOscConnection('${connection.id}', 'address', this.value)"
                        style="width: 100%; padding: 6px 8px; font-size: 13px; border: 1px solid #ddd; border-radius: 3px;"
                        placeholder="${defaultAddress}">
             </div>
             
-            <div style="display: flex; align-items: center; margin-top: 5px;">
-                <input type="checkbox" ${connection.enabled ? 'checked' : ''} 
-                       onchange="updateOscConnection('${connection.id}', 'enabled', this.checked)"
-                       style="margin-right: 8px; transform: scale(1.1);">
-                <label style="font-size: 0.85em; font-weight: 600; color: #555; margin: 0;">Connection Active</label>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor}; margin: 0;">Connection Status:</label>
+                <button class="btn ${connection.enabled ? 'btn-danger' : 'btn-success'}" 
+                        onclick="toggleOscConnection('${connection.id}', ${!connection.enabled})"
+                        style="padding: 4px 12px; font-size: 12px; min-width: 70px;">
+                    ${connection.enabled ? 'Disable' : 'Enable'}
+                </button>
             </div>
+            ${connection.type === 'incoming' ? `
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
+                <label style="font-size: 0.85em; font-weight: 600; color: ${headerTextColor}; margin: 0;">ARC Server Forward:</label>
+                <button class="btn ${connection.enableWebSocketForwarding ? 'btn-danger' : 'btn-success'}" 
+                        onclick="toggleOscConnectionWebSocketForwarding('${connection.id}', ${!connection.enableWebSocketForwarding})"
+                        style="padding: 4px 12px; font-size: 12px; min-width: 70px;">
+                    ${connection.enableWebSocketForwarding ? 'Disable' : 'Enable'}
+                </button>
+            </div>
+            ` : ''}
         </div>
     `;
     return connectionDiv;
+}
+async function loadParameterBlacklist() {
+    try {
+        const patterns = await window.electronAPI.getParameterBlacklist();
+        renderBlacklistPatterns(patterns);
+    } catch (error) {
+        debugLog(`Error loading parameter blacklist: ${error.message}`, 'error');
+    }
+}
+function renderBlacklistPatterns(patterns) {
+    const container = document.getElementById('blacklist-patterns');
+    if (patterns.length === 0) {
+        const isDarkTheme = document.body.classList.contains('dark-theme');
+        const textColor = isDarkTheme ? '#b0b0b0' : '#666';
+        container.innerHTML = `<p style="color: ${textColor}; font-style: italic;">No patterns configured</p>`;
+        return;
+    }
+    const patternsHtml = patterns.map(pattern => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
+                    background-color: #f8f9fa; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #007bff;">
+            <span style="font-family: monospace; color: #495057;">${pattern}</span>
+            <button class="btn btn-danger" onclick="removeBlacklistPattern('${pattern}')" 
+                    style="padding: 2px 8px; font-size: 12px;">Remove</button>
+        </div>
+    `).join('');
+
+    container.innerHTML = patternsHtml;
+}
+async function addBlacklistPattern() {
+    const input = document.getElementById('blacklist-pattern');
+    const pattern = input.value.trim();
+    if (!pattern) {
+        debugLog('Please enter a pattern to blacklist', 'warning');
+        return;
+    }
+    try {
+        const result = await window.electronAPI.addBlacklistPattern(pattern);
+        if (result.success) {
+            input.value = '';
+            renderBlacklistPatterns(result.patterns);
+            debugLog(`Added blacklist pattern: ${pattern}`);
+        } else {
+            debugLog(result.error || 'Failed to add pattern', 'error');
+        }
+    } catch (error) {
+        debugLog(`Error adding blacklist pattern: ${error.message}`, 'error');
+    }
+}
+async function removeBlacklistPattern(pattern) {
+    try {
+        const result = await window.electronAPI.removeBlacklistPattern(pattern);
+        if (result.success) {
+            renderBlacklistPatterns(result.patterns);
+            debugLog(`Removed blacklist pattern: ${pattern}`);
+        } else {
+            debugLog(result.error || 'Failed to remove pattern', 'error');
+        }
+    } catch (error) {
+        debugLog(`Error removing blacklist pattern: ${error.message}`, 'error');
+    }
+}
+function updateOscLoggingStatus() {
+    const statusElement = document.getElementById('osc-logging-status');
+    const toggleBtn = document.getElementById('osc-logging-toggle-btn');
+    if (statusElement) {
+        statusElement.textContent = oscLoggingEnabled ? 'Enabled' : 'Disabled';
+        statusElement.style.color = oscLoggingEnabled ? '#28a745' : '#dc3545';
+    }
+    if (toggleBtn) {
+        toggleBtn.textContent = oscLoggingEnabled ? 'Disable OSC Logging' : 'Enable OSC Logging';
+        toggleBtn.className = oscLoggingEnabled ? 'btn btn-warning' : 'btn btn-success';
+    }
+}
+async function toggleOscLoggingQuick() {
+    try {
+        oscLoggingEnabled = !oscLoggingEnabled;
+        const currentSettings = await window.electronAPI.getAppSettings();
+        currentSettings.enableOscLogging = oscLoggingEnabled;
+        await window.electronAPI.setAppSettings(currentSettings);
+        updateOscLoggingStatus();
+        const enableOscLoggingSelect = document.getElementById('enable-osc-logging');
+        if (enableOscLoggingSelect) {
+            enableOscLoggingSelect.value = oscLoggingEnabled ? 'true' : 'false';
+        }
+        if (!oscLoggingEnabled) {
+            oscLogBuffer = [];
+        }
+        debugLog(`OSC logging ${oscLoggingEnabled ? 'enabled' : 'disabled'} - this will ${oscLoggingEnabled ? 'increase' : 'reduce'} disk I/O`);
+    } catch (error) {
+        debugLog(`Error toggling OSC logging: ${error.message}`, 'error');
+    }
+}
+async function loadTheme() {
+    try {
+        const settings = await window.electronAPI.getAppSettings();
+        currentTheme = settings.theme || 'light';
+        applyTheme(currentTheme);
+        debugLog(`Theme loaded: ${currentTheme}`);
+    } catch (error) {
+        debugLog(`Error loading theme: ${error.message}`, 'error');
+        currentTheme = 'light';
+        applyTheme(currentTheme);
+    }
+}
+function applyTheme(theme) {
+    const body = document.body;
+    if (theme === 'dark') {
+        body.classList.add('dark-theme');
+    } else {
+        body.classList.remove('dark-theme');
+    }
+    currentTheme = theme;
+}
+async function toggleTheme() {
+    try {
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        applyTheme(newTheme);
+        const currentSettings = await window.electronAPI.getAppSettings();
+        currentSettings.theme = newTheme;
+        await window.electronAPI.setAppSettings(currentSettings);
+        debugLog(`Theme switched to ${newTheme} mode`);
+    } catch (error) {
+        debugLog(`Error toggling theme: ${error.message}`, 'error');
+    }
 }

@@ -13,9 +13,20 @@ class ConfigManager {
       websocketServerUrl: 'wss://avatar.comfychloe.uk:48255',
       autoConnect: false,
       logLevel: 'info',
+      parameterBlacklist: [],
       appSettings: {
         enableOscOnStartup: false,
         enableWebSocketForwarding: false,
+        enableOscLogging: true,
+        theme: 'light',
+        lastUsername: ''
+      },
+      windowState: {
+        width: 1200,
+        height: 800,
+        x: undefined,
+        y: undefined,
+        maximized: false
       },
       configVersion: 1
     };
@@ -69,14 +80,18 @@ class ConfigManager {
       targetOscPort: this.config.targetOscPort,
       targetOscAddress: this.config.targetOscAddress,
       additionalOscConnections: this.config.additionalOscConnections || [],
-      websocketServerUrl: this.config.websocketServerUrl
+      websocketServerUrl: this.config.websocketServerUrl,
+      appSettings: this.config.appSettings || {}
     };
   }
   getAppSettings() {
     return {
       autoConnect: this.config.autoConnect || false,
       logLevel: this.config.logLevel || 'info',
-      enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false
+      enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false,
+      enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
+      theme: this.config.appSettings?.theme || 'light',
+      lastUsername: this.config.appSettings?.lastUsername || ''
     };
   }
   updateAppSettings(settings) {
@@ -89,6 +104,15 @@ class ConfigManager {
     const oldOscStartup = this.config.appSettings.enableOscOnStartup;
     this.config.appSettings.enableOscOnStartup = 
       settings.enableOscOnStartup ?? this.config.appSettings.enableOscOnStartup;
+    if (settings.enableWebSocketForwarding !== undefined) {
+      this.config.appSettings.enableWebSocketForwarding = settings.enableWebSocketForwarding;
+    }
+    if (settings.theme !== undefined) {
+      this.config.appSettings.theme = settings.theme;
+    }
+    if (settings.lastUsername !== undefined) {
+      this.config.appSettings.lastUsername = settings.lastUsername;
+    }
     if (oldOscStartup !== this.config.appSettings.enableOscOnStartup) {
       debug.info(`OSC startup setting changed: ${oldOscStartup} -> ${this.config.appSettings.enableOscOnStartup}`);
     }
@@ -96,6 +120,26 @@ class ConfigManager {
     const saveResult = this.saveConfig();
     debug.info(`Config save result: ${saveResult}`);
     return saveResult;
+  }
+  getWindowState() {
+    return {
+      width: this.config.windowState?.width || 1200,
+      height: this.config.windowState?.height || 800,
+      x: this.config.windowState?.x,
+      y: this.config.windowState?.y,
+      maximized: this.config.windowState?.maximized || false
+    };
+  }
+  updateWindowState(windowState) {
+    if (!this.config.windowState) {
+      this.config.windowState = {};
+    }
+    this.config.windowState = {
+      ...this.config.windowState,
+      ...windowState
+    };
+    debug.info(`Window state updated: ${JSON.stringify(this.config.windowState)}`);
+    return this.saveConfig();
   }
 }
 module.exports = new ConfigManager();

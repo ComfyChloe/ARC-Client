@@ -9,6 +9,7 @@ app.setPath('userData', userDataPath);
 const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
+const parameterBlacklist = require('./utils/parameterBlacklist');
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
 const configManager = require('./utils/configManager');
@@ -19,12 +20,19 @@ let oscService;
 let oscEnabled = false;
 let wsManager;
 let serverConfig = configManager.getServerConfig();
+if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
+  serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
+  debug.info('Custom WebSocket URL detected on startup, reset to live server');
+}
 let isShuttingDown = false;
 let hasShownCriticalError = false;
 function createWindow() {
+  const windowState = configManager.getWindowState();
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -32,7 +40,15 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, 'assets', 'icon.png'),
-    title: 'ARC-OSC Client'
+    title: 'ARC-OSC Client',
+    show: false
+  })
+  if (windowState.maximized) {
+    mainWindow.maximize();
+  }
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
   });
   mainWindow.setMenuBarVisibility(false);
   if (process.argv.includes('--dev')) {
@@ -41,6 +57,46 @@ function createWindow() {
   } else {
     mainWindow.loadFile('renderer/index.html');
   }
+  let saveWindowStateTimeout;
+  const saveWindowState = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (saveWindowStateTimeout) {
+      clearTimeout(saveWindowStateTimeout);
+    }
+    saveWindowStateTimeout = setTimeout(() => {
+      const bounds = mainWindow.getBounds();
+      const isMaximized = mainWindow.isMaximized();
+      configManager.updateWindowState({
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        maximized: isMaximized
+      });
+      saveWindowStateTimeout = undefined;
+    }, 100);
+  };
+  mainWindow.on('resize', saveWindowState);
+  mainWindow.on('move', saveWindowState);
+  mainWindow.on('maximize', saveWindowState);
+  mainWindow.on('unmaximize', saveWindowState);
+  mainWindow.on('close', () => {
+    if (saveWindowStateTimeout) {
+      clearTimeout(saveWindowStateTimeout);
+      saveWindowStateTimeout = undefined;
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const bounds = mainWindow.getBounds();
+      const isMaximized = mainWindow.isMaximized();
+      configManager.updateWindowState({
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        maximized: isMaximized
+      });
+    }
+  });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -107,6 +163,11 @@ function initWebSocket() {
     });
     wsManager.on('osc-data', (data) => {
       sendToRenderer('websocket-osc-data', data);
+      const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
+      if (!wsForwardingEnabled) {
+        debug.logWebSocketForwarding(`WebSocket forwarding disabled - ignoring incoming OSC data: ${data.address} = ${data.value}`);
+        return;
+      }
       if (oscService && oscService.getStatus().isListening) {
         try {
           let type = 'f'; // default to float
@@ -128,8 +189,10 @@ function initWebSocket() {
       }
     });
     wsManager.on('avatar-change', (data) => {
+      console.log('Main process received avatar-change:', data);
       sendToRenderer('websocket-avatar-change', data);
-      debug.logWebSocketConnection(`Avatar changed: ${data.avatarId || 'Unknown'}`);
+      const displayName = data.name ? `${data.name} (${data.id})` : data.id;
+      debug.logWebSocketConnection(`Avatar changed: ${displayName} for user ${data.username || 'Unknown'}`);
     });
     wsManager.on('parameter-update', (data) => {
       sendToRenderer('websocket-parameter-update', data);
@@ -139,10 +202,12 @@ function initWebSocket() {
     });
   }
 }
+let oscMessageCounter = 0;
 function initOscServer() {
   if (oscService) {
     debug.info('Stopping existing OSC service before reinitialization...');
     oscService.stop();
+    oscService = null;
     global.oscService = null;
   }
   if (!oscEnabled) {
@@ -164,18 +229,45 @@ function initOscServer() {
     debug.logAdditionalConnections(serverConfig.additionalOscConnections);
   });
   oscService.on('messageReceived', (data) => {
-    debug.oscMessageReceived(data.address, data.value, data.type);
+    oscMessageCounter++;
+    if (oscMessageCounter === 1 || oscMessageCounter % 100 === 0) {
+      debug.oscMessageReceived(data.address, data.value, data.type);
+    }
     const wsConnected = wsManager && wsManager.isConnected;
-    if (wsConnected) {
-      try {
-        const result = wsManager.sendOscData({
-          address: data.address,
-          value: data.value
-        });
-        debug.logWebSocketForwarding(`${data.address} = ${data.value} (result: ${JSON.stringify(result)})`);
-      } catch (error) {
+    let wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
+    if (data.connectionId) {
+      const connection = serverConfig.additionalOscConnections?.find(conn => conn.id === data.connectionId);
+      if (connection && connection.type === 'incoming') {
+        wsForwardingEnabled = connection.enableWebSocketForwarding || false;
+      }
+    }
+    if (wsConnected && wsForwardingEnabled) {
+      if (!parameterBlacklist.isBlacklisted(data.address)) {
+        try {
+          const result = wsManager.sendOscData({
+            address: data.address,
+            value: data.value
+          });
+          debug.logWebSocketForwarding(`${data.address} = ${data.value} (result: ${JSON.stringify(result)})`);
+          sendToRenderer('osc-forwarded', { 
+            address: data.address, 
+            value: data.value,
+            connectionId: data.connectionId,
+            timestamp: Date.now()
+          });
+        } catch (error) {
+          debug.logError(`Failed to forward OSC to WebSocket: ${error.message}`);
+        }
+      } else {
+        debug.logWebSocketForwarding(`Parameter blacklisted - not forwarding: ${data.address}`);
       }
     } else {
+      if (wsConnected && !wsForwardingEnabled) {
+        if (data.connectionId) {
+          debug.logWebSocketForwarding(`Additional connection WebSocket forwarding disabled - not forwarding: ${data.address}`);
+        } else {
+        }
+      }
     }
     if (!data.connectionId && oscService) {
       oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
@@ -256,7 +348,15 @@ ipcMain.handle('set-config', (event, newConfig) => {
     debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
   debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
-  configManager.updateConfig(serverConfig);
+  const isCustomUrl = newConfig.websocketServerUrl && newConfig.websocketServerUrl.includes('127.0.0.1');
+  if (!isCustomUrl) {
+    configManager.updateConfig(serverConfig);
+  } else {
+    const configToSave = { ...serverConfig };
+    delete configToSave.websocketServerUrl;
+    configManager.updateConfig(configToSave);
+    debug.info('Custom/dev WebSocket URL not persisted to config file');
+  }
   if (newConfig.websocketServerUrl && oldConfig.websocketServerUrl !== newConfig.websocketServerUrl) {
     debug.info(`WebSocket URL changed from ${oldConfig.websocketServerUrl} to ${newConfig.websocketServerUrl}`);
     if (wsManager) {
@@ -271,8 +371,21 @@ ipcMain.handle('set-config', (event, newConfig) => {
       debug.info(`WebSocket configuration updated to: ${serverConfig.websocketServerUrl}`);
     }
   }
-  initOscServer();
-  initOscClient();
+  const portsChanged = (oldConfig.localOscPort !== serverConfig.localOscPort) ||
+                       (oldConfig.targetOscPort !== serverConfig.targetOscPort) ||
+                       (oldConfig.targetOscAddress !== serverConfig.targetOscAddress);
+  const additionalConnectionsChanged = JSON.stringify(oldConfig.additionalOscConnections || []) !== 
+                                       JSON.stringify(serverConfig.additionalOscConnections || []);
+  if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
+    debug.info('Only additional connections changed, updating without restarting OSC service');
+    oscService.updateAdditionalConnections(serverConfig.additionalOscConnections);
+  } else if (portsChanged || !oscEnabled) {
+    debug.info('OSC configuration changed, restarting OSC service');
+    initOscServer();
+    initOscClient();
+  } else if (!additionalConnectionsChanged) {
+    debug.info('No OSC configuration changes detected');
+  }
   return serverConfig;
 });
 ipcMain.handle('get-app-settings', () => {
@@ -285,6 +398,17 @@ ipcMain.handle('set-app-settings', (event, newSettings) => {
     debug.error('Failed to save app settings to config file');
   }
   return configManager.getAppSettings();
+});
+ipcMain.handle('get-window-state', () => {
+  return configManager.getWindowState();
+});
+ipcMain.handle('set-window-state', (event, windowState) => {
+  const result = configManager.updateWindowState(windowState);
+  debug.info(`Window state updated: ${JSON.stringify(windowState)}`);
+  if (!result) {
+    debug.error('Failed to save window state to config file');
+  }
+  return result;
 });
 ipcMain.handle('get-debug-stats', () => {
   return debug.getStats();
@@ -305,9 +429,51 @@ ipcMain.handle('set-osc-forwarding', (event, enabled) => {
   }
   return { success: false, error: 'OSC service not initialized' };
 });
+ipcMain.handle('get-last-username', () => {
+  const appSettings = configManager.getAppSettings();
+  return appSettings.lastUsername || '';
+});
+ipcMain.handle('set-last-username', (event, username) => {
+  try {
+    const result = configManager.updateAppSettings({ lastUsername: username });
+    debug.info(`Last username saved: ${username}`);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to save last username: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
 ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
+});
+ipcMain.handle('get-memory-stats', () => {
+  const memoryUsage = process.memoryUsage();
+  return {
+    rss: Math.round(memoryUsage.rss / 1024 / 1024),
+    heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+    heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+    external: Math.round(memoryUsage.external / 1024 / 1024),
+    parameterCount: oscService ? Object.keys(oscService.getParameters()).length : 0
+  };
+});
+ipcMain.handle('force-memory-cleanup', () => {
+  try {
+    if (global.gc) {
+      global.gc();
+    }
+    if (oscService && typeof oscService.cleanupOldParameters === 'function') {
+      oscService.cleanupOldParameters();
+    }
+    const memoryUsage = process.memoryUsage();
+    debug.logMemoryCleanup({
+      heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+      parameterCount: oscService ? Object.keys(oscService.getParameters()).length : 0
+    });
+    return { success: true, message: 'Memory cleanup performed' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 ipcMain.handle('websocket-connect', async (event, credentials) => {
   try {
@@ -410,10 +576,62 @@ ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
     return { success: false, error: error.message };
   }
 });
+ipcMain.handle('get-parameter-blacklist', () => {
+  return parameterBlacklist.getPatterns();
+});
+ipcMain.handle('add-blacklist-pattern', (event, pattern) => {
+  try {
+    const success = parameterBlacklist.addPattern(pattern);
+    if (success) {
+      const patterns = parameterBlacklist.getPatterns();
+      configManager.updateConfig({ parameterBlacklist: patterns });
+      debug.info(`Added blacklist pattern: ${pattern}`);
+    }
+    return { success, patterns: parameterBlacklist.getPatterns() };
+  } catch (error) {
+    debug.logError(`Failed to add blacklist pattern: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('remove-blacklist-pattern', (event, pattern) => {
+  try {
+    const success = parameterBlacklist.removePattern(pattern);
+    if (success) {
+      const patterns = parameterBlacklist.getPatterns();
+      configManager.updateConfig({ parameterBlacklist: patterns });
+      debug.info(`Removed blacklist pattern: ${pattern}`);
+    }
+    return { success, patterns: parameterBlacklist.getPatterns() };
+  } catch (error) {
+    debug.logError(`Failed to remove blacklist pattern: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('clear-parameter-blacklist', () => {
+  try {
+    parameterBlacklist.clear();
+    configManager.updateConfig({ parameterBlacklist: [] });
+    debug.info('Cleared parameter blacklist');
+    return { success: true, patterns: [] };
+  } catch (error) {
+    debug.logError(`Failed to clear blacklist: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
 ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
   debug.info('OSC explicitly enabled by user');
+  if (oscService) {
+    debug.info('Cleaning up existing OSC service before enabling...');
+    try {
+      oscService.stop();
+      oscService = null;
+      global.oscService = null;
+    } catch (error) {
+      debug.logError(`Error cleaning up existing OSC service: ${error.message}`);
+    }
+  }
   initOscServer();
   initOscClient();
   return { success: true, message: 'OSC enabled' };
@@ -423,7 +641,9 @@ ipcMain.handle('disable-osc', () => {
   debug.logOscServerStateChange(false);
   try {
     if (oscService) {
+      debug.info('Stopping OSC service and all additional connections...');
       oscService.stop();
+      oscService = null;
       global.oscService = null;
     }
   } catch (error) {
@@ -432,27 +652,41 @@ ipcMain.handle('disable-osc', () => {
   try {
     if (oscServer) {
       oscServer.close();
-      oscServer = undefined;
+      oscServer = null;
     }
   } catch (error) {
     debug.logError(`Error closing OSC server: ${error.message}`);
+  }
+  try {
+    if (oscClient) {
+      oscClient.close();
+      oscClient = null;
+    }
+  } catch (error) {
+    debug.logError(`Error closing OSC client: ${error.message}`);
   }
   sendToRenderer('osc-server-status', { 
     status: 'disabled', 
     port: serverConfig.localOscPort 
   });
+  debug.info('OSC service fully disabled - all connections closed');
   return { success: true, message: 'OSC disabled' };
 });
 app.whenReady().then(() => {
   debug.logAppStartup();
   logger = require('./utils/logger');
   const appSettings = configManager.getAppSettings();
+  const config = configManager.getConfig();
+  parameterBlacklist.loadBlacklist(config.parameterBlacklist || []);
   if (!serverConfig.appSettings) {
     serverConfig.appSettings = appSettings || {};
+  } else {
+    serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
   oscEnabled = appSettings.enableOscOnStartup;
   debug.info(`OSC startup state from config: ${oscEnabled ? 'enabled' : 'disabled'}`);
   createWindow();
+  setupMemoryManagement();
   setTimeout(() => {
     if (oscEnabled) {
       debug.info('Starting OSC service based on saved config...');
@@ -474,6 +708,30 @@ app.whenReady().then(() => {
     }
   });
 });
+function setupMemoryManagement() {
+  setInterval(() => {
+    try {
+      if (global.gc) {
+        global.gc();
+      }
+      if (oscService && typeof oscService.cleanupOldParameters === 'function') {
+        oscService.cleanupOldParameters();
+      }
+      const memoryUsage = process.memoryUsage();
+      const memoryMB = {
+        rss: Math.round(memoryUsage.rss / 1024 / 1024),
+        heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+        external: Math.round(memoryUsage.external / 1024 / 1024)
+      };
+      if (memoryUsage.heapUsed > 200 * 1024 * 1024) {
+        debug.warn('High memory usage detected', memoryMB);
+      }
+    } catch (error) {
+      debug.logError(`Memory management error: ${error.message}`);
+    }
+  }, 60000);
+}
 function cleanup(source = 'unknown') {
   if (isShuttingDown) {
     return;
@@ -483,6 +741,7 @@ function cleanup(source = 'unknown') {
   try {
     if (oscService) {
       oscService.stop();
+      oscService = null;
       global.oscService = null;
     }
   } catch (error) {
@@ -491,7 +750,7 @@ function cleanup(source = 'unknown') {
   try {
     if (oscServer) {
       oscServer.close();
-      oscServer = undefined;
+      oscServer = null;
     }
   } catch (error) {
     debug.logError(`Error closing OSC server: ${error.message}`);
@@ -499,7 +758,7 @@ function cleanup(source = 'unknown') {
   try {
     if (oscClient) {
       oscClient.close();
-      oscClient = undefined;
+      oscClient = null;
     }
   } catch (error) {
     debug.logError(`Error closing OSC client: ${error.message}`);
@@ -507,7 +766,7 @@ function cleanup(source = 'unknown') {
   try {
     if (wsManager) {
       wsManager.disconnect();
-      wsManager = undefined;
+      wsManager = null;
     }
   } catch (error) {
     debug.logError(`Error disconnecting WebSocket: ${error.message}`);

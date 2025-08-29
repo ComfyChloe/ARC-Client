@@ -10,6 +10,7 @@ class WebSocketManager {
             autoReconnect: true,
             reconnectDelay: 3000,
             maxReconnectAttempts: 5
+            // For development with self-signed certificates, add: rejectUnauthorized: false
         };
         this.reconnectAttempts = 0;
         this.eventHandlers = new Map();
@@ -17,9 +18,19 @@ class WebSocketManager {
     setConfig(config) {
         this.connectionConfig = { ...this.connectionConfig, ...config };
     }
+    updateServerUrl(url, persistent = true) {
+        this.connectionConfig.serverUrl = url;
+        this.connectionConfig.persistent = persistent;
+        return { success: true, url, persistent };
+    }
     async connect(credentials = {}) {
         if (this.socket && this.isConnected) {
             return { success: true, message: 'Already connected' };
+        }
+        if (this.socket) {
+            this.socket.removeAllListeners();
+            this.socket.disconnect();
+            this.socket = null;
         }
         try {
             const { username, password } = credentials;
@@ -121,6 +132,7 @@ class WebSocketManager {
             this.emit('osc-data', data);
         });
         this.socket.on('avatar-change', (data) => {
+            console.log('WebSocket received avatar-change:', data);
             this.emit('avatar-change', data);
         });
         this.socket.on('parameter-update', (data) => {
@@ -132,6 +144,7 @@ class WebSocketManager {
     }
     disconnect() {
         if (this.socket) {
+            this.socket.removeAllListeners();
             this.socket.disconnect();
             this.socket = null;
         }
@@ -139,6 +152,7 @@ class WebSocketManager {
         this.isAuthenticated = false;
         this.currentUser = null;
         this.reconnectAttempts = 0;
+        this.eventHandlers.clear();
         this.emit('connection-status', { status: 'disconnected' });
         return { success: true, message: 'Disconnected successfully' };
     }

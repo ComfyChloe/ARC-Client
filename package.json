@@ -1,6 +1,6 @@
 {
   "name": "arc-osc-client",
-  "version": "0.28.0",
+  "version": "0.30.0",
   "author": "ComfyChloe",
   "description": "Standalone OSC Client for ARC-OSC",
   "main": "main.js",
@@ -55,7 +55,7 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "assets/icon.ico"
+      "icon": "assets/ARC.ico"
     },
     "compression": "maximum",
     "nsis": {
