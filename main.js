@@ -251,18 +251,17 @@ function initOscServer() {
     if (oscMessageCounter === 1 || oscMessageCounter % 100 === 0) {
       debug.oscMessageReceived(data.address, data.value, data.type);
     }
-    // Only forward to WebSocket if both OSC and WebSocket forwarding are enabled
+    // Always forward to WebSocket if connected (outgoing data should flow to enable remote control)
     const wsConnected = wsManager && wsManager.isConnected;
-    let wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
-    // If this message comes from an additional connection, check its individual forwarding setting
-    if (data.connectionId) {
+    let shouldForward = wsConnected;
+    // For additional connections, still respect their individual WebSocket forwarding setting
+    if (data.connectionId && wsConnected) {
       const connection = serverConfig.additionalOscConnections?.find(conn => conn.id === data.connectionId);
       if (connection && connection.type === 'incoming') {
-        // For incoming additional connections, use their individual WebSocket forwarding setting
-        wsForwardingEnabled = connection.enableWebSocketForwarding || false;
+        shouldForward = connection.enableWebSocketForwarding || false;
       }
-    }
-    if (wsConnected && wsForwardingEnabled) {
+    } 
+    if (shouldForward) {
       // Check if the parameter is blacklisted before forwarding
       if (!parameterBlacklist.isBlacklisted(data.address)) {
         try {
@@ -285,12 +284,9 @@ function initOscServer() {
         debug.logWebSocketForwarding(`Parameter blacklisted - not forwarding: ${data.address}`);
       }
     } else {
-      if (wsConnected && !wsForwardingEnabled) {
-        if (data.connectionId) {
-          debug.logWebSocketForwarding(`Additional connection WebSocket forwarding disabled - not forwarding: ${data.address}`);
-        } else {
-          // debug.logWebSocketForwarding(`WebSocket forwarding disabled - not forwarding: ${data.address}`);
-        }
+      // Only log for additional connections that have forwarding disabled
+      if (wsConnected && data.connectionId) {
+        debug.logWebSocketForwarding(`Additional connection WebSocket forwarding disabled - not forwarding: ${data.address}`);
       }
     }
     if (!data.connectionId && oscService) {
