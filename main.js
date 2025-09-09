@@ -714,6 +714,25 @@ ipcMain.handle('disable-osc', () => {
   debug.info('OSC service fully disabled - all connections closed');
   return { success: true, message: 'OSC disabled' };
 });
+ipcMain.handle('get-saved-password', () => {
+  const savedPassword = configManager.getSavedPassword();
+  return { password: savedPassword };
+});
+
+ipcMain.handle('set-saved-password', (event, password) => {
+  try {
+    const result = configManager.setSavedPassword(password);
+    if (result) {
+      debug.info(`Password ${password ? 'saved' : 'cleared'} in configuration`);
+      return { success: true };
+    } else {
+      throw new Error('Failed to save password to config file');
+    }
+  } catch (error) {
+    debug.error(`Failed to save password: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
 app.whenReady().then(() => {
   debug.logAppStartup();
   // Load logger after app is ready

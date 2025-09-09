@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Username storage API
   getLastUsername: () => ipcRenderer.invoke('get-last-username'),
   setLastUsername: (username) => ipcRenderer.invoke('set-last-username', username),
+  // Password storage API
+  getSavedPassword: () => ipcRenderer.invoke('get-saved-password'),
+  setSavedPassword: (password) => ipcRenderer.invoke('set-saved-password', password),
   // Parameter blacklist API
   getParameterBlacklist: () => ipcRenderer.invoke('get-parameter-blacklist'),
   addBlacklistPattern: (pattern) => ipcRenderer.invoke('add-blacklist-pattern', pattern),

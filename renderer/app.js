@@ -62,6 +62,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
+        const savePasswordCheckbox = document.getElementById('save-password-checkbox');
+        
         if (usernameInput) {
             let saveTimeout;
             // Auto-save username as user types
@@ -90,6 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         }
+        
         // Enter key support for password field
         if (passwordInput) {
             passwordInput.addEventListener('keypress', (e) => {
@@ -98,6 +101,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         }
+        
+        // Handle save password checkbox
+        if (savePasswordCheckbox) {
+            savePasswordCheckbox.addEventListener('change', handleSavePasswordCheckbox);
+        }
+        
+        // Load saved password setting on startup
+        loadSavedPasswordSetting();
     }, 100);
     // Set up periodic OSC log buffer flushing
     setInterval(() => {
@@ -1701,3 +1712,106 @@ async function toggleTheme() {
         debugLog(`Error toggling theme: ${error.message}`, 'error');
     }
 }
+// Password saving functionality
+async function handleSavePasswordCheckbox() {
+    const checkbox = document.getElementById('save-password-checkbox');
+    const modal = document.getElementById('password-warning-modal');
+    
+    if (checkbox.checked) {
+        // Show warning modal
+        modal.style.display = 'flex';
+        setupPasswordWarningModal();
+    } else {
+        // Unchecking - remove saved password
+        try {
+            await window.electronAPI.setSavedPassword('');
+            debugLog('Saved password removed from configuration');
+        } catch (error) {
+            debugLog(`Error removing saved password: ${error.message}`, 'error');
+        }
+    }
+}
+
+function setupPasswordWarningModal() {
+    const modal = document.getElementById('password-warning-modal');
+    const cancelBtn = document.getElementById('password-warning-cancel');
+    const confirmBtn = document.getElementById('password-warning-confirm');
+    const checkbox = document.getElementById('save-password-checkbox');
+    
+    cancelBtn.onclick = () => {
+        checkbox.checked = false;
+        modal.style.display = 'none';
+        debugLog('Password save cancelled by user');
+    };
+    
+    confirmBtn.onclick = async () => {
+        modal.style.display = 'none';
+        debugLog('User confirmed password save warning');
+        // Save current password if there is one
+        const password = document.getElementById('password').value;
+        if (password) {
+            try {
+                await window.electronAPI.setSavedPassword(password);
+                debugLog('Password saved to configuration (encrypted storage would be better, but user confirmed plain text)');
+            } catch (error) {
+                debugLog(`Error saving password: ${error.message}`, 'error');
+            }
+        }
+    };
+    
+    // Close modal when clicking overlay
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            checkbox.checked = false;
+            modal.style.display = 'none';
+            debugLog('Password save modal closed');
+        }
+    };
+}
+
+async function loadSavedPasswordSetting() {
+    try {
+        const result = await window.electronAPI.getSavedPassword();
+        const checkbox = document.getElementById('save-password-checkbox');
+        const passwordInput = document.getElementById('password');
+        
+        if (result && result.password) {
+            checkbox.checked = true;
+            passwordInput.value = result.password;
+            debugLog('Saved password loaded from configuration');
+        }
+    } catch (error) {
+        debugLog(`Error loading saved password: ${error.message}`, 'error');
+    }
+}
+
+// Update password saving when user types new password
+async function handlePasswordChange() {
+    const checkbox = document.getElementById('save-password-checkbox');
+    const passwordInput = document.getElementById('password');
+    
+    if (checkbox.checked) {
+        const password = passwordInput.value;
+        try {
+            await window.electronAPI.setSavedPassword(password);
+        } catch (error) {
+            debugLog(`Error updating saved password: ${error.message}`, 'error');
+        }
+    }
+}
+
+// Add password change listener after DOM loads
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        const passwordInput = document.getElementById('password');
+        if (passwordInput) {
+            let saveTimeout;
+            passwordInput.addEventListener('input', () => {
+                if (saveTimeout) {
+                    clearTimeout(saveTimeout);
+                }
+                saveTimeout = setTimeout(handlePasswordChange, 1000);
+            });
+        }
+    }, 100);
+});

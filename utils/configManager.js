@@ -25,7 +25,8 @@ class ConfigManager {
         enableWebSocketForwarding: false,
         enableOscLogging: true,
         theme: 'light',
-        lastUsername: ''
+        lastUsername: '',
+        savedPassword: '' // Store password in plain text as requested
       },
       windowState: {
         width: 1200,
@@ -101,7 +102,8 @@ class ConfigManager {
       enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false,
       enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
       theme: this.config.appSettings?.theme || 'light',
-      lastUsername: this.config.appSettings?.lastUsername || ''
+      lastUsername: this.config.appSettings?.lastUsername || '',
+      savedPassword: this.config.appSettings?.savedPassword || ''
     };
   }
   updateAppSettings(settings) {
@@ -124,6 +126,15 @@ class ConfigManager {
     }
     if (settings.lastUsername !== undefined) {
       this.config.appSettings.lastUsername = settings.lastUsername;
+    }
+    
+    if (settings.savedPassword !== undefined) {
+      this.config.appSettings.savedPassword = settings.savedPassword;
+    }
+    
+    // Update OSC logging setting  
+    if (settings.enableOscLogging !== undefined) {
+      this.config.appSettings.enableOscLogging = settings.enableOscLogging;
     }
     // Log any changes to the OSC startup setting
     if (oldOscStartup !== this.config.appSettings.enableOscOnStartup) {
@@ -153,6 +164,19 @@ class ConfigManager {
       ...windowState
     };
     debug.info(`Window state updated: ${JSON.stringify(this.config.windowState)}`);
+    return this.saveConfig();
+  }
+  // Password management methods
+  getSavedPassword() {
+    return this.config.appSettings?.savedPassword || '';
+  }
+  
+  setSavedPassword(password) {
+    if (!this.config.appSettings) {
+      this.config.appSettings = {};
+    }
+    this.config.appSettings.savedPassword = password || '';
+    debug.info(`Saved password ${password ? 'updated' : 'cleared'} in configuration`);
     return this.saveConfig();
   }
 }
