@@ -11,6 +11,7 @@ const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
 const parameterBlacklist = require('./utils/parameterBlacklist');
+const HyperateAddon = require('./Containers/Hyperate');
 // Logger will be loaded after app is ready
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
@@ -22,6 +23,7 @@ let oscService;
 let oscEnabled = false;
 let wsManager;
 let serverConfig = configManager.getServerConfig();
+let hyperateAddon;
 // On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
 if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
   serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
@@ -197,7 +199,7 @@ function initWebSocket() {
             // debug.logWebSocketConnection(`Forwarded WebSocket OSC to VRChat: ${data.address} = ${data.value} (${type})`);
           }
         } catch (error) {
-          debug.logError(`Failed to forward WebSocket OSC to VRChat: ${error.message}`);
+          debug.error(`Failed to forward WebSocket OSC to VRChat: ${error.message}`);
         }
       } else {
         debug.logWebSocketConnection(`Cannot forward OSC to VRChat - OSC service not running`);
@@ -243,6 +245,11 @@ function initOscServer() {
       port: config.localPort 
     });
     debug.logAdditionalConnections(serverConfig.additionalOscConnections);
+    // Update HypeRate addon with OSC service if it's running
+    if (hyperateAddon && hyperateAddon.isEnabled()) {
+      hyperateAddon.oscService = oscService;
+      debug.info('Updated HypeRate addon with OSC service');
+    }
   });
   oscService.on('messageReceived', (data) => {
     // Reduce debug logging frequency for OSC messages to prevent excessive I/O
@@ -279,7 +286,7 @@ function initOscServer() {
             timestamp: Date.now()
           });
         } catch (error) {
-          debug.logError(`Failed to forward OSC to WebSocket: ${error.message}`);
+          debug.error(`Failed to forward OSC to WebSocket: ${error.message}`);
         }
       } else {
         debug.logWebSocketForwarding(`Parameter blacklisted - not forwarding: ${data.address}`);
@@ -538,7 +545,7 @@ ipcMain.handle('websocket-send-osc', (event, data) => {
     }
     throw new Error('WebSocket not connected');
   } catch (error) {
-    debug.logError(`Manual WebSocket OSC send failed: ${error.message}`);
+    debug.error(`Manual WebSocket OSC send failed: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
@@ -557,7 +564,7 @@ ipcMain.handle('websocket-test-send', () => {
     }
     throw new Error('WebSocket not connected');
   } catch (error) {
-    debug.logError(`Test WebSocket send failed: ${error.message}`);
+    debug.error(`Test WebSocket send failed: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
@@ -609,7 +616,7 @@ ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
       throw new Error('Failed to save settings');
     }
   } catch (error) {
-    debug.logError(`Failed to update WebSocket forwarding setting: ${error.message}`);
+    debug.error(`Failed to update WebSocket forwarding setting: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
@@ -628,7 +635,7 @@ ipcMain.handle('add-blacklist-pattern', (event, pattern) => {
     }
     return { success, patterns: parameterBlacklist.getPatterns() };
   } catch (error) {
-    debug.logError(`Failed to add blacklist pattern: ${error.message}`);
+    debug.error(`Failed to add blacklist pattern: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
@@ -643,7 +650,7 @@ ipcMain.handle('remove-blacklist-pattern', (event, pattern) => {
     }
     return { success, patterns: parameterBlacklist.getPatterns() };
   } catch (error) {
-    debug.logError(`Failed to remove blacklist pattern: ${error.message}`);
+    debug.error(`Failed to remove blacklist pattern: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
@@ -654,7 +661,7 @@ ipcMain.handle('clear-parameter-blacklist', () => {
     debug.info('Cleared parameter blacklist');
     return { success: true, patterns: [] };
   } catch (error) {
-    debug.logError(`Failed to clear blacklist: ${error.message}`);
+    debug.error(`Failed to clear blacklist: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
@@ -670,7 +677,7 @@ ipcMain.handle('enable-osc', () => {
       oscService = null;
       global.oscService = null;
     } catch (error) {
-      debug.logError(`Error cleaning up existing OSC service: ${error.message}`);
+      debug.error(`Error cleaning up existing OSC service: ${error.message}`);
     }
   }
   // Force initialization of OSC service
@@ -689,7 +696,7 @@ ipcMain.handle('disable-osc', () => {
       global.oscService = null;
     }
   } catch (error) {
-    debug.logError(`Error stopping OSC service: ${error.message}`);
+    debug.error(`Error stopping OSC service: ${error.message}`);
   }
   try {
     if (oscServer) {
@@ -697,7 +704,7 @@ ipcMain.handle('disable-osc', () => {
       oscServer = null;
     }
   } catch (error) {
-    debug.logError(`Error closing OSC server: ${error.message}`);
+    debug.error(`Error closing OSC server: ${error.message}`);
   }
   try {
     if (oscClient) {
@@ -705,7 +712,7 @@ ipcMain.handle('disable-osc', () => {
       oscClient = null;
     }
   } catch (error) {
-    debug.logError(`Error closing OSC client: ${error.message}`);
+    debug.error(`Error closing OSC client: ${error.message}`);
   }
   sendToRenderer('osc-server-status', { 
     status: 'disabled', 
@@ -733,10 +740,114 @@ ipcMain.handle('set-saved-password', (event, password) => {
     return { success: false, error: error.message };
   }
 });
+// HypeRate addon IPC handlers
+ipcMain.handle('hyperate-get-status', () => {
+  if (hyperateAddon) {
+    return hyperateAddon.getStatus();
+  }
+  return { enabled: false, connected: false, hasApiKey: false };
+});
+ipcMain.handle('hyperate-start', () => {
+  try {
+    if (!hyperateAddon) {
+      return { success: false, error: 'HypeRate addon not initialized' };
+    }
+    // Pass OSC service if available, but don't require it
+    const result = hyperateAddon.start(oscService);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to start HypeRate addon: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('hyperate-stop', () => {
+  try {
+    if (hyperateAddon) {
+      hyperateAddon.stop();
+    }
+    return { success: true };
+  } catch (error) {
+    debug.error(`Failed to stop HypeRate addon: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('hyperate-add-tracker', (event, deviceId, deviceName = null) => {
+  try {
+    if (!hyperateAddon) {
+      return { success: false, error: 'HypeRate addon not initialized' };
+    }
+    const result = hyperateAddon.addTracker(deviceId, deviceName);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to add HypeRate tracker: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('hyperate-remove-tracker', (event, deviceId) => {
+  try {
+    if (!hyperateAddon) {
+      return { success: false, error: 'HypeRate addon not initialized' };
+    }
+    const result = hyperateAddon.removeTracker(deviceId);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to remove HypeRate tracker: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('hyperate-update-tracker-name', (event, deviceId, newName) => {
+  try {
+    if (!hyperateAddon) {
+      return { success: false, error: 'HypeRate addon not initialized' };
+    }
+    const result = hyperateAddon.updateTrackerName(deviceId, newName);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to update HypeRate tracker name: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('hyperate-update-tracker-state', (event, deviceId, enabled) => {
+  try {
+    if (!hyperateAddon) {
+      return { success: false, error: 'HypeRate addon not initialized' };
+    }
+    const result = hyperateAddon.updateTrackerState(deviceId, enabled);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to update HypeRate tracker state: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('hyperate-get-trackers', () => {
+  try {
+    if (hyperateAddon) {
+      return hyperateAddon.getTrackers();
+    }
+    return [];
+  } catch (error) {
+    debug.error(`Failed to get HypeRate trackers: ${error.message}`);
+    return [];
+  }
+});
+ipcMain.handle('hyperate-set-primary', (event, deviceId) => {
+  try {
+    if (!hyperateAddon) {
+      return { success: false, error: 'HypeRate addon not initialized' };
+    }
+    const result = hyperateAddon.setPrimaryTracker(deviceId);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to set primary HypeRate tracker: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
 app.whenReady().then(() => {
   debug.logAppStartup();
   // Load logger after app is ready
   logger = require('./utils/logger');
+  // Initialize HypeRate addon
+  hyperateAddon = new HyperateAddon();
   // Get app settings from config
   const appSettings = configManager.getAppSettings();
   // Load parameter blacklist from config
@@ -767,6 +878,11 @@ app.whenReady().then(() => {
         status: 'disabled', 
         port: serverConfig.localOscPort 
       });
+    }
+    // Start HypeRate if it was previously enabled
+    if (hyperateAddon && hyperateAddon.isEnabled()) {
+      debug.info('Starting HypeRate addon based on saved config...');
+      hyperateAddon.start(oscService);
     }
   }, 500); // Short delay to ensure window is ready
   setTimeout(() => {
@@ -803,7 +919,7 @@ function setupMemoryManagement() {
         debug.warn('High memory usage detected', memoryMB);
       }
     } catch (error) {
-      debug.logError(`Memory management error: ${error.message}`);
+      debug.error(`Memory management error: ${error.message}`);
     }
   }, 60000); // Every minute
 }
@@ -820,7 +936,7 @@ function cleanup(source = 'unknown') {
       global.oscService = null;
     }
   } catch (error) {
-    debug.logError(`Error stopping OSC service: ${error.message}`);
+    debug.error(`Error stopping OSC service: ${error.message}`);
   }
   try {
     if (oscServer) {
@@ -828,7 +944,7 @@ function cleanup(source = 'unknown') {
       oscServer = null;
     }
   } catch (error) {
-    debug.logError(`Error closing OSC server: ${error.message}`);
+    debug.error(`Error closing OSC server: ${error.message}`);
   }
   try {
     if (oscClient) {
@@ -836,7 +952,7 @@ function cleanup(source = 'unknown') {
       oscClient = null;
     }
   } catch (error) {
-    debug.logError(`Error closing OSC client: ${error.message}`);
+    debug.error(`Error closing OSC client: ${error.message}`);
   }
   try {
     if (wsManager) {
@@ -844,7 +960,15 @@ function cleanup(source = 'unknown') {
       wsManager = null;
     }
   } catch (error) {
-    debug.logError(`Error disconnecting WebSocket: ${error.message}`);
+    debug.error(`Error disconnecting WebSocket: ${error.message}`);
+  }
+  try {
+    if (hyperateAddon) {
+      hyperateAddon.stop();
+      hyperateAddon = null;
+    }
+  } catch (error) {
+    debug.error(`Error stopping HypeRate addon: ${error.message}`);
   }
 }
 app.on('window-all-closed', () => {
@@ -865,11 +989,11 @@ process.on('uncaughtException', (error) => {
   if (logger) {
     logger.logError(error);
   }
-  debug.logError(`Uncaught exception: ${error.message}`);
+  debug.error(`Uncaught exception: ${error.message}`);
   try {
     cleanup('uncaught-exception');
   } catch (cleanupError) {
-    debug.logError(`Error during cleanup: ${cleanupError.message}`);
+    debug.error(`Error during cleanup: ${cleanupError.message}`);
   }
   dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
   process.exit(1);
@@ -883,11 +1007,11 @@ process.on('unhandledRejection', (reason) => {
   if (logger) {
     logger.logError(reason);
   }
-  debug.logError(`Unhandled rejection: ${reason}`);
+  debug.error(`Unhandled rejection: ${reason}`);
   try {
     cleanup('unhandled-rejection');
   } catch (cleanupError) {
-    debug.logError(`Error during cleanup: ${cleanupError.message}`);
+    debug.error(`Error during cleanup: ${cleanupError.message}`);
   }
   dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
   process.exit(1);

@@ -27,6 +27,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Password storage API
   getSavedPassword: () => ipcRenderer.invoke('get-saved-password'),
   setSavedPassword: (password) => ipcRenderer.invoke('set-saved-password', password),
+  // HypeRate API
+  hyperateGetStatus: () => ipcRenderer.invoke('hyperate-get-status'),
+  hyperateStart: () => ipcRenderer.invoke('hyperate-start'),
+  hyperateStop: () => ipcRenderer.invoke('hyperate-stop'),
+  hyperateAddTracker: (deviceId, deviceName) => ipcRenderer.invoke('hyperate-add-tracker', deviceId, deviceName),
+  hyperateRemoveTracker: (deviceId) => ipcRenderer.invoke('hyperate-remove-tracker', deviceId),
+  hyperateGetTrackers: () => ipcRenderer.invoke('hyperate-get-trackers'),
+  hyperateSetPrimary: (deviceId) => ipcRenderer.invoke('hyperate-set-primary', deviceId),
+  hyperateUpdateTrackerName: (deviceId, newName) => ipcRenderer.invoke('hyperate-update-tracker-name', deviceId, newName),
+  hyperateUpdateTrackerState: (deviceId, enabled) => ipcRenderer.invoke('hyperate-update-tracker-state', deviceId, enabled),
   // Parameter blacklist API
   getParameterBlacklist: () => ipcRenderer.invoke('get-parameter-blacklist'),
   addBlacklistPattern: (pattern) => ipcRenderer.invoke('add-blacklist-pattern', pattern),

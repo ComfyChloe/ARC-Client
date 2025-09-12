@@ -19,6 +19,7 @@ class ConfigManager {
         '/avatar/parameters/Voice',
         '/avatar/parameters/Angular*',
         '/avatar/parameters/Velocity*',
+        '/avatar/parameters/ARCOSC/Heartrate*',
       ],
       appSettings: {
         enableOscOnStartup: false,

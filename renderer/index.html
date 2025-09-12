@@ -173,14 +173,54 @@
 
         <div class="main-content view-transition" id="Hyperate-view" style="display: none;">
             <div class="header">
-                <h1>Hyperate intergration</h1>
-                <p>Feature Not Available (yet)</p>
+                <h1>HypeRate Integration</h1>
+                <p>Monitor heart rate from HypeRate devices and send to VRChat</p>
+            </div>
+
+            <div class="card">
+                <h3>Connection Status</h3>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="hyperate-status"></span>
+                    <span id="hyperate-status-text">Disconnected</span>
+                </div>
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-primary" id="hyperate-toggle-btn" onclick="toggleHyperate()">Start HypeRate</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Current Heart Rate</h3>
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 48px; font-weight: bold; color: #e74c3c;" id="current-heartrate">--</div>
+                    <div style="font-size: 14px; color: #666; margin-top: 5px;">BPM</div>
+                    <div style="font-size: 12px; color: #999; margin-top: 10px;" id="primary-tracker-info">
+                        No primary tracker set
+                    </div>
+                    <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                        OSC Parameter: <code>/avatar/parameters/ARCOSC/Heartrate/Value</code>
+                    </div>
+                </div>
             </div>
             <div class="card">
-                <h3>Feature Not Available</h3>
-                <p style="color: #666; text-align: center; padding: 20px;">
-                    This feature is currently in development and will be available in a future update.
-                </p>
+                <h3>Device Management</h3>
+                <div class="form-group">
+                    <label for="device-id-input">Device ID:</label>
+                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                        <input type="text" id="device-id-input" placeholder="Enter device ID" style="flex: 1;">
+                        <input type="text" id="device-name-input" placeholder="Device name (optional)" style="flex: 1;">
+                        <button class="btn btn-primary" onclick="addHyperateTracker()">Add Tracker</button>
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        Get your device ID from the HypeRate app or use "internal-testing" for testing
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <h4>Saved Trackers</h4>
+                    <div id="hyperate-trackers-list">
+                        <p style="color: #666; text-align: center; padding: 10px;">No trackers saved yet</p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -348,6 +388,32 @@
             <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
                 <button class="btn btn-secondary" id="password-warning-cancel">Cancel</button>
                 <button class="btn btn-danger" id="password-warning-confirm">I Understand, Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HypeRate Tracker Edit Modal -->
+    <div class="modal-overlay" id="tracker-edit-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="color: #2c3e50; margin: 0;">Edit HypeRate Tracker</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="edit-tracker-name" style="display: block; margin-bottom: 5px; font-weight: 600;">Tracker Name:</label>
+                    <input type="text" id="edit-tracker-name" placeholder="Enter custom name (optional)" style="width: 100%; padding: 8px; margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                    <small style="color: #666;">Leave empty to use device ID as display name</small>
+                </div>
+                
+                <div class="form-group" style="margin-top: 15px;">
+                    <label for="edit-tracker-id" style="display: block; margin-bottom: 5px; font-weight: 600;">Device ID:</label>
+                    <input type="text" id="edit-tracker-id" placeholder="Device ID" style="width: 100%; padding: 8px; margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px; background-color: #f5f5f5;" readonly>
+                    <small style="color: #666;">Device ID cannot be changed</small>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" id="tracker-edit-cancel">Cancel</button>
+                <button class="btn btn-primary" id="tracker-edit-save">Save Changes</button>
             </div>
         </div>
     </div>
