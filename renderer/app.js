@@ -1291,6 +1291,8 @@ function showHyperateView() {
             arrow.textContent = '▼';
         }
     }
+    // Initialize HypeRate status and auto-start UI
+    refreshHyperateStatus(true);
     debugLog('Switched to Hyperate view');
 }
 async function updateAppSettings() {
@@ -1880,6 +1882,7 @@ document.addEventListener('DOMContentLoaded', () => {
 let hyperateStatus = {
     enabled: false,
     connected: false,
+    stopping: false,
     hasApiKey: false
 };
 async function toggleHyperate() {
@@ -1887,13 +1890,19 @@ async function toggleHyperate() {
         const toggleBtn = document.getElementById('hyperate-toggle-btn');
         toggleBtn.disabled = true;
         if (hyperateStatus.enabled) {
-            // Stop HypeRate
+            // Stop HypeRate - show stopping status immediately
+            hyperateStatus.stopping = true;
+            updateHyperateUI();
             const result = await window.electronAPI.hyperateStop();
             if (result.success) {
                 debugLog('HypeRate stopped');
+                hyperateStatus.stopping = false;
                 updateHyperateUI();
             } else {
                 debugLog(`Failed to stop HypeRate: ${result.error}`, 'error');
+                // Reset stopping state on failure
+                hyperateStatus.stopping = false;
+                updateHyperateUI();
             }
         } else {
             // Start HypeRate - show connecting status immediately
@@ -1919,15 +1928,49 @@ async function toggleHyperate() {
         toggleBtn.disabled = false;
     }
 }
-async function refreshHyperateStatus() {
+// HypeRate auto-start functions
+async function toggleHyperateAutostart() {
+    try {
+        const autostartBtn = document.getElementById('hyperate-autostart-btn');
+        autostartBtn.disabled = true;
+        // Get current autostart status
+        const currentStatus = await window.electronAPI.hyperateGetAutostart();
+        const newEnabled = !currentStatus.enabled;
+        // Update autostart setting
+        const result = await window.electronAPI.hyperateSetAutostart(newEnabled);
+        if (result.success) {
+            debugLog(`HypeRate autostart ${newEnabled ? 'enabled' : 'disabled'}`);
+            updateHyperateAutostartUI(newEnabled);
+        } else {
+            debugLog(`Failed to update HypeRate autostart: ${result.error}`, 'error');
+            alert(`Failed to update autostart setting: ${result.error}`);
+        }
+    } catch (error) {
+        debugLog(`Error toggling HypeRate autostart: ${error.message}`, 'error');
+    } finally {
+        const autostartBtn = document.getElementById('hyperate-autostart-btn');
+        autostartBtn.disabled = false;
+    }
+}
+function updateHyperateAutostartUI(enabled) {
+    const autostartBtn = document.getElementById('hyperate-autostart-btn');
+    if (autostartBtn) {
+        autostartBtn.textContent = `Auto-start: ${enabled ? 'Enabled' : 'Disabled'}`;
+        autostartBtn.className = enabled ? 'btn btn-success' : 'btn btn-secondary';
+    }
+}
+async function refreshHyperateStatus(includeAutostart = false) {
     try {
         const status = await window.electronAPI.hyperateGetStatus();
-        hyperateStatus = status;
+        hyperateStatus = { ...status, stopping: false }; // Ensure stopping is reset from server status
         updateHyperateUI();
-        if (status.enabled) {
-            // Also refresh trackers list
-            await refreshHyperateTrackers();
+        // Only refresh auto-start status when explicitly requested (not during periodic updates)
+        if (includeAutostart) {
+            const autostartStatus = await window.electronAPI.hyperateGetAutostart();
+            updateHyperateAutostartUI(autostartStatus.enabled);
         }
+        // Always refresh trackers list to show correct active/inactive states
+        await refreshHyperateTrackers();
     } catch (error) {
         debugLog(`Error refreshing HypeRate status: ${error.message}`, 'error');
     }
@@ -2054,6 +2097,11 @@ function updateHyperateUI() {
         statusText.textContent = 'Connected and Active';
         toggleBtn.textContent = 'Stop HypeRate';
         toggleBtn.disabled = false;
+    } else if (hyperateStatus.stopping) {
+        statusIndicator.className = 'status-indicator status-stopping';
+        statusText.textContent = 'Stopping...';
+        toggleBtn.textContent = 'Stopping...';
+        toggleBtn.disabled = true;
     } else if (hyperateStatus.enabled) {
         statusIndicator.className = 'status-indicator status-connecting';
         statusText.textContent = 'Connecting...';

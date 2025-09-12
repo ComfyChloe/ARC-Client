@@ -364,6 +364,11 @@ body {
     box-shadow: 0 0 8px #f39c1280;
     animation: pulse 1.5s infinite;
 }
+.status-stopping {
+    background-color: #e67e22;
+    box-shadow: 0 0 8px #e67e2280;
+    animation: pulse 1.5s infinite;
+}
 @keyframes pulse {
     0% {
         transform: scale(1);

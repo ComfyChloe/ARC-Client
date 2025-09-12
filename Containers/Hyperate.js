@@ -16,8 +16,6 @@ class HyperateAddon {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 10000; // 10 seconds
-    // Load saved state
-    this.enabled = this.config.enabled || false;
     this.primaryTracker = this.config.primaryTracker || null;
     this.trackerNames = this.config.trackerNames || {};
     this.trackerStates = this.config.trackerStates || {}; // Store enabled/disabled state
@@ -59,7 +57,6 @@ class HyperateAddon {
       trackerStates: {}
     };
   }
-
   saveConfig() {
     try {
       const configPath = path.join(__dirname, '..', 'userdata', 'hyperate-config.json');
@@ -69,7 +66,6 @@ class HyperateAddon {
         fs.mkdirSync(configDir, { recursive: true });
       }
       const config = {
-        enabled: this.enabled,
         primaryTracker: this.primaryTracker,
         trackers: Array.from(this.trackers.keys()),
         trackerNames: this.trackerNames,
@@ -96,7 +92,6 @@ class HyperateAddon {
     this.enabled = true;
     this.oscService = oscService; // OSC service is optional
     this.connect();
-    this.saveConfig();
     debug.info('HypeRate addon started');
     return true;
   }
@@ -106,7 +101,6 @@ class HyperateAddon {
     }
     this.enabled = false;
     this.disconnect();
-    this.saveConfig();
     debug.info('HypeRate addon stopped');
   }
   connect() {
@@ -379,7 +373,8 @@ class HyperateAddon {
     ]);
     for (const deviceId of allTrackers) {
       const trackerData = this.trackers.get(deviceId);
-      const isActive = !!trackerData;
+      // Tracker is only active if HypeRate is enabled AND tracker exists in the active trackers map
+      const isActive = this.enabled && !!trackerData;
       trackerList.push({
         deviceId,
         name: this.trackerNames[deviceId] || null,

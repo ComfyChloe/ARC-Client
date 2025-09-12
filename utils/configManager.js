@@ -25,6 +25,7 @@ class ConfigManager {
         enableOscOnStartup: false,
         enableWebSocketForwarding: false,
         enableOscLogging: true,
+        hyperateAutostart: false,
         theme: 'light',
         lastUsername: '',
         savedPassword: '' // Store password in plain text as requested
@@ -102,6 +103,7 @@ class ConfigManager {
       logLevel: this.config.logLevel || 'info',
       enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false,
       enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
+      hyperateAutostart: this.config.appSettings?.hyperateAutostart || false,
       theme: this.config.appSettings?.theme || 'light',
       lastUsername: this.config.appSettings?.lastUsername || '',
       savedPassword: this.config.appSettings?.savedPassword || ''
@@ -120,6 +122,10 @@ class ConfigManager {
     // Update WebSocket forwarding (transmit) setting
     if (settings.enableWebSocketForwarding !== undefined) {
       this.config.appSettings.enableWebSocketForwarding = settings.enableWebSocketForwarding;
+    }
+    // Update HypeRate autostart setting
+    if (settings.hyperateAutostart !== undefined) {
+      this.config.appSettings.hyperateAutostart = settings.hyperateAutostart;
     }
     // Update theme setting
     if (settings.theme !== undefined) {

@@ -842,6 +842,30 @@ ipcMain.handle('hyperate-set-primary', (event, deviceId) => {
     return { success: false, error: error.message };
   }
 });
+// HypeRate auto-start IPC handlers
+ipcMain.handle('hyperate-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings();
+    return { enabled: appSettings.hyperateAutostart || false };
+  } catch (error) {
+    debug.error(`Failed to get HypeRate autostart setting: ${error.message}`);
+    return { enabled: false };
+  }
+});
+ipcMain.handle('hyperate-set-autostart', (event, enabled) => {
+  try {
+    const result = configManager.updateAppSettings({ hyperateAutostart: enabled });
+    if (result) {
+      debug.info(`HypeRate autostart ${enabled ? 'enabled' : 'disabled'}`);
+      return { success: true, enabled };
+    } else {
+      throw new Error('Failed to save autostart setting');
+    }
+  } catch (error) {
+    debug.error(`Failed to set HypeRate autostart: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
 app.whenReady().then(() => {
   debug.logAppStartup();
   // Load logger after app is ready
@@ -879,9 +903,9 @@ app.whenReady().then(() => {
         port: serverConfig.localOscPort 
       });
     }
-    // Start HypeRate if it was previously enabled
-    if (hyperateAddon && hyperateAddon.isEnabled()) {
-      debug.info('Starting HypeRate addon based on saved config...');
+    // Start HypeRate if auto-start is enabled
+    if (appSettings.hyperateAutostart) {
+      debug.info('Starting HypeRate addon based on autostart setting...');
       hyperateAddon.start(oscService);
     }
   }, 500); // Short delay to ensure window is ready
