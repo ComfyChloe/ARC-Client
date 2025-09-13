@@ -14,6 +14,7 @@ let currentTheme = 'light';
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
 let oscLoggingEnabled = true; // Default to true for backward compatibility
+let oscReceivedDisplayEnabled = true; // Controls if OSC received logs are displayed and processed
 const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
 const MAX_LOG_ENTRIES = 10000; // Maximum log entries to keep in DOM
@@ -116,6 +117,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             flushOscLogBuffer();
         }
     }, OSC_LOG_FLUSH_INTERVAL);
+    // Add periodic memory cleanup every 30 minutes
+    setInterval(() => {
+        // Clear float rate limiting data periodically
+        clearFloatRateLimitingData();
+        // If OSC received logs are getting too large, rotate them
+        const receivedContainer = document.getElementById('osc-received-log-container');
+        if (receivedContainer && receivedContainer.children.length > MAX_LOG_ENTRIES/2) {
+            rotateLogContainers();
+        }
+        //debugLog('Performed periodic memory cleanup');
+    }, 10000); // Every 30 minutes
+    // Add UI responsiveness monitoring
+    let lastHeartbeatTime = Date.now();
+    function uiHeartbeat() {
+        lastHeartbeatTime = Date.now();
+    }
+    // Call this on common UI interactions
+    document.addEventListener('click', uiHeartbeat);
+    document.addEventListener('keydown', uiHeartbeat);
+    // Monitor UI responsiveness
+    setInterval(() => {
+        const now = Date.now();
+        if (now - lastHeartbeatTime > 10000) {  // 30 minutes without UI interaction
+            // Force cleanup
+            clearFloatRateLimitingData();
+            rotateLogContainers();
+            if (window.gc) window.gc();
+        }
+    }, 10000);
 });
 async function loadConfig() {
     try {
@@ -195,9 +225,11 @@ function setupEventListeners() {
             currentUser = null;
             currentAvatar = null;
             parameters = {};
-            // Clear float rate limiting data on WebSocket disconnect
+            // Clear float rate limiting data on WebSocket disconnect and perform log rotation
             clearFloatRateLimitingData();
-            debugLog('Disconnected from WebSocket server');
+            rotateLogContainers();
+            if (window.gc) window.gc();
+            debugLog('Disconnected from WebSocket server - performed memory cleanup');
             updateUI();
             updateAvatarDisplay();
             updateParameterList();
@@ -791,6 +823,8 @@ function isFloatValue(value) {
 }
 // Handle float OSC logging with rate limiting (similar to server implementation)
 function handleFloatOscLog(type, address, value, connectionId) {
+    // Skip processing received logs if display is disabled
+    if (type === 'received' && !oscReceivedDisplayEnabled) return;
     const key = `${type}-${address}`;
     const now = Date.now();
     const lastLogTime = lastFloatLogTimes.get(key) || 0;
@@ -820,7 +854,6 @@ function handleFloatOscLog(type, address, value, connectionId) {
 // Immediately log a float value to the appropriate container
 function logFloatValueImmediate(type, address, value, connectionId) {
     const timestamp = new Date().toLocaleTimeString();
-    const connectionText = connectionId ? ` (conn: ${connectionId})` : '';
     let container, color;
     switch (type) {
         case 'received':
@@ -841,7 +874,7 @@ function logFloatValueImmediate(type, address, value, connectionId) {
     if (container) {
         const logEntry = document.createElement('div');
         logEntry.style.color = color;
-        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}${connectionText}`;
+        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}`;
         container.appendChild(logEntry);
         // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;
@@ -859,11 +892,18 @@ function clearFloatRateLimitingData() {
     lastFloatLogTimes.clear();
     pendingFloatTimeouts.clear();
     lastFloatValues.clear();
-    debugLog('Float rate limiting data cleared');
+    //debugLog('Float rate limiting data cleared');
+}
+function rotateLogContainers() {
+    document.getElementById('osc-received-log-container').innerHTML = 'Log rotation performed<br>';
+    clearFloatRateLimitingData();
+    //debugLog('OSC received log container rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
-    // Skip logging if OSC logging is disabled
+    // Skip logging if OSC logging is disabled globally
     if (!oscLoggingEnabled) return;
+    // Skip processing if OSC received display is disabled
+    if (!oscReceivedDisplayEnabled) return;
     // Check if this is a float value and apply rate limiting
     if (isFloatValue(value)) {
         handleFloatOscLog('received', address, value, connectionId);
@@ -907,6 +947,12 @@ function oscForwardedLog(address, value, connectionId = null) {
 }
 function flushOscLogBuffer() {
     if (oscLogBuffer.length === 0) return;
+    // If buffer is excessively large, perform emergency cleanup
+    if (oscLogBuffer.length > 5000) {
+        clearFloatRateLimitingData();
+        debugLog(`Emergency buffer cleanup - buffer size was ${oscLogBuffer.length}`, 'warning');
+        if (window.gc) window.gc();
+    }
     const receivedContainer = document.getElementById('osc-received-log-container');
     const forwardedContainer = document.getElementById('osc-forwarded-log-container');
     // Group messages by type for batch DOM updates
@@ -917,10 +963,9 @@ function flushOscLogBuffer() {
         const fragment = document.createDocumentFragment();
         received.forEach(msg => {
             const timestamp = new Date(msg.timestamp).toLocaleTimeString();
-            const connectionText = msg.connectionId ? ` (conn: ${msg.connectionId})` : '';
             const logEntry = document.createElement('div');
             logEntry.style.color = '#00ff00';
-            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}${connectionText}`;
+            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}`;
             fragment.appendChild(logEntry);
         });
         receivedContainer.appendChild(fragment);
@@ -935,10 +980,9 @@ function flushOscLogBuffer() {
         const fragment = document.createDocumentFragment();
         forwarded.forEach(msg => {
             const timestamp = new Date(msg.timestamp).toLocaleTimeString();
-            const connectionText = msg.connectionId ? ` (conn: ${msg.connectionId})` : '';
             const logEntry = document.createElement('div');
             logEntry.style.color = '#00aaff';
-            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}${connectionText}`;
+            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}`;
             fragment.appendChild(logEntry);
         });
         forwardedContainer.appendChild(fragment);
@@ -1145,8 +1189,8 @@ function showLogsView() {
         requestAnimationFrame(() => {
             logsView.style.opacity = '1';
         });
-        // Update OSC logging status when logs view is shown
-        updateOscLoggingStatus();
+        // Update OSC received display status when logs view is shown
+        updateOscReceivedDisplayStatus();
     }, 300);
     // Reset all navigation buttons
     [navMain, navOsc, navSettings].forEach(nav => {
@@ -1334,7 +1378,9 @@ async function loadAppSettings() {
         }
         // Set global OSC logging state
         oscLoggingEnabled = settings.enableOscLogging !== false; // Default to true for backward compatibility
-        updateOscLoggingStatus();
+        // Set OSC received display state
+        oscReceivedDisplayEnabled = settings.oscReceivedDisplayEnabled !== false; // Default to true for backward compatibility
+        updateOscReceivedDisplayStatus();
         // Apply theme from settings
         currentTheme = settings.theme || 'light';
         applyTheme(currentTheme);
@@ -1706,39 +1752,37 @@ async function removeBlacklistPattern(pattern) {
         debugLog(`Error removing blacklist pattern: ${error.message}`, 'error');
     }
 }
-function updateOscLoggingStatus() {
-    const statusElement = document.getElementById('osc-logging-status');
-    const toggleBtn = document.getElementById('osc-logging-toggle-btn');
+function updateOscReceivedDisplayStatus() {
+    const statusElement = document.getElementById('osc-received-display-status');
+    const toggleBtn = document.getElementById('osc-received-display-toggle-btn');
     if (statusElement) {
-        statusElement.textContent = oscLoggingEnabled ? 'Enabled' : 'Disabled';
-        statusElement.style.color = oscLoggingEnabled ? '#28a745' : '#dc3545';
+        statusElement.textContent = oscReceivedDisplayEnabled ? 'Enabled' : 'Disabled';
+        statusElement.className = oscReceivedDisplayEnabled ? 'status-value' : 'status-value disabled';
     }
     if (toggleBtn) {
-        toggleBtn.textContent = oscLoggingEnabled ? 'Disable OSC Logging' : 'Enable OSC Logging';
-        toggleBtn.className = oscLoggingEnabled ? 'btn btn-warning' : 'btn btn-success';
+        toggleBtn.textContent = oscReceivedDisplayEnabled ? 'Hide OSC Received' : 'Show OSC Received';
+        toggleBtn.className = oscReceivedDisplayEnabled ? 'btn btn-warning' : 'btn btn-success';
     }
 }
-async function toggleOscLoggingQuick() {
+async function toggleOscReceivedDisplay() {
     try {
-        oscLoggingEnabled = !oscLoggingEnabled;
-        // Update the settings in the backend
+        oscReceivedDisplayEnabled = !oscReceivedDisplayEnabled;
+        // Save the state to backend settings
         const currentSettings = await window.electronAPI.getAppSettings();
-        currentSettings.enableOscLogging = oscLoggingEnabled;
+        currentSettings.oscReceivedDisplayEnabled = oscReceivedDisplayEnabled;
         await window.electronAPI.setAppSettings(currentSettings);
         // Update the UI
-        updateOscLoggingStatus();
-        // Update the settings form if it exists
-        const enableOscLoggingSelect = document.getElementById('enable-osc-logging');
-        if (enableOscLoggingSelect) {
-            enableOscLoggingSelect.value = oscLoggingEnabled ? 'true' : 'false';
+        updateOscReceivedDisplayStatus();
+        // Clear existing OSC received log buffer when disabling
+        if (!oscReceivedDisplayEnabled) {
+            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
+            clearFloatRateLimitingData();
+            debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing load reduced`);
+        } else {
+            debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing resumed`);
         }
-        // Clear existing OSC log buffers when disabling
-        if (!oscLoggingEnabled) {
-            oscLogBuffer = [];
-        }
-        debugLog(`OSC logging ${oscLoggingEnabled ? 'enabled' : 'disabled'} - this will ${oscLoggingEnabled ? 'increase' : 'reduce'} disk I/O`);
     } catch (error) {
-        debugLog(`Error toggling OSC logging: ${error.message}`, 'error');
+        debugLog(`Error toggling OSC received display: ${error.message}`, 'error');
     }
 }
 async function loadTheme() {
@@ -2129,6 +2173,10 @@ function startHyperateStatusUpdates() {
     hyperateStatusInterval = setInterval(async () => {
         if (document.getElementById('Hyperate-view').style.display !== 'none') {
             await refreshHyperateStatus();
+            // Periodic cleanup during HypeRate updates
+            if (Math.random() < 0.1) { // 10% chance per update
+                clearFloatRateLimitingData();
+            }
         }
     }, 2000); // Update every 2 seconds
 }

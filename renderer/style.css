@@ -805,3 +805,73 @@ body.dark-theme pre {
 #device-id-input {
     font-family: 'Courier New', monospace;
 }
+
+/* Status Panel Styles */
+.status-panel {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-left: 4px solid #17a2b8;
+}
+
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.status-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+.status-value {
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background-color: #d4edda;
+    color: #155724;
+    font-size: 0.9em;
+}
+
+.status-value.disabled {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.status-description {
+    margin-top: 10px;
+    margin-bottom: 0;
+    font-size: 0.85em;
+    color: #6c757d;
+    line-height: 1.4;
+}
+
+/* Dark theme status panel */
+body.dark-theme .status-panel {
+    background-color: #2b2b2b;
+    border-color: #454545;
+    border-left-color: #17a2b8;
+    color: #e0e0e0;
+}
+
+body.dark-theme .status-label {
+    color: #e0e0e0;
+}
+
+body.dark-theme .status-value {
+    background-color: #1e5f3a;
+    color: #d4edda;
+}
+
+body.dark-theme .status-value.disabled {
+    background-color: #5a1e24;
+    color: #f8d7da;
+}
+
+body.dark-theme .status-description {
+    color: #b0b0b0;
+}

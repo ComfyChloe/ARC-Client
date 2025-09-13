@@ -230,21 +230,6 @@
                 <h1>Logs</h1>
                 <p>View application logs and activity</p>
             </div>
-            <div class="card osc-logging-status-box" style="margin-bottom: 10px; padding: 10px; background-color: #f8f9fa; border-left: 4px solid #17a2b8;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <strong>OSC Data Logging Status:</strong> 
-                        <span id="osc-logging-status" style="font-weight: bold;">Enabled</span>
-                        <br>
-                        <small style="color: #666;">
-                            Disable OSC logging in Settings to reduce disk I/O and improve performance
-                        </small>
-                    </div>
-                    <button class="btn btn-warning" onclick="toggleOscLoggingQuick()" id="osc-logging-toggle-btn" style="padding: 6px 12px; font-size: 12px;">
-                        Disable OSC Logging
-                    </button>
-                </div>
-            </div>
             <div class="card">
                 <h3>Client Logs</h3>
                 <div class="log-container" id="client-log-container">
@@ -255,6 +240,14 @@
             </div>
             <div class="card">
                 <h3>OSC Received</h3>
+                <div class="status-panel">
+                    <div class="status-row">
+                        <span class="status-label">OSC Received Display:</span>
+                        <span id="osc-received-display-status" class="status-value">Enabled</span>
+                    </div>
+                    <button id="osc-received-display-toggle-btn" class="btn btn-warning" onclick="toggleOscReceivedDisplay()">Disable OSC Received</button>
+                    <p class="status-description">Disable OSC received logs to prevent lockup's due to a slow CPU - Use as you need, This should only really be enabled when you need to check whats going in/out.</p>
+                </div>
                 <div class="log-container" id="osc-received-log-container">
                     No OSC data received yet<br>
                 </div>
