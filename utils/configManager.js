@@ -11,7 +11,6 @@ class ConfigManager {
       targetOscAddress: '127.0.0.1',
       additionalOscConnections: [],
       websocketServerUrl: 'wss://avatar.comfychloe.uk:48255',
-      autoConnect: false,
       logLevel: 'info',
       parameterBlacklist: [
         '/avatar/parameters/FT*',
@@ -22,7 +21,6 @@ class ConfigManager {
         '/avatar/parameters/ARCOSC/Heartrate*',
       ],
       appSettings: {
-        enableOscOnStartup: false,
         enableWebSocketForwarding: false,
         hyperateAutostart: false,
         theme: 'light',
@@ -98,9 +96,7 @@ class ConfigManager {
   }
   getAppSettings() {
     return {
-      autoConnect: this.config.autoConnect || false,
       logLevel: this.config.logLevel || 'info',
-      enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false,
       enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
       hyperateAutostart: this.config.appSettings?.hyperateAutostart || false,
       theme: this.config.appSettings?.theme || 'light',
@@ -110,14 +106,10 @@ class ConfigManager {
   }
   updateAppSettings(settings) {
     debug.info(`Updating app settings with: ${JSON.stringify(settings)}`);
-    this.config.autoConnect = settings.autoConnect ?? this.config.autoConnect;
     this.config.logLevel = settings.logLevel ?? this.config.logLevel;
     if (!this.config.appSettings) {
       this.config.appSettings = {};
     }
-    const oldOscStartup = this.config.appSettings.enableOscOnStartup;
-    this.config.appSettings.enableOscOnStartup = 
-      settings.enableOscOnStartup ?? this.config.appSettings.enableOscOnStartup;
     // Update WebSocket forwarding (transmit) setting
     if (settings.enableWebSocketForwarding !== undefined) {
       this.config.appSettings.enableWebSocketForwarding = settings.enableWebSocketForwarding;
@@ -136,10 +128,6 @@ class ConfigManager {
     
     if (settings.savedPassword !== undefined) {
       this.config.appSettings.savedPassword = settings.savedPassword;
-    }
-    // Log any changes to the OSC startup setting
-    if (oldOscStartup !== this.config.appSettings.enableOscOnStartup) {
-      debug.info(`OSC startup setting changed: ${oldOscStartup} -> ${this.config.appSettings.enableOscOnStartup}`);
     }
     debug.info(`Final app settings`);
     const saveResult = this.saveConfig();

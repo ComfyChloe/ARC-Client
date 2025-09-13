@@ -63,7 +63,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const savePasswordCheckbox = document.getElementById('save-password-checkbox');
-        
         if (usernameInput) {
             let saveTimeout;
             // Auto-save username as user types
@@ -79,11 +78,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         try {
                             await window.electronAPI.setLastUsername(username);
                         } catch (error) {
-                            // Silently fail - don't spam user with save errors
+                            // Silently fail on error
                             console.warn('Could not auto-save username:', error.message);
                         }
                     }
-                }, 1000); // Save 1 second after user stops typing
+                }, 1000);
             });
             // Enter key support for username field
             usernameInput.addEventListener('keypress', (e) => {
@@ -92,7 +91,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         }
-        
         // Enter key support for password field
         if (passwordInput) {
             passwordInput.addEventListener('keypress', (e) => {
@@ -101,12 +99,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         }
-        
         // Handle save password checkbox
         if (savePasswordCheckbox) {
             savePasswordCheckbox.addEventListener('change', handleSavePasswordCheckbox);
         }
-        
         // Load saved password setting on startup
         loadSavedPasswordSetting();
     }, 100);
@@ -197,18 +193,6 @@ function setupEventListeners() {
         // Initialize WebSocket forwarding status
         wsForwardingEnabled = settings.enableWebSocketForwarding || false;
         updateWebSocketForwardingStatus(wsForwardingEnabled);
-        // Apply auto-connect setting if enabled
-        if (settings.autoConnect) {
-            const username = document.getElementById('username').value.trim().toLowerCase();
-            const password = document.getElementById('password').value;
-            if (username && password) {
-                console.log('Auto-connect is enabled, attempting to connect...');
-                debugLog('Auto-connect enabled, attempting to connect automatically');
-                setTimeout(() => {
-                    authenticate();
-                }, 1000); // delay to load ui
-            }
-        }
     });
     // WebSocket event listeners
     window.electronAPI.onWebSocketStatus((data) => {
@@ -1336,16 +1320,12 @@ function showHyperateView() {
 }
 async function updateAppSettings() {
     try {
-        const autoConnect = document.getElementById('auto-connect').value === 'true';
         const logLevel = document.getElementById('log-level').value;
-        const enableOscOnStartup = document.getElementById('enable-osc-startup')?.value === 'true';
         const settings = {
-            autoConnect,
-            logLevel,
-            enableOscOnStartup
+            logLevel
         };
         await window.electronAPI.setAppSettings(settings);
-        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}`);
+        debugLog(`Application settings updated - Log level: ${logLevel}`);
     } catch (error) {
         debugLog(`Error updating app settings: ${error.message}`, 'error');
     }
@@ -1353,17 +1333,9 @@ async function updateAppSettings() {
 async function loadAppSettings() {
     try {
         const settings = await window.electronAPI.getAppSettings();
-        const autoConnectSelect = document.getElementById('auto-connect');
         const logLevelSelect = document.getElementById('log-level');
-        const enableOscStartupSelect = document.getElementById('enable-osc-startup');
-        if (autoConnectSelect) {
-            autoConnectSelect.value = settings.autoConnect ? 'true' : 'false';
-        }
         if (logLevelSelect) {
             logLevelSelect.value = settings.logLevel || 'info';
-        }
-        if (enableOscStartupSelect) {
-            enableOscStartupSelect.value = settings.enableOscOnStartup ? 'true' : 'false';
         }
         // Set OSC received display state
         oscReceivedDisplayEnabled = settings.oscReceivedDisplayEnabled !== false; // Default to true for backward compatibility

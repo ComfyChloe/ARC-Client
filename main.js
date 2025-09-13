@@ -883,9 +883,8 @@ app.whenReady().then(() => {
     // Merge app settings to ensure all settings are available
     serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
-  // Initialize OSC server based on config
-  oscEnabled = appSettings.enableOscOnStartup;
-  debug.info(`OSC startup state from config: ${oscEnabled ? 'enabled' : 'disabled'}`);
+  // Initialize OSC server
+  oscEnabled = false;
   // Important: Window before initializing OSC service
   createWindow();
   // Set up periodic memory management
