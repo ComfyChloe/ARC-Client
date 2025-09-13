@@ -665,11 +665,6 @@ body.dark-theme .server-status-box {
     color: #e0e0e0 !important;
     border-left-color: #6c8ce6 !important;
 }
-body.dark-theme .osc-logging-status-box {
-    background-color: #2b2b2b !important;
-    color: #e0e0e0 !important;
-    border-left-color: #17a2b8 !important;
-}
 body.dark-theme .osc-connection-controls {
     background-color: #2b2b2b !important;
     color: #e0e0e0 !important;

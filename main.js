@@ -435,7 +435,7 @@ ipcMain.handle('get-app-settings', () => {
 ipcMain.handle('set-app-settings', (event, newSettings) => {
   // Update the settings in the config manager
   const result = configManager.updateAppSettings(newSettings);
-  debug.info(`App settings updated: ${JSON.stringify(newSettings)}`);
+  debug.info(`App settings updated`);
   if (!result) {
     debug.error('Failed to save app settings to config file');
   }
@@ -610,7 +610,6 @@ ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
       }
       serverConfig.appSettings.enableWebSocketForwarding = enabled;
       debug.logWebSocketForwarding(`WebSocket forwarding ${enabled ? 'enabled' : 'disabled'}`);
-      debug.info(`ServerConfig appSettings after update: ${JSON.stringify(serverConfig.appSettings)}`);
       return { success: true, enabled };
     } else {
       throw new Error('Failed to save settings');

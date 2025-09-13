@@ -10,10 +10,9 @@ let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
 let currentTheme = 'light';
-// OSC Logging rate limiting
+// OSC message rate limiting
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
-let oscLoggingEnabled = true; // Default to true for backward compatibility
 let oscReceivedDisplayEnabled = true; // Controls if OSC received logs are displayed and processed
 const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
@@ -821,7 +820,7 @@ function isFloatValue(value) {
     }
     return false;
 }
-// Handle float OSC logging with rate limiting (similar to server implementation)
+// Handle float OSC messages with rate limiting (similar to server implementation)
 function handleFloatOscLog(type, address, value, connectionId) {
     // Skip processing received logs if display is disabled
     if (type === 'received' && !oscReceivedDisplayEnabled) return;
@@ -900,8 +899,6 @@ function rotateLogContainers() {
     //debugLog('OSC received log container rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
-    // Skip logging if OSC logging is disabled globally
-    if (!oscLoggingEnabled) return;
     // Skip processing if OSC received display is disabled
     if (!oscReceivedDisplayEnabled) return;
     // Check if this is a float value and apply rate limiting
@@ -924,8 +921,6 @@ function oscReceivedLog(address, value, connectionId = null) {
     }
 }
 function oscForwardedLog(address, value, connectionId = null) {
-    // Skip logging if OSC logging is disabled
-    if (!oscLoggingEnabled) return;
     // Check if this is a float value and apply rate limiting
     if (isFloatValue(value)) {
         handleFloatOscLog('forwarded', address, value, connectionId);
@@ -1344,15 +1339,13 @@ async function updateAppSettings() {
         const autoConnect = document.getElementById('auto-connect').value === 'true';
         const logLevel = document.getElementById('log-level').value;
         const enableOscOnStartup = document.getElementById('enable-osc-startup')?.value === 'true';
-        const enableOscLogging = document.getElementById('enable-osc-logging')?.value === 'true';
         const settings = {
             autoConnect,
             logLevel,
-            enableOscOnStartup,
-            enableOscLogging
+            enableOscOnStartup
         };
         await window.electronAPI.setAppSettings(settings);
-        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}, OSC logging: ${enableOscLogging}`);
+        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}`);
     } catch (error) {
         debugLog(`Error updating app settings: ${error.message}`, 'error');
     }
@@ -1363,7 +1356,6 @@ async function loadAppSettings() {
         const autoConnectSelect = document.getElementById('auto-connect');
         const logLevelSelect = document.getElementById('log-level');
         const enableOscStartupSelect = document.getElementById('enable-osc-startup');
-        const enableOscLoggingSelect = document.getElementById('enable-osc-logging');
         if (autoConnectSelect) {
             autoConnectSelect.value = settings.autoConnect ? 'true' : 'false';
         }
@@ -1373,11 +1365,6 @@ async function loadAppSettings() {
         if (enableOscStartupSelect) {
             enableOscStartupSelect.value = settings.enableOscOnStartup ? 'true' : 'false';
         }
-        if (enableOscLoggingSelect) {
-            enableOscLoggingSelect.value = settings.enableOscLogging !== false ? 'true' : 'false'; // Default to true for backward compatibility
-        }
-        // Set global OSC logging state
-        oscLoggingEnabled = settings.enableOscLogging !== false; // Default to true for backward compatibility
         // Set OSC received display state
         oscReceivedDisplayEnabled = settings.oscReceivedDisplayEnabled !== false; // Default to true for backward compatibility
         updateOscReceivedDisplayStatus();

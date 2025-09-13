@@ -24,7 +24,6 @@ class ConfigManager {
       appSettings: {
         enableOscOnStartup: false,
         enableWebSocketForwarding: false,
-        enableOscLogging: true,
         hyperateAutostart: false,
         theme: 'light',
         lastUsername: '',
@@ -138,16 +137,11 @@ class ConfigManager {
     if (settings.savedPassword !== undefined) {
       this.config.appSettings.savedPassword = settings.savedPassword;
     }
-    
-    // Update OSC logging setting  
-    if (settings.enableOscLogging !== undefined) {
-      this.config.appSettings.enableOscLogging = settings.enableOscLogging;
-    }
     // Log any changes to the OSC startup setting
     if (oldOscStartup !== this.config.appSettings.enableOscOnStartup) {
       debug.info(`OSC startup setting changed: ${oldOscStartup} -> ${this.config.appSettings.enableOscOnStartup}`);
     }
-    debug.info(`Final app settings: ${JSON.stringify(this.getAppSettings())}`);
+    debug.info(`Final app settings`);
     const saveResult = this.saveConfig();
     debug.info(`Config save result: ${saveResult}`);
     return saveResult;
