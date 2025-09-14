@@ -196,6 +196,14 @@ body {
     align-items: center;
     margin-bottom: 10px;
 }
+.runtime-timer {
+    background: rgba(52, 73, 94, 0.3);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-weight: bold;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
 .avatar-info {
     background: #34495e;
     padding: 15px;
@@ -497,6 +505,11 @@ body.dark-theme .sidebar-section h3 {
 }
 body.dark-theme .connection-status {
     background-color: #ffffff0d;
+}
+body.dark-theme .runtime-timer {
+    background: rgba(44, 62, 80, 0.6);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #ecf0f1;
 }
 body.dark-theme .card {
     background: #2b2b2b;

@@ -10,6 +10,9 @@ let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
 let currentTheme = 'light';
+// Runtime timer
+let startTime = Date.now();
+let runtimeInterval = null;
 // OSC message rate limiting
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
@@ -43,6 +46,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     navSettings.classList.remove('active');
     navSettings.disabled = false;
     debugLog('Application initialized');
+    // Initialize runtime timer
+    initializeRuntimeTimer();
     // Load blacklist when page loads
     setTimeout(() => {
         loadParameterBlacklist();
@@ -401,6 +406,22 @@ async function updateConfigFromSettings() {
         debugLog('Server configuration updated');
     } catch (error) {
         debugLog(`Error updating server config: ${error.message}`, 'error');
+    }
+}
+function initializeRuntimeTimer() {
+    startTime = Date.now();
+    updateRuntimeDisplay();
+    runtimeInterval = setInterval(updateRuntimeDisplay, 1000);
+}
+function updateRuntimeDisplay() {
+    const elapsed = Date.now() - startTime;
+    const hours = Math.floor(elapsed / (1000 * 60 * 60));
+    const minutes = Math.floor((elapsed % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((elapsed % (1000 * 60)) / 1000);
+    const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    const runtimeDisplay = document.getElementById('runtime-display');
+    if (runtimeDisplay) {
+        runtimeDisplay.textContent = timeString;
     }
 }
 async function switchToServer(serverType) {
@@ -1380,6 +1401,10 @@ async function loadLastUsername() {
     }
 }
 window.addEventListener('beforeunload', () => {
+    // Clear runtime timer
+    if (runtimeInterval) {
+        clearInterval(runtimeInterval);
+    }
     window.electronAPI.removeAllListeners('osc-received');
     window.electronAPI.removeAllListeners('osc-server-status');
     window.electronAPI.removeAllListeners('websocket-status');
