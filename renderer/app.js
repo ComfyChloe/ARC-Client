@@ -116,6 +116,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(() => {
         // Clear float rate limiting data periodically
         clearFloatRateLimitingData();
+        // More aggressive cleanup when OSC received display is disabled
+        if (!oscReceivedDisplayEnabled) {
+            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
+            if (window.gc) window.gc();
+        }
         // If OSC received logs are getting too large, rotate them
         const receivedContainer = document.getElementById('osc-received-log-container');
         if (receivedContainer && receivedContainer.children.length > MAX_LOG_ENTRIES/2) {
@@ -880,6 +885,10 @@ function clearFloatRateLimitingData() {
 function rotateLogContainers() {
     document.getElementById('osc-received-log-container').innerHTML = 'Log rotation performed<br>';
     clearFloatRateLimitingData();
+    // Explicitly clear buffer to free memory immediately
+    oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
+    // Force garbage collection if available
+    if (window.gc) window.gc();
     //debugLog('OSC received log container rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
@@ -926,11 +935,18 @@ function oscForwardedLog(address, value, connectionId = null) {
 }
 function flushOscLogBuffer() {
     if (oscLogBuffer.length === 0) return;
-    // If buffer is excessively large, perform emergency cleanup
+    // More aggressive emergency cleanup
     if (oscLogBuffer.length > 5000) {
         clearFloatRateLimitingData();
         debugLog(`Emergency buffer cleanup - buffer size was ${oscLogBuffer.length}`, 'warning');
+        // Only keep the most recent messages (to prevent total loss of context)
+        const forwardedOnly = oscLogBuffer.filter(msg => msg.type === 'forwarded').slice(-100);
+        oscLogBuffer = forwardedOnly;
+        lastOscLogFlush = Date.now();
         if (window.gc) window.gc();
+        // Clear DOM elements as well for complete reset
+        document.getElementById('osc-received-log-container').innerHTML = 'Emergency buffer cleanup performed<br>';
+        return;
     }
     const receivedContainer = document.getElementById('osc-received-log-container');
     const forwardedContainer = document.getElementById('osc-forwarded-log-container');
@@ -1726,6 +1742,15 @@ function updateOscReceivedDisplayStatus() {
 async function toggleOscReceivedDisplay() {
     try {
         oscReceivedDisplayEnabled = !oscReceivedDisplayEnabled;
+        // Immediate and complete cleanup when disabling
+        if (!oscReceivedDisplayEnabled) {
+            // Remove all received messages from buffer
+            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
+            clearFloatRateLimitingData();
+            document.getElementById('osc-received-log-container').innerHTML = 'OSC Received Display Disabled<br>';
+            // Force immediate garbage collection
+            if (window.gc) window.gc();
+        }
         // Save the state to backend settings
         const currentSettings = await window.electronAPI.getAppSettings();
         currentSettings.oscReceivedDisplayEnabled = oscReceivedDisplayEnabled;
@@ -1734,8 +1759,6 @@ async function toggleOscReceivedDisplay() {
         updateOscReceivedDisplayStatus();
         // Clear existing OSC received log buffer when disabling
         if (!oscReceivedDisplayEnabled) {
-            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
-            clearFloatRateLimitingData();
             debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing load reduced`);
         } else {
             debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing resumed`);
