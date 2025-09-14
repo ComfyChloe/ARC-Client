@@ -105,7 +105,7 @@ class ConfigManager {
     };
   }
   updateAppSettings(settings) {
-    debug.info(`Updating app settings with: ${JSON.stringify(settings)}`);
+    //debug.info(`Updating app settings with: ${JSON.stringify(settings)}`); // commented out as it shows userpassword in console.
     this.config.logLevel = settings.logLevel ?? this.config.logLevel;
     if (!this.config.appSettings) {
       this.config.appSettings = {};
