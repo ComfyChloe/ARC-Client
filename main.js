@@ -309,11 +309,15 @@ function initOscServer() {
     if (!data.connectionId && oscService) {
       oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
     }
-    sendToRenderer('osc-received', { 
-      address: data.address, 
-      value: data.value,
-      connectionId: data.connectionId 
-    });
+    // Only send to renderer if OSC received display is enabled to reduce IPC traffic
+    const oscReceivedDisplayEnabled = serverConfig.appSettings?.oscReceivedDisplayEnabled !== false;
+    if (oscReceivedDisplayEnabled) {
+      sendToRenderer('osc-received', { 
+        address: data.address, 
+        value: data.value,
+        connectionId: data.connectionId 
+      });
+    }
   });
   oscService.on('additionalPortReady', (data) => {
     debug.logAdditionalPortReady(data);
@@ -703,38 +707,58 @@ ipcMain.handle('enable-osc', () => {
 ipcMain.handle('disable-osc', () => {
   oscEnabled = false;
   debug.logOscServerStateChange(false);
-  try {
-    if (oscService) {
-      debug.info('Stopping OSC service and all additional connections...');
-      oscService.stop();
-      oscService = null;
-      global.oscService = null;
+  // More controlled shutdown sequence
+  return new Promise((resolve) => {
+    try {
+      if (oscService) {
+        debug.info('Stopping OSC service and all additional connections...');
+        // Give the service a moment to complete any pending operations
+        setTimeout(() => {
+          try {
+            oscService.stop();
+            oscService = null;
+            global.oscService = null;
+            debug.info('OSC service stopped successfully');
+          } catch (error) {
+            debug.error(`Error stopping OSC service: ${error.message}`);
+          }
+          // Clean up other OSC components
+          try {
+            if (oscServer) {
+              oscServer.close();
+              oscServer = null;
+            }
+          } catch (error) {
+            debug.error(`Error closing OSC server: ${error.message}`);
+          }
+          try {
+            if (oscClient) {
+              oscClient.close();
+              oscClient = null;
+            }
+          } catch (error) {
+            debug.error(`Error closing OSC client: ${error.message}`);
+          }
+          sendToRenderer('osc-server-status', { 
+            status: 'disabled', 
+            port: serverConfig.localOscPort 
+          });
+          debug.info('OSC service fully disabled - all connections closed');
+          resolve({ success: true, message: 'OSC disabled' });
+        }, 100);
+      } else {
+        debug.info('OSC service was not running');
+        sendToRenderer('osc-server-status', { 
+          status: 'disabled', 
+          port: serverConfig.localOscPort 
+        });
+        resolve({ success: true, message: 'OSC was already disabled' });
+      }
+    } catch (error) {
+      debug.error(`Error during OSC disable: ${error.message}`);
+      resolve({ success: false, error: error.message });
     }
-  } catch (error) {
-    debug.error(`Error stopping OSC service: ${error.message}`);
-  }
-  try {
-    if (oscServer) {
-      oscServer.close();
-      oscServer = null;
-    }
-  } catch (error) {
-    debug.error(`Error closing OSC server: ${error.message}`);
-  }
-  try {
-    if (oscClient) {
-      oscClient.close();
-      oscClient = null;
-    }
-  } catch (error) {
-    debug.error(`Error closing OSC client: ${error.message}`);
-  }
-  sendToRenderer('osc-server-status', { 
-    status: 'disabled', 
-    port: serverConfig.localOscPort 
   });
-  debug.info('OSC service fully disabled - all connections closed');
-  return { success: true, message: 'OSC disabled' };
 });
 ipcMain.handle('get-saved-password', () => {
   const savedPassword = configManager.getSavedPassword();
@@ -957,18 +981,18 @@ function setupMemoryManagement() {
         external: Math.round(memoryUsage.external / 1024 / 1024)
       };
       // Log if memory usage is concerning (lowered threshold)
-      if (memoryUsage.heapUsed > 100 * 1024 * 1024) { // Over 100MB heap (reduced from 150MB)
+      if (memoryUsage.heapUsed > 80 * 1024 * 1024) { // Over 80MB heap (reduced from 100MB)
         debug.warn('High memory usage detected', memoryMB);
         // Force additional cleanup if memory is very high
-        if (memoryUsage.heapUsed > 150 * 1024 * 1024) { // Over 150MB (reduced from 250MB)
+        if (memoryUsage.heapUsed > 120 * 1024 * 1024) { // Over 120MB (reduced from 150MB)
           debug.warn('Very high memory usage - forcing aggressive cleanup');
           if (oscService) {
-            // Clear most parameters immediately, keep only last 50 for logs
+            // Clear most parameters immediately, keep only last 30 for logs
             const params = oscService.getParameters();
             const paramEntries = Object.entries(params)
               .filter(([_, param]) => param.timestamp)
               .sort(([_, a], [__, b]) => b.timestamp - a.timestamp)
-              .slice(0, 50); // Keep only last 50 parameters
+              .slice(0, 30); // Keep only last 30 parameters (reduced from 50)
             oscService.parameters = {};
             paramEntries.forEach(([address, param]) => {
               oscService.parameters[address] = param;
@@ -979,13 +1003,14 @@ function setupMemoryManagement() {
           if (global.gc) {
             global.gc();
             setTimeout(() => global.gc && global.gc(), 100);
+            setTimeout(() => global.gc && global.gc(), 200);
           }
         }
       }
     } catch (error) {
       debug.error(`Memory management error: ${error.message}`);
     }
-  }, 30000); // Reduced from 60 seconds to 30 seconds for more frequent cleanup
+  }, 20000); // Reduced from 30 seconds to 20 seconds for more frequent cleanup
 }
 function cleanup(source = 'unknown') {
   if (isShuttingDown) {
@@ -1005,9 +1030,11 @@ function cleanup(source = 'unknown') {
   }
   try {
     if (oscService) {
+      debug.info('Stopping OSC service during cleanup...');
       oscService.stop();
       oscService = null;
       global.oscService = null;
+      debug.info('OSC service cleanup completed');
     }
   } catch (error) {
     debug.error(`Error stopping OSC service: ${error.message}`);
@@ -1064,10 +1091,13 @@ process.on('uncaughtException', (error) => {
     return;
   }
   hasShownCriticalError = true;
-  if (logger) {
-    logger.logError(error);
+  // Use debug.error instead of logger.logError to avoid missing method issues
+  try {
+    debug.error(`Uncaught exception: ${error.message}`, { stack: error.stack });
+  } catch (debugError) {
+    console.error('Failed to log error via debug:', debugError);
+    console.error('Original error:', error);
   }
-  debug.error(`Uncaught exception: ${error.message}`);
   try {
     cleanup('uncaught-exception');
   } catch (cleanupError) {
@@ -1082,10 +1112,13 @@ process.on('unhandledRejection', (reason) => {
     return;
   }
   hasShownCriticalError = true;
-  if (logger) {
-    logger.logError(reason);
+  // Use debug.error instead of logger.logError to avoid missing method issues
+  try {
+    debug.error(`Unhandled rejection: ${reason}`, { stack: reason && reason.stack ? reason.stack : 'No stack trace' });
+  } catch (debugError) {
+    console.error('Failed to log rejection via debug:', debugError);
+    console.error('Original rejection:', reason);
   }
-  debug.error(`Unhandled rejection: ${reason}`);
   try {
     cleanup('unhandled-rejection');
   } catch (cleanupError) {

@@ -14,9 +14,9 @@ class OscService extends EventEmitter {
     this.forwardFromAdditionalToPrimary = true;
     // Memory management settings - more aggressive for logs only
     this.maxParameterCount = 1000; // Reduced from 5000 to 1000 for logs view only
-    this.parameterCleanupInterval = 30000; // Reduced from 2 minutes to 30 seconds
+    this.parameterCleanupInterval = 20000; // Reduced from 30 seconds to 20 seconds
     this.lastParameterCleanup = Date.now();
-    this.maxParameterAge = 60000; // Keep parameters for only 1 minute (logs view)
+    this.maxParameterAge = 40000; // Keep parameters for only 40 seconds (logs view)
     // Start parameter cleanup timer
     this.setupParameterCleanup();
   }
