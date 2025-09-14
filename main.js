@@ -85,6 +85,8 @@ function createWindow() {
       saveWindowStateTimeout = undefined;
     }, 100);
   };
+  // Store timeout globally for cleanup
+  global.saveWindowStateTimeout = saveWindowStateTimeout;
   mainWindow.on('resize', saveWindowState);
   mainWindow.on('move', saveWindowState);
   mainWindow.on('maximize', saveWindowState);
@@ -253,8 +255,12 @@ function initOscServer() {
   });
   oscService.on('messageReceived', (data) => {
     // Reduce debug logging frequency for OSC messages to prevent excessive I/O
-    // Only log every 100th message or if it's the first message
+    // Reset counter periodically to prevent overflow
     oscMessageCounter++;
+    if (oscMessageCounter > 10000) { // Reset much more frequently for memory efficiency
+      oscMessageCounter = 1; // Reset to prevent integer overflow
+    }
+    // Only log every 100th message or if it's the first message
     if (oscMessageCounter === 1 || oscMessageCounter % 100 === 0) {
       debug.oscMessageReceived(data.address, data.value, data.type);
     }
@@ -491,12 +497,22 @@ ipcMain.handle('clear-debug-logs', () => {
 });
 ipcMain.handle('get-memory-stats', () => {
   const memoryUsage = process.memoryUsage();
+  const parameterCount = oscService ? Object.keys(oscService.getParameters()).length : 0;
+  const maxParameterCount = oscService ? oscService.maxParameterCount : 1000;
   return {
     rss: Math.round(memoryUsage.rss / 1024 / 1024),
     heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
     heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
     external: Math.round(memoryUsage.external / 1024 / 1024),
-    parameterCount: oscService ? Object.keys(oscService.getParameters()).length : 0
+    arrayBuffers: Math.round(memoryUsage.arrayBuffers / 1024 / 1024),
+    parameterCount: parameterCount,
+    maxParameterCount: maxParameterCount,
+    // Additional memory health indicators
+    heapPercentUsed: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
+    parameterPercentUsed: Math.round((parameterCount / maxParameterCount) * 100),
+    // Log view specific info
+    isLogsOnly: true,
+    parameterMaxAge: oscService ? Math.round(oscService.maxParameterAge / 1000) : 60 // in seconds
   };
 });
 ipcMain.handle('force-memory-cleanup', () => {
@@ -917,8 +933,12 @@ app.whenReady().then(() => {
   });
 });
 function setupMemoryManagement() {
+  // Clear any existing interval to prevent duplicates
+  if (global.memoryManagementInterval) {
+    clearInterval(global.memoryManagementInterval);
+  }
   // Set up periodic garbage collection and memory cleanup
-  setInterval(() => {
+  global.memoryManagementInterval = setInterval(() => {
     try {
       // Force garbage collection if available
       if (global.gc) {
@@ -928,7 +948,7 @@ function setupMemoryManagement() {
       if (oscService && typeof oscService.cleanupOldParameters === 'function') {
         oscService.cleanupOldParameters();
       }
-      // Log memory usage periodically
+      // Log memory usage periodically for monitoring
       const memoryUsage = process.memoryUsage();
       const memoryMB = {
         rss: Math.round(memoryUsage.rss / 1024 / 1024),
@@ -936,14 +956,36 @@ function setupMemoryManagement() {
         heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
         external: Math.round(memoryUsage.external / 1024 / 1024)
       };
-      // Only log if memory usage is concerning
-      if (memoryUsage.heapUsed > 200 * 1024 * 1024) { // Over 200MB heap
+      // Log if memory usage is concerning (lowered threshold)
+      if (memoryUsage.heapUsed > 100 * 1024 * 1024) { // Over 100MB heap (reduced from 150MB)
         debug.warn('High memory usage detected', memoryMB);
+        // Force additional cleanup if memory is very high
+        if (memoryUsage.heapUsed > 150 * 1024 * 1024) { // Over 150MB (reduced from 250MB)
+          debug.warn('Very high memory usage - forcing aggressive cleanup');
+          if (oscService) {
+            // Clear most parameters immediately, keep only last 50 for logs
+            const params = oscService.getParameters();
+            const paramEntries = Object.entries(params)
+              .filter(([_, param]) => param.timestamp)
+              .sort(([_, a], [__, b]) => b.timestamp - a.timestamp)
+              .slice(0, 50); // Keep only last 50 parameters
+            oscService.parameters = {};
+            paramEntries.forEach(([address, param]) => {
+              oscService.parameters[address] = param;
+            });
+            debug.warn(`Aggressive cleanup: reduced parameters to ${paramEntries.length} for logs view`);
+          }
+          // Force garbage collection multiple times
+          if (global.gc) {
+            global.gc();
+            setTimeout(() => global.gc && global.gc(), 100);
+          }
+        }
       }
     } catch (error) {
       debug.error(`Memory management error: ${error.message}`);
     }
-  }, 60000); // Every minute
+  }, 30000); // Reduced from 60 seconds to 30 seconds for more frequent cleanup
 }
 function cleanup(source = 'unknown') {
   if (isShuttingDown) {
@@ -951,6 +993,16 @@ function cleanup(source = 'unknown') {
   }
   isShuttingDown = true;
   debug.logAppShutdown(`Cleanup initiated from: ${source}`);
+  // Clear memory management interval
+  if (global.memoryManagementInterval) {
+    clearInterval(global.memoryManagementInterval);
+    global.memoryManagementInterval = null;
+  }
+  // Clear window state save timeout
+  if (global.saveWindowStateTimeout) {
+    clearTimeout(global.saveWindowStateTimeout);
+    global.saveWindowStateTimeout = null;
+  }
   try {
     if (oscService) {
       oscService.stop();
@@ -991,6 +1043,10 @@ function cleanup(source = 'unknown') {
     }
   } catch (error) {
     debug.error(`Error stopping HypeRate addon: ${error.message}`);
+  }
+  // Force garbage collection before exit
+  if (global.gc) {
+    global.gc();
   }
 }
 app.on('window-all-closed', () => {
