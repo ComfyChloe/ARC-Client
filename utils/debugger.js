@@ -185,5 +185,14 @@ class Debugger {
   logMemoryCleanup(details) {
     this.info('Memory cleanup performed', details);
   }
+  logError(error) {
+    const errorMessage = error && error.message ? error.message : String(error);
+    const errorStack = error && error.stack ? error.stack : 'No stack trace available';
+    this.error(`Error logged: ${errorMessage}`, {
+      message: errorMessage,
+      stack: errorStack
+    });
+    return { error: errorMessage };
+  }
 }
 module.exports = new Debugger();

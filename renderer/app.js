@@ -10,10 +10,13 @@ let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
 let currentTheme = 'light';
-// OSC Logging rate limiting
+// Runtime timer
+let startTime = Date.now();
+let runtimeInterval = null;
+// OSC message rate limiting
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
-let oscLoggingEnabled = true; // Default to true for backward compatibility
+let oscReceivedDisplayEnabled = true; // Controls if OSC received logs are displayed and processed
 const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
 const MAX_LOG_ENTRIES = 10000; // Maximum log entries to keep in DOM
@@ -43,6 +46,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     navSettings.classList.remove('active');
     navSettings.disabled = false;
     debugLog('Application initialized');
+    // Initialize runtime timer
+    initializeRuntimeTimer();
     // Load blacklist when page loads
     setTimeout(() => {
         loadParameterBlacklist();
@@ -62,6 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
+        const savePasswordCheckbox = document.getElementById('save-password-checkbox');
         if (usernameInput) {
             let saveTimeout;
             // Auto-save username as user types
@@ -77,11 +83,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         try {
                             await window.electronAPI.setLastUsername(username);
                         } catch (error) {
-                            // Silently fail - don't spam user with save errors
+                            // Silently fail on error
                             console.warn('Could not auto-save username:', error.message);
                         }
                     }
-                }, 1000); // Save 1 second after user stops typing
+                }, 1000);
             });
             // Enter key support for username field
             usernameInput.addEventListener('keypress', (e) => {
@@ -98,6 +104,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         }
+        // Handle save password checkbox
+        if (savePasswordCheckbox) {
+            savePasswordCheckbox.addEventListener('change', handleSavePasswordCheckbox);
+        }
+        // Load saved password setting on startup
+        loadSavedPasswordSetting();
     }, 100);
     // Set up periodic OSC log buffer flushing
     setInterval(() => {
@@ -105,6 +117,40 @@ document.addEventListener('DOMContentLoaded', async () => {
             flushOscLogBuffer();
         }
     }, OSC_LOG_FLUSH_INTERVAL);
+    // Add periodic memory cleanup every 30 minutes
+    setInterval(() => {
+        // Clear float rate limiting data periodically
+        clearFloatRateLimitingData();
+        // More aggressive cleanup when OSC received display is disabled
+        if (!oscReceivedDisplayEnabled) {
+            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
+            if (window.gc) window.gc();
+        }
+        // If OSC received logs are getting too large, rotate them
+        const receivedContainer = document.getElementById('osc-received-log-container');
+        if (receivedContainer && receivedContainer.children.length > MAX_LOG_ENTRIES/2) {
+            rotateLogContainers();
+        }
+        //debugLog('Performed periodic memory cleanup');
+    }, 10000); // Every 30 minutes
+    // Add UI responsiveness monitoring
+    let lastHeartbeatTime = Date.now();
+    function uiHeartbeat() {
+        lastHeartbeatTime = Date.now();
+    }
+    // Call this on common UI interactions
+    document.addEventListener('click', uiHeartbeat);
+    document.addEventListener('keydown', uiHeartbeat);
+    // Monitor UI responsiveness
+    setInterval(() => {
+        const now = Date.now();
+        if (now - lastHeartbeatTime > 10000) {  // 30 minutes without UI interaction
+            // Force cleanup
+            clearFloatRateLimitingData();
+            rotateLogContainers();
+            if (window.gc) window.gc();
+        }
+    }, 10000);
 });
 async function loadConfig() {
     try {
@@ -157,18 +203,6 @@ function setupEventListeners() {
         // Initialize WebSocket forwarding status
         wsForwardingEnabled = settings.enableWebSocketForwarding || false;
         updateWebSocketForwardingStatus(wsForwardingEnabled);
-        // Apply auto-connect setting if enabled
-        if (settings.autoConnect) {
-            const username = document.getElementById('username').value.trim().toLowerCase();
-            const password = document.getElementById('password').value;
-            if (username && password) {
-                console.log('Auto-connect is enabled, attempting to connect...');
-                debugLog('Auto-connect enabled, attempting to connect automatically');
-                setTimeout(() => {
-                    authenticate();
-                }, 1000); // delay to load ui
-            }
-        }
     });
     // WebSocket event listeners
     window.electronAPI.onWebSocketStatus((data) => {
@@ -184,9 +218,11 @@ function setupEventListeners() {
             currentUser = null;
             currentAvatar = null;
             parameters = {};
-            // Clear float rate limiting data on WebSocket disconnect
+            // Clear float rate limiting data on WebSocket disconnect and perform log rotation
             clearFloatRateLimitingData();
-            debugLog('Disconnected from WebSocket server');
+            rotateLogContainers();
+            if (window.gc) window.gc();
+            debugLog('Disconnected from WebSocket server - performed memory cleanup');
             updateUI();
             updateAvatarDisplay();
             updateParameterList();
@@ -370,6 +406,22 @@ async function updateConfigFromSettings() {
         debugLog('Server configuration updated');
     } catch (error) {
         debugLog(`Error updating server config: ${error.message}`, 'error');
+    }
+}
+function initializeRuntimeTimer() {
+    startTime = Date.now();
+    updateRuntimeDisplay();
+    runtimeInterval = setInterval(updateRuntimeDisplay, 1000);
+}
+function updateRuntimeDisplay() {
+    const elapsed = Date.now() - startTime;
+    const hours = Math.floor(elapsed / (1000 * 60 * 60));
+    const minutes = Math.floor((elapsed % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((elapsed % (1000 * 60)) / 1000);
+    const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    const runtimeDisplay = document.getElementById('runtime-display');
+    if (runtimeDisplay) {
+        runtimeDisplay.textContent = timeString;
     }
 }
 async function switchToServer(serverType) {
@@ -778,8 +830,10 @@ function isFloatValue(value) {
     }
     return false;
 }
-// Handle float OSC logging with rate limiting (similar to server implementation)
+// Handle float OSC messages with rate limiting (similar to server implementation)
 function handleFloatOscLog(type, address, value, connectionId) {
+    // Skip processing received logs if display is disabled
+    if (type === 'received' && !oscReceivedDisplayEnabled) return;
     const key = `${type}-${address}`;
     const now = Date.now();
     const lastLogTime = lastFloatLogTimes.get(key) || 0;
@@ -809,7 +863,6 @@ function handleFloatOscLog(type, address, value, connectionId) {
 // Immediately log a float value to the appropriate container
 function logFloatValueImmediate(type, address, value, connectionId) {
     const timestamp = new Date().toLocaleTimeString();
-    const connectionText = connectionId ? ` (conn: ${connectionId})` : '';
     let container, color;
     switch (type) {
         case 'received':
@@ -830,7 +883,7 @@ function logFloatValueImmediate(type, address, value, connectionId) {
     if (container) {
         const logEntry = document.createElement('div');
         logEntry.style.color = color;
-        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}${connectionText}`;
+        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}`;
         container.appendChild(logEntry);
         // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;
@@ -848,11 +901,20 @@ function clearFloatRateLimitingData() {
     lastFloatLogTimes.clear();
     pendingFloatTimeouts.clear();
     lastFloatValues.clear();
-    debugLog('Float rate limiting data cleared');
+    //debugLog('Float rate limiting data cleared');
+}
+function rotateLogContainers() {
+    document.getElementById('osc-received-log-container').innerHTML = 'Log rotation performed<br>';
+    clearFloatRateLimitingData();
+    // Explicitly clear buffer to free memory immediately
+    oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
+    // Force garbage collection if available
+    if (window.gc) window.gc();
+    //debugLog('OSC received log container rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
-    // Skip logging if OSC logging is disabled
-    if (!oscLoggingEnabled) return;
+    // Skip processing if OSC received display is disabled
+    if (!oscReceivedDisplayEnabled) return;
     // Check if this is a float value and apply rate limiting
     if (isFloatValue(value)) {
         handleFloatOscLog('received', address, value, connectionId);
@@ -873,8 +935,6 @@ function oscReceivedLog(address, value, connectionId = null) {
     }
 }
 function oscForwardedLog(address, value, connectionId = null) {
-    // Skip logging if OSC logging is disabled
-    if (!oscLoggingEnabled) return;
     // Check if this is a float value and apply rate limiting
     if (isFloatValue(value)) {
         handleFloatOscLog('forwarded', address, value, connectionId);
@@ -896,6 +956,19 @@ function oscForwardedLog(address, value, connectionId = null) {
 }
 function flushOscLogBuffer() {
     if (oscLogBuffer.length === 0) return;
+    // More aggressive emergency cleanup
+    if (oscLogBuffer.length > 5000) {
+        clearFloatRateLimitingData();
+        debugLog(`Emergency buffer cleanup - buffer size was ${oscLogBuffer.length}`, 'warning');
+        // Only keep the most recent messages (to prevent total loss of context)
+        const forwardedOnly = oscLogBuffer.filter(msg => msg.type === 'forwarded').slice(-100);
+        oscLogBuffer = forwardedOnly;
+        lastOscLogFlush = Date.now();
+        if (window.gc) window.gc();
+        // Clear DOM elements as well for complete reset
+        document.getElementById('osc-received-log-container').innerHTML = 'Emergency buffer cleanup performed<br>';
+        return;
+    }
     const receivedContainer = document.getElementById('osc-received-log-container');
     const forwardedContainer = document.getElementById('osc-forwarded-log-container');
     // Group messages by type for batch DOM updates
@@ -906,10 +979,9 @@ function flushOscLogBuffer() {
         const fragment = document.createDocumentFragment();
         received.forEach(msg => {
             const timestamp = new Date(msg.timestamp).toLocaleTimeString();
-            const connectionText = msg.connectionId ? ` (conn: ${msg.connectionId})` : '';
             const logEntry = document.createElement('div');
             logEntry.style.color = '#00ff00';
-            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}${connectionText}`;
+            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}`;
             fragment.appendChild(logEntry);
         });
         receivedContainer.appendChild(fragment);
@@ -924,10 +996,9 @@ function flushOscLogBuffer() {
         const fragment = document.createDocumentFragment();
         forwarded.forEach(msg => {
             const timestamp = new Date(msg.timestamp).toLocaleTimeString();
-            const connectionText = msg.connectionId ? ` (conn: ${msg.connectionId})` : '';
             const logEntry = document.createElement('div');
             logEntry.style.color = '#00aaff';
-            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}${connectionText}`;
+            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}`;
             fragment.appendChild(logEntry);
         });
         forwardedContainer.appendChild(fragment);
@@ -991,13 +1062,16 @@ function showMainView() {
     const settingsView = document.getElementById('settings-view');
     const voskView = document.getElementById('vosk-view');
     const hyperateView = document.getElementById('Hyperate-view');
+    const arcfeedbackView = document.getElementById('arcfeedback-view');
+    const chatboxView = document.getElementById('chatbox-view');
+    const vrchatapiView = document.getElementById('vrchatapi-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [oscView, logsView, settingsView, voskView, hyperateView].forEach(view => {
+    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1015,8 +1089,11 @@ function showMainView() {
         nav.classList.remove('active');
         nav.disabled = false;
     });
-    [navVosk, navHyperate].forEach(nav => {
-        if (nav) nav.classList.remove('active');
+    // Reset all tree-child buttons
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
     });
     navMain.classList.add('active');
     navMain.disabled = true;
@@ -1029,13 +1106,16 @@ function showOscView() {
     const settingsView = document.getElementById('settings-view');
     const voskView = document.getElementById('vosk-view');
     const hyperateView = document.getElementById('Hyperate-view');
+    const arcfeedbackView = document.getElementById('arcfeedback-view');
+    const chatboxView = document.getElementById('chatbox-view');
+    const vrchatapiView = document.getElementById('vrchatapi-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, logsView, settingsView, voskView, hyperateView].forEach(view => {
+    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1055,8 +1135,11 @@ function showOscView() {
         nav.classList.remove('active');
         nav.disabled = false;
     });
-    [navVosk, navHyperate].forEach(nav => {
-        if (nav) nav.classList.remove('active');
+    // Reset all tree-child buttons
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
     });
     navOsc.classList.add('active');
     navOsc.disabled = true;
@@ -1073,9 +1156,12 @@ function showSettingsView() {
     const navSettings = document.getElementById('nav-settings');
     const voskView = document.getElementById('vosk-view');
     const hyperateView = document.getElementById('Hyperate-view');
+    const arcfeedbackView = document.getElementById('arcfeedback-view');
+    const chatboxView = document.getElementById('chatbox-view');
+    const vrchatapiView = document.getElementById('vrchatapi-view');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, logsView, voskView, hyperateView].forEach(view => {
+    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1093,8 +1179,11 @@ function showSettingsView() {
         nav.classList.remove('active');
         nav.disabled = false;
     });
-    [navVosk, navHyperate].forEach(nav => {
-        if (nav) nav.classList.remove('active');
+    // Reset all tree-child buttons
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
     });
     navSettings.classList.add('active');
     navSettings.disabled = true;
@@ -1107,13 +1196,16 @@ function showLogsView() {
     const settingsView = document.getElementById('settings-view');
     const voskView = document.getElementById('vosk-view');
     const hyperateView = document.getElementById('Hyperate-view');
+    const arcfeedbackView = document.getElementById('arcfeedback-view');
+    const chatboxView = document.getElementById('chatbox-view');
+    const vrchatapiView = document.getElementById('vrchatapi-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, settingsView, voskView, hyperateView].forEach(view => {
+    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1125,16 +1217,19 @@ function showLogsView() {
         requestAnimationFrame(() => {
             logsView.style.opacity = '1';
         });
-        // Update OSC logging status when logs view is shown
-        updateOscLoggingStatus();
+        // Update OSC received display status when logs view is shown
+        updateOscReceivedDisplayStatus();
     }, 300);
     // Reset all navigation buttons
     [navMain, navOsc, navSettings].forEach(nav => {
         nav.classList.remove('active');
         nav.disabled = false;
     });
-    [navVosk, navHyperate].forEach(nav => {
-        if (nav) nav.classList.remove('active');
+    // Reset all tree-child buttons
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
     });
     navLogs.classList.add('active');
     navLogs.disabled = true;
@@ -1165,8 +1260,8 @@ function setupExtrasDropdown() {
     });
 }
 function showVOSKView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
-    const navButtons = ['nav-main', 'nav-osc', 'nav-vosk', 'nav-Hyperate', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
 
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1182,20 +1277,43 @@ function showVOSKView() {
             voskView.style.opacity = '1';
         });
     }, 300);
-    navButtons.forEach(nav => {
-        if (nav) {
-            nav.classList.remove('active');
-            nav.disabled = false;
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
         }
     });
+    // Reset all tree-child buttons and set VOSK as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
     const navVOSK = document.getElementById('nav-vosk');
-    navVOSK.classList.add('active');
-    navVOSK.disabled = true;
+    if (navVOSK) {
+        navVOSK.classList.add('active');
+        navVOSK.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
     debugLog('Switched to VOSK view');
 }
 function showHyperateView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
-    const navButtons = ['nav-main', 'nav-osc', 'nav-vosk', 'nav-Hyperate', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    debugLog('showHyperateView called');
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });
@@ -1204,37 +1322,209 @@ function showHyperateView() {
             if (view) view.style.display = 'none';
         });
         const HyperateView = document.getElementById('Hyperate-view');
-        HyperateView.style.display = 'block';
-        HyperateView.style.opacity = '0';
-        requestAnimationFrame(() => {
-            HyperateView.style.opacity = '1';
-        });
+        if (HyperateView) {
+            HyperateView.style.display = 'block';
+            HyperateView.style.opacity = '0';
+            requestAnimationFrame(() => {
+                HyperateView.style.opacity = '1';
+            });
+        } else {
+            debugLog('Error: HypeRate view element not found!', 'error');
+        }
     }, 300);
-    navButtons.forEach(nav => {
-        if (nav) {
-            nav.classList.remove('active');
-            nav.disabled = false;
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
         }
     });
+    // Reset all tree-child buttons and set HypeRate as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
     const navHyperate = document.getElementById('nav-Hyperate');
-    navHyperate.classList.add('active');
-    navHyperate.disabled = true;
+    if (navHyperate) {
+        navHyperate.classList.add('active');
+        navHyperate.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    // Initialize HypeRate status and auto-start UI
+    refreshHyperateStatus(true);
     debugLog('Switched to Hyperate view');
+}
+function showARCFeedbackView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const arcfeedbackView = document.getElementById('arcfeedback-view');
+        arcfeedbackView.style.display = 'block';
+        arcfeedbackView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            arcfeedbackView.style.opacity = '1';
+        });
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set ARC Feedback as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navARCFeedback = document.getElementById('nav-arcfeedback');
+    if (navARCFeedback) {
+        navARCFeedback.classList.add('active');
+        navARCFeedback.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to ARC Feedback view');
+}
+function showChatboxView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const chatboxView = document.getElementById('chatbox-view');
+        chatboxView.style.display = 'block';
+        chatboxView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            chatboxView.style.opacity = '1';
+        });
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set Chatbox as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navChatbox = document.getElementById('nav-chatbox');
+    if (navChatbox) {
+        navChatbox.classList.add('active');
+        navChatbox.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to Chatbox view');
+}
+function showVRChatAPIView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const vrchatapiView = document.getElementById('vrchatapi-view');
+        vrchatapiView.style.display = 'block';
+        vrchatapiView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            vrchatapiView.style.opacity = '1';
+        });
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set VRChat API as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navVRChatAPI = document.getElementById('nav-vrchatapi');
+    if (navVRChatAPI) {
+        navVRChatAPI.classList.add('active');
+        navVRChatAPI.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to VRChat API view');
 }
 async function updateAppSettings() {
     try {
-        const autoConnect = document.getElementById('auto-connect').value === 'true';
         const logLevel = document.getElementById('log-level').value;
-        const enableOscOnStartup = document.getElementById('enable-osc-startup')?.value === 'true';
-        const enableOscLogging = document.getElementById('enable-osc-logging')?.value === 'true';
         const settings = {
-            autoConnect,
-            logLevel,
-            enableOscOnStartup,
-            enableOscLogging
+            logLevel
         };
         await window.electronAPI.setAppSettings(settings);
-        debugLog(`Application settings updated - Auto-connect: ${autoConnect}, Log level: ${logLevel}, OSC on startup: ${enableOscOnStartup}, OSC logging: ${enableOscLogging}`);
+        debugLog(`Application settings updated - Log level: ${logLevel}`);
     } catch (error) {
         debugLog(`Error updating app settings: ${error.message}`, 'error');
     }
@@ -1242,25 +1532,13 @@ async function updateAppSettings() {
 async function loadAppSettings() {
     try {
         const settings = await window.electronAPI.getAppSettings();
-        const autoConnectSelect = document.getElementById('auto-connect');
         const logLevelSelect = document.getElementById('log-level');
-        const enableOscStartupSelect = document.getElementById('enable-osc-startup');
-        const enableOscLoggingSelect = document.getElementById('enable-osc-logging');
-        if (autoConnectSelect) {
-            autoConnectSelect.value = settings.autoConnect ? 'true' : 'false';
-        }
         if (logLevelSelect) {
             logLevelSelect.value = settings.logLevel || 'info';
         }
-        if (enableOscStartupSelect) {
-            enableOscStartupSelect.value = settings.enableOscOnStartup ? 'true' : 'false';
-        }
-        if (enableOscLoggingSelect) {
-            enableOscLoggingSelect.value = settings.enableOscLogging !== false ? 'true' : 'false'; // Default to true for backward compatibility
-        }
-        // Set global OSC logging state
-        oscLoggingEnabled = settings.enableOscLogging !== false; // Default to true for backward compatibility
-        updateOscLoggingStatus();
+        // Set OSC received display state
+        oscReceivedDisplayEnabled = settings.oscReceivedDisplayEnabled !== false; // Default to true for backward compatibility
+        updateOscReceivedDisplayStatus();
         // Apply theme from settings
         currentTheme = settings.theme || 'light';
         applyTheme(currentTheme);
@@ -1285,6 +1563,10 @@ async function loadLastUsername() {
     }
 }
 window.addEventListener('beforeunload', () => {
+    // Clear runtime timer
+    if (runtimeInterval) {
+        clearInterval(runtimeInterval);
+    }
     window.electronAPI.removeAllListeners('osc-received');
     window.electronAPI.removeAllListeners('osc-server-status');
     window.electronAPI.removeAllListeners('websocket-status');
@@ -1632,39 +1914,44 @@ async function removeBlacklistPattern(pattern) {
         debugLog(`Error removing blacklist pattern: ${error.message}`, 'error');
     }
 }
-function updateOscLoggingStatus() {
-    const statusElement = document.getElementById('osc-logging-status');
-    const toggleBtn = document.getElementById('osc-logging-toggle-btn');
+function updateOscReceivedDisplayStatus() {
+    const statusElement = document.getElementById('osc-received-display-status');
+    const toggleBtn = document.getElementById('osc-received-display-toggle-btn');
     if (statusElement) {
-        statusElement.textContent = oscLoggingEnabled ? 'Enabled' : 'Disabled';
-        statusElement.style.color = oscLoggingEnabled ? '#28a745' : '#dc3545';
+        statusElement.textContent = oscReceivedDisplayEnabled ? 'Enabled' : 'Disabled';
+        statusElement.className = oscReceivedDisplayEnabled ? 'status-value' : 'status-value disabled';
     }
     if (toggleBtn) {
-        toggleBtn.textContent = oscLoggingEnabled ? 'Disable OSC Logging' : 'Enable OSC Logging';
-        toggleBtn.className = oscLoggingEnabled ? 'btn btn-warning' : 'btn btn-success';
+        toggleBtn.textContent = oscReceivedDisplayEnabled ? 'Hide OSC Received' : 'Show OSC Received';
+        toggleBtn.className = oscReceivedDisplayEnabled ? 'btn btn-warning' : 'btn btn-success';
     }
 }
-async function toggleOscLoggingQuick() {
+async function toggleOscReceivedDisplay() {
     try {
-        oscLoggingEnabled = !oscLoggingEnabled;
-        // Update the settings in the backend
+        oscReceivedDisplayEnabled = !oscReceivedDisplayEnabled;
+        // Immediate and complete cleanup when disabling
+        if (!oscReceivedDisplayEnabled) {
+            // Remove all received messages from buffer
+            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
+            clearFloatRateLimitingData();
+            document.getElementById('osc-received-log-container').innerHTML = 'OSC Received Display Disabled<br>';
+            // Force immediate garbage collection
+            if (window.gc) window.gc();
+        }
+        // Save the state to backend settings
         const currentSettings = await window.electronAPI.getAppSettings();
-        currentSettings.enableOscLogging = oscLoggingEnabled;
+        currentSettings.oscReceivedDisplayEnabled = oscReceivedDisplayEnabled;
         await window.electronAPI.setAppSettings(currentSettings);
         // Update the UI
-        updateOscLoggingStatus();
-        // Update the settings form if it exists
-        const enableOscLoggingSelect = document.getElementById('enable-osc-logging');
-        if (enableOscLoggingSelect) {
-            enableOscLoggingSelect.value = oscLoggingEnabled ? 'true' : 'false';
+        updateOscReceivedDisplayStatus();
+        // Clear existing OSC received log buffer when disabling
+        if (!oscReceivedDisplayEnabled) {
+            debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing load reduced`);
+        } else {
+            debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing resumed`);
         }
-        // Clear existing OSC log buffers when disabling
-        if (!oscLoggingEnabled) {
-            oscLogBuffer = [];
-        }
-        debugLog(`OSC logging ${oscLoggingEnabled ? 'enabled' : 'disabled'} - this will ${oscLoggingEnabled ? 'increase' : 'reduce'} disk I/O`);
     } catch (error) {
-        debugLog(`Error toggling OSC logging: ${error.message}`, 'error');
+        debugLog(`Error toggling OSC received display: ${error.message}`, 'error');
     }
 }
 async function loadTheme() {
@@ -1700,4 +1987,514 @@ async function toggleTheme() {
     } catch (error) {
         debugLog(`Error toggling theme: ${error.message}`, 'error');
     }
+}
+// Password saving functionality
+async function handleSavePasswordCheckbox() {
+    const checkbox = document.getElementById('save-password-checkbox');
+    const modal = document.getElementById('password-warning-modal');
+    
+    if (checkbox.checked) {
+        // Show warning modal
+        modal.style.display = 'flex';
+        setupPasswordWarningModal();
+    } else {
+        // Unchecking - remove saved password
+        try {
+            await window.electronAPI.setSavedPassword('');
+            debugLog('Saved password removed from configuration');
+        } catch (error) {
+            debugLog(`Error removing saved password: ${error.message}`, 'error');
+        }
+    }
+}
+
+function setupPasswordWarningModal() {
+    const modal = document.getElementById('password-warning-modal');
+    const cancelBtn = document.getElementById('password-warning-cancel');
+    const confirmBtn = document.getElementById('password-warning-confirm');
+    const checkbox = document.getElementById('save-password-checkbox');
+    
+    cancelBtn.onclick = () => {
+        checkbox.checked = false;
+        modal.style.display = 'none';
+        debugLog('Password save cancelled by user');
+    };
+    
+    confirmBtn.onclick = async () => {
+        modal.style.display = 'none';
+        debugLog('User confirmed password save warning');
+        // Save current password if there is one
+        const password = document.getElementById('password').value;
+        if (password) {
+            try {
+                await window.electronAPI.setSavedPassword(password);
+                debugLog('Password saved to configuration (encrypted storage would be better, but user confirmed plain text)');
+            } catch (error) {
+                debugLog(`Error saving password: ${error.message}`, 'error');
+            }
+        }
+    };
+    
+    // Close modal when clicking overlay
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            checkbox.checked = false;
+            modal.style.display = 'none';
+            debugLog('Password save modal closed');
+        }
+    };
+}
+
+async function loadSavedPasswordSetting() {
+    try {
+        const result = await window.electronAPI.getSavedPassword();
+        const checkbox = document.getElementById('save-password-checkbox');
+        const passwordInput = document.getElementById('password');
+        
+        if (result && result.password) {
+            checkbox.checked = true;
+            passwordInput.value = result.password;
+            debugLog('Saved password loaded from configuration');
+        }
+    } catch (error) {
+        debugLog(`Error loading saved password: ${error.message}`, 'error');
+    }
+}
+
+// Update password saving when user types new password
+async function handlePasswordChange() {
+    const checkbox = document.getElementById('save-password-checkbox');
+    const passwordInput = document.getElementById('password');
+    
+    if (checkbox.checked) {
+        const password = passwordInput.value;
+        try {
+            await window.electronAPI.setSavedPassword(password);
+        } catch (error) {
+            debugLog(`Error updating saved password: ${error.message}`, 'error');
+        }
+    }
+}
+
+// Add password change listener after DOM loads
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        const passwordInput = document.getElementById('password');
+        if (passwordInput) {
+            let saveTimeout;
+            passwordInput.addEventListener('input', () => {
+                if (saveTimeout) {
+                    clearTimeout(saveTimeout);
+                }
+                saveTimeout = setTimeout(handlePasswordChange, 1000);
+            });
+        }
+    }, 100);
+});
+// HypeRate Integration Functions
+let hyperateStatus = {
+    enabled: false,
+    connected: false,
+    stopping: false,
+    hasApiKey: false
+};
+async function toggleHyperate() {
+    try {
+        const toggleBtn = document.getElementById('hyperate-toggle-btn');
+        toggleBtn.disabled = true;
+        if (hyperateStatus.enabled) {
+            // Stop HypeRate - show stopping status immediately
+            hyperateStatus.stopping = true;
+            updateHyperateUI();
+            const result = await window.electronAPI.hyperateStop();
+            if (result.success) {
+                debugLog('HypeRate stopped');
+                hyperateStatus.stopping = false;
+                updateHyperateUI();
+            } else {
+                debugLog(`Failed to stop HypeRate: ${result.error}`, 'error');
+                // Reset stopping state on failure
+                hyperateStatus.stopping = false;
+                updateHyperateUI();
+            }
+        } else {
+            // Start HypeRate - show connecting status immediately
+            hyperateStatus.enabled = true;
+            hyperateStatus.connected = false;
+            updateHyperateUI();
+            const result = await window.electronAPI.hyperateStart();
+            if (result.success) {
+                debugLog('HypeRate started');
+                updateHyperateUI();
+            } else {
+                debugLog(`Failed to start HypeRate: ${result.error}`, 'error');
+                alert(`Failed to start HypeRate: ${result.error}`);
+                // Reset status on failure
+                hyperateStatus.enabled = false;
+                updateHyperateUI();
+            }
+        }
+    } catch (error) {
+        debugLog(`Error toggling HypeRate: ${error.message}`, 'error');
+    } finally {
+        const toggleBtn = document.getElementById('hyperate-toggle-btn');
+        toggleBtn.disabled = false;
+    }
+}
+// HypeRate auto-start functions
+async function toggleHyperateAutostart() {
+    try {
+        const autostartBtn = document.getElementById('hyperate-autostart-btn');
+        autostartBtn.disabled = true;
+        // Get current autostart status
+        const currentStatus = await window.electronAPI.hyperateGetAutostart();
+        const newEnabled = !currentStatus.enabled;
+        // Update autostart setting
+        const result = await window.electronAPI.hyperateSetAutostart(newEnabled);
+        if (result.success) {
+            debugLog(`HypeRate autostart ${newEnabled ? 'enabled' : 'disabled'}`);
+            updateHyperateAutostartUI(newEnabled);
+        } else {
+            debugLog(`Failed to update HypeRate autostart: ${result.error}`, 'error');
+            alert(`Failed to update autostart setting: ${result.error}`);
+        }
+    } catch (error) {
+        debugLog(`Error toggling HypeRate autostart: ${error.message}`, 'error');
+    } finally {
+        const autostartBtn = document.getElementById('hyperate-autostart-btn');
+        autostartBtn.disabled = false;
+    }
+}
+function updateHyperateAutostartUI(enabled) {
+    const autostartBtn = document.getElementById('hyperate-autostart-btn');
+    if (autostartBtn) {
+        autostartBtn.textContent = `Auto-start: ${enabled ? 'Enabled' : 'Disabled'}`;
+        autostartBtn.className = enabled ? 'btn btn-success' : 'btn btn-secondary';
+    }
+}
+async function refreshHyperateStatus(includeAutostart = false) {
+    try {
+        const status = await window.electronAPI.hyperateGetStatus();
+        hyperateStatus = { ...status, stopping: false }; // Ensure stopping is reset from server status
+        updateHyperateUI();
+        // Only refresh auto-start status when explicitly requested (not during periodic updates)
+        if (includeAutostart) {
+            const autostartStatus = await window.electronAPI.hyperateGetAutostart();
+            updateHyperateAutostartUI(autostartStatus.enabled);
+        }
+        // Always refresh trackers list to show correct active/inactive states
+        await refreshHyperateTrackers();
+    } catch (error) {
+        debugLog(`Error refreshing HypeRate status: ${error.message}`, 'error');
+    }
+}
+async function addHyperateTracker() {
+    try {
+        const deviceIdInput = document.getElementById('device-id-input');
+        const deviceNameInput = document.getElementById('device-name-input');
+        const deviceId = deviceIdInput.value.trim();
+        const deviceName = deviceNameInput ? deviceNameInput.value.trim() : null;
+        if (!deviceId) {
+            alert('Please enter a device ID');
+            return;
+        }
+        const result = await window.electronAPI.hyperateAddTracker(deviceId, deviceName || null);
+        if (result.success) {
+            debugLog(`Added HypeRate tracker: ${deviceId}${deviceName ? ` (${deviceName})` : ''}`);
+            deviceIdInput.value = '';
+            if (deviceNameInput) deviceNameInput.value = '';
+            await refreshHyperateTrackers();
+        } else {
+            debugLog(`Failed to add HypeRate tracker: ${result.error}`, 'error');
+            alert(`Failed to add tracker: ${result.error}`);
+        }
+    } catch (error) {
+        debugLog(`Error adding HypeRate tracker: ${error.message}`, 'error');
+    }
+}
+async function removeHyperateTracker(deviceId) {
+    try {
+        const result = await window.electronAPI.hyperateRemoveTracker(deviceId);
+        if (result.success) {
+            debugLog(`Removed HypeRate tracker: ${deviceId}`);
+            await refreshHyperateTrackers();
+        } else {
+            debugLog(`Failed to remove HypeRate tracker: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error removing HypeRate tracker: ${error.message}`, 'error');
+    }
+}
+async function setPrimaryHyperateTracker(deviceId) {
+    try {
+        const result = await window.electronAPI.hyperateSetPrimary(deviceId);
+        if (result.success) {
+            debugLog(`Set primary HypeRate tracker: ${deviceId}`);
+            await refreshHyperateTrackers();
+        } else {
+            debugLog(`Failed to set primary HypeRate tracker: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error setting primary HypeRate tracker: ${error.message}`, 'error');
+    }
+}
+async function refreshHyperateTrackers() {
+    try {
+        const trackers = await window.electronAPI.hyperateGetTrackers();
+        const trackersList = document.getElementById('hyperate-trackers-list');
+        if (trackers.length === 0) {
+            trackersList.innerHTML = '<p style="color: #666; text-align: center; padding: 10px;">No trackers added yet</p>';
+            const primaryInfo = document.getElementById('primary-tracker-info');
+            if (primaryInfo) {
+                primaryInfo.textContent = 'No primary tracker set';
+            }
+            return;
+        }
+        let trackersHtml = '';
+        let primaryTracker = null;
+        trackers.forEach(tracker => {
+            const lastUpdate = tracker.lastUpdate ? new Date(tracker.lastUpdate).toLocaleTimeString() : 'Never';
+            const heartRate = tracker.lastHeartRate || '--';
+            const isPrimary = tracker.isPrimary;
+            const displayName = tracker.name || tracker.deviceId;
+            const status = tracker.isActive ? 'Active' : 'Inactive';
+            const statusColor = tracker.isActive ? '#2ecc71' : '#95a5a6';
+            if (isPrimary) {
+                primaryTracker = tracker;
+                updateHeartRateDisplay(tracker.lastHeartRate);
+            }
+            const primaryBadge = isPrimary ? '<span style="background: #2ecc71; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">PRIMARY</span>' : '';
+            const primaryAction = isPrimary ? '' : `<button class="btn btn-secondary btn-small" onclick="setPrimaryHyperateTracker('${tracker.deviceId}')" style="margin-right: 5px;">Set Primary</button>`;
+            trackersHtml += `
+                <div class="tracker-item" style="border: 1px solid ${isPrimary ? '#2ecc71' : '#ddd'}; border-radius: 4px; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; background: ${isPrimary ? '#f8fff8' : 'white'};">
+                    <div>
+                        <strong>${displayName}</strong>${primaryBadge}<br>
+                        <small style="color: #666;">ID: ${tracker.deviceId}</small><br>
+                        <small>Status: <span style="color: ${statusColor};">${status}</span> | HR: ${heartRate} BPM | Last Update: ${lastUpdate}</small>
+                    </div>
+                    <div>
+                        <button class="btn btn-secondary btn-small" onclick="editTrackerName('${tracker.deviceId}', '${tracker.name || ''}')" style="margin-right: 5px;">Edit</button>
+                        ${primaryAction}
+                        <button class="btn btn-danger btn-small" onclick="removeHyperateTracker('${tracker.deviceId}')">Remove</button>
+                    </div>
+                </div>
+            `;
+        });
+        trackersList.innerHTML = trackersHtml;
+        const primaryInfo = document.getElementById('primary-tracker-info');
+        if (primaryInfo) {
+            if (primaryTracker) {
+                const displayName = primaryTracker.name || primaryTracker.deviceId;
+                primaryInfo.textContent = `Primary: ${displayName}`;
+            } else {
+                primaryInfo.textContent = 'No primary tracker set';
+            }
+        }
+    } catch (error) {
+        debugLog(`Error refreshing HypeRate trackers: ${error.message}`, 'error');
+    }
+}
+function updateHyperateUI() {
+    const statusIndicator = document.getElementById('hyperate-status');
+    const statusText = document.getElementById('hyperate-status-text');
+    const toggleBtn = document.getElementById('hyperate-toggle-btn');
+    if (!hyperateStatus.hasApiKey) {
+        statusIndicator.className = 'status-indicator status-error';
+        statusText.textContent = 'No API Key - Check secrets.json';
+        toggleBtn.textContent = 'Missing API Key';
+        toggleBtn.disabled = true;
+        return;
+    }
+    if (hyperateStatus.enabled && hyperateStatus.connected) {
+        statusIndicator.className = 'status-indicator status-connected';
+        statusText.textContent = 'Connected and Active';
+        toggleBtn.textContent = 'Stop HypeRate';
+        toggleBtn.disabled = false;
+    } else if (hyperateStatus.stopping) {
+        statusIndicator.className = 'status-indicator status-stopping';
+        statusText.textContent = 'Stopping...';
+        toggleBtn.textContent = 'Stopping...';
+        toggleBtn.disabled = true;
+    } else if (hyperateStatus.enabled) {
+        statusIndicator.className = 'status-indicator status-connecting';
+        statusText.textContent = 'Connecting...';
+        toggleBtn.textContent = 'Stop HypeRate';
+        toggleBtn.disabled = false;
+    } else {
+        statusIndicator.className = 'status-indicator status-disconnected';
+        statusText.textContent = 'Stopped';
+        toggleBtn.textContent = 'Start HypeRate';
+        toggleBtn.disabled = false;
+    }
+    // Update current heart rate from status
+    if (hyperateStatus.enabled && hyperateStatus.lastHeartRate) {
+        updateHeartRateDisplay(hyperateStatus.lastHeartRate);
+    } else if (!hyperateStatus.enabled) {
+        updateHeartRateDisplay(null);
+    }
+}
+// Auto-refresh HypeRate status when viewing the HypeRate page
+let hyperateStatusInterval = null;
+function startHyperateStatusUpdates() {
+    if (hyperateStatusInterval) {
+        clearInterval(hyperateStatusInterval);
+    }
+    hyperateStatusInterval = setInterval(async () => {
+        if (document.getElementById('Hyperate-view').style.display !== 'none') {
+            await refreshHyperateStatus();
+            // Periodic cleanup during HypeRate updates
+            if (Math.random() < 0.1) { // 10% chance per update
+                clearFloatRateLimitingData();
+            }
+        }
+    }, 2000); // Update every 2 seconds
+}
+function stopHyperateStatusUpdates() {
+    if (hyperateStatusInterval) {
+        clearInterval(hyperateStatusInterval);
+        hyperateStatusInterval = null;
+    }
+}
+// Update heart rate display
+function updateHeartRateDisplay(heartRate) {
+    const heartRateElement = document.getElementById('current-heartrate');
+    if (heartRateElement) {
+        heartRateElement.textContent = heartRate || '--';
+        // Add a pulse animation for valid heart rates
+        if (heartRate && heartRate > 0) {
+            heartRateElement.style.animation = 'none';
+            setTimeout(() => {
+                heartRateElement.style.animation = 'pulse 1s ease-in-out';
+            }, 10);
+        }
+    }
+}
+// Listen for heart rate updates from main process
+window.electronAPI.onHyperateUpdate?.((data) => {
+    if (data.heartRate) {
+        updateHeartRateDisplay(data.heartRate);
+        hyperateStatus.lastHeartRate = data.heartRate;
+    }
+});
+// Enhanced showHyperateView function to include auto-refresh
+const originalShowHyperateView = showHyperateView;
+showHyperateView = function() {
+    try {
+        // Stop any existing status updates first
+        stopHyperateStatusUpdates();
+        
+        // Call the original function
+        originalShowHyperateView.call(this);
+        
+        // Use a longer delay to ensure the view transition is complete
+        setTimeout(async () => {
+            try {
+                await refreshHyperateStatus();
+                await refreshHyperateTrackers();
+                startHyperateStatusUpdates();
+            } catch (error) {
+                debugLog(`Error refreshing HypeRate view: ${error.message}`, 'error');
+            }
+        }, 800);
+    } catch (error) {
+        debugLog(`Error in showHyperateView: ${error.message}`, 'error');
+        // Fallback to original function
+        try {
+            originalShowHyperateView.call(this);
+        } catch (fallbackError) {
+            debugLog(`Fallback error in showHyperateView: ${fallbackError.message}`, 'error');
+        }
+    }
+};
+// Stop updates when leaving HypeRate view
+const originalShowMainView = showMainView;
+const originalShowOscView = showOscView;
+const originalShowLogsView = showLogsView;
+const originalShowSettingsView = showSettingsView;
+const originalShowVOSKView = showVOSKView;
+showMainView = function() {
+    stopHyperateStatusUpdates();
+    originalShowMainView.call(this);
+};
+showOscView = function() {
+    stopHyperateStatusUpdates();
+    originalShowOscView.call(this);
+};
+showLogsView = function() {
+    stopHyperateStatusUpdates();
+    originalShowLogsView.call(this);
+};
+showSettingsView = function() {
+    stopHyperateStatusUpdates();
+    originalShowSettingsView.call(this);
+};
+showVOSKView = function() {
+    stopHyperateStatusUpdates();
+    originalShowVOSKView.call(this);
+};
+// Tracker edit modal functionality
+let currentEditingTrackerId = null;
+function openTrackerEditModal(deviceId, currentName) {
+    currentEditingTrackerId = deviceId;
+    const modal = document.getElementById('tracker-edit-modal');
+    const nameInput = document.getElementById('edit-tracker-name');
+    const idInput = document.getElementById('edit-tracker-id');
+    // Populate the form
+    nameInput.value = currentName || '';
+    idInput.value = deviceId;
+    modal.style.display = 'flex';
+    nameInput.focus();
+    // Setup event handlers
+    setupTrackerEditModalHandlers();
+}
+function setupTrackerEditModalHandlers() {
+    const modal = document.getElementById('tracker-edit-modal');
+    const cancelBtn = document.getElementById('tracker-edit-cancel');
+    const saveBtn = document.getElementById('tracker-edit-save');
+    // Remove existing handlers
+    cancelBtn.onclick = null;
+    saveBtn.onclick = null;
+    modal.onclick = null;
+    cancelBtn.onclick = () => {
+        modal.style.display = 'none';
+        currentEditingTrackerId = null;
+    };
+    saveBtn.onclick = async () => {
+        const nameInput = document.getElementById('edit-tracker-name');
+        if (!currentEditingTrackerId) return;
+        try {
+            // Update name
+            const newName = nameInput.value.trim() || null;
+            const nameResult = await window.electronAPI.hyperateUpdateTrackerName(currentEditingTrackerId, newName);
+            if (nameResult.success) {
+                debugLog(`Updated tracker ${currentEditingTrackerId}: name="${newName || 'default'}"`);
+                await refreshHyperateTrackers();
+                modal.style.display = 'none';
+                currentEditingTrackerId = null;
+            } else {
+                const error = nameResult.error || 'Unknown error';
+                alert(`Failed to update tracker: ${error}`);
+            }
+        } catch (error) {
+            debugLog(`Error updating tracker: ${error.message}`, 'error');
+            alert(`Error updating tracker: ${error.message}`);
+        }
+    };
+    // Close modal when clicking overlay
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+            currentEditingTrackerId = null;
+        }
+    };
+    // Handle Enter key in name input
+    const nameInput = document.getElementById('edit-tracker-name');
+    nameInput.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+            saveBtn.click();
+        }
+    };
+}
+async function editTrackerName(deviceId, currentName) {
+    openTrackerEditModal(deviceId, currentName);
 }

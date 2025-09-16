@@ -12,10 +12,11 @@ class OscService extends EventEmitter {
     this.parameters = {};
     this.additionalConnections = [];
     this.forwardFromAdditionalToPrimary = true;
-    // Memory management settings
-    this.maxParameterCount = 10000; // Limit parameter storage
-    this.parameterCleanupInterval = 300000; // 5 minutes
+    // Memory management settings - more aggressive for logs only
+    this.maxParameterCount = 1000; // Reduced from 5000 to 1000 for logs view only
+    this.parameterCleanupInterval = 20000; // Reduced from 30 seconds to 20 seconds
     this.lastParameterCleanup = Date.now();
+    this.maxParameterAge = 40000; // Keep parameters for only 40 seconds (logs view)
     // Start parameter cleanup timer
     this.setupParameterCleanup();
   }
@@ -240,6 +241,10 @@ class OscService extends EventEmitter {
       clearInterval(this.parameterCleanupTimer);
       this.parameterCleanupTimer = null;
     }
+    // Clear parameters to free memory
+    this.parameters = {};
+    // Remove all event listeners from this EventEmitter instance
+    this.removeAllListeners();
     // Stop primary port
     if (this.primaryUdpPort && this.isListening) {
       try {
@@ -248,7 +253,7 @@ class OscService extends EventEmitter {
         this.primaryUdpPort.close();
       } catch (error) {
         if (error.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
-          this.emit('error', error);
+          console.error('Error stopping primary UDP port:', error);
         }
       }
     }
@@ -306,14 +311,22 @@ class OscService extends EventEmitter {
         type = 'bool';
         value = true;
       }
-      // Add timestamp to parameter and check for cleanup
+      // Always store for logs view, but with immediate cleanup if needed
+      const currentParamCount = Object.keys(this.parameters).length;
+      // If we're at the limit, remove the oldest parameter first
+      if (currentParamCount >= this.maxParameterCount) {
+        this.removeOldestParameter();
+      }
+      // Store the new parameter for logs view (only keep recent for UI)
       this.parameters[address] = { value, type, timestamp: Date.now() };
+      // Trigger cleanup more frequently to keep memory low
       this.checkParameterCleanup();
       if (connectionId !== null && this.forwardFromAdditionalToPrimary && this.primaryUdpPort && this.isListening) {
         try {
           // Forward the exact original message without reformatting
           this.primaryUdpPort.send(oscMsg);
         } catch (forwardError) {
+          // Silent fail for forwarding errors to prevent spam
         }
       }
       this.emit('messageReceived', {
@@ -324,6 +337,7 @@ class OscService extends EventEmitter {
         connectionId: connectionId
       });
     } catch (error) {
+      console.error('Error handling incoming OSC message:', error);
       this.emit('error', error);
     }
   }
@@ -462,6 +476,10 @@ class OscService extends EventEmitter {
     this.emit('parametersCleared');
   }
   setupParameterCleanup() {
+    // Clear any existing timer to prevent duplicates
+    if (this.parameterCleanupTimer) {
+      clearInterval(this.parameterCleanupTimer);
+    }
     // Set up periodic cleanup to prevent memory leaks
     this.parameterCleanupTimer = setInterval(() => {
       this.cleanupOldParameters();
@@ -469,30 +487,32 @@ class OscService extends EventEmitter {
   }
   checkParameterCleanup() {
     const parameterCount = Object.keys(this.parameters).length;
-    if (parameterCount > this.maxParameterCount) {
-      console.log(`Parameter count (${parameterCount}) exceeded limit (${this.maxParameterCount}), cleaning up old parameters`);
+    const now = Date.now();
+    // More aggressive cleanup - trigger every 30 seconds or when approaching limit
+    if (parameterCount > this.maxParameterCount * 0.7 || 
+        (now - this.lastParameterCleanup) > 30000) {
       this.cleanupOldParameters();
     }
   }
   cleanupOldParameters() {
     const now = Date.now();
-    const maxAge = 600000; // 10 minutes
     let cleanedCount = 0;
-    // Remove parameters older than maxAge
+    // Remove parameters older than maxParameterAge (1 minute for logs)
     Object.keys(this.parameters).forEach(address => {
       const param = this.parameters[address];
-      if (param.timestamp && (now - param.timestamp) > maxAge) {
+      if (param.timestamp && (now - param.timestamp) > this.maxParameterAge) {
         delete this.parameters[address];
         cleanedCount++;
       }
     });
-    // If still too many parameters, keep only the most recent half
+    // If still too many parameters, keep only the most recent ones for logs view
     const currentCount = Object.keys(this.parameters).length;
     if (currentCount > this.maxParameterCount) {
+      const targetCount = Math.floor(this.maxParameterCount * 0.8); // Keep 80% for breathing room
       const sortedEntries = Object.entries(this.parameters)
         .filter(([_, param]) => param.timestamp)
         .sort(([_, a], [__, b]) => b.timestamp - a.timestamp)
-        .slice(0, Math.floor(this.maxParameterCount / 2));
+        .slice(0, targetCount);
       this.parameters = {};
       sortedEntries.forEach(([address, param]) => {
         this.parameters[address] = param;
@@ -500,9 +520,25 @@ class OscService extends EventEmitter {
       cleanedCount += currentCount - sortedEntries.length;
     }
     if (cleanedCount > 0) {
-      console.log(`Cleaned up ${cleanedCount} old parameters, ${Object.keys(this.parameters).length} remaining`);
+      console.log(`Cleaned up ${cleanedCount} old parameters for logs view, ${Object.keys(this.parameters).length} remaining`);
     }
     this.lastParameterCleanup = now;
+  }
+  removeOldestParameter() {
+    // Find and remove the oldest parameter to make room for new ones
+    const paramEntries = Object.entries(this.parameters);
+    if (paramEntries.length === 0) return;
+    let oldestAddress = null;
+    let oldestTimestamp = Date.now();
+    paramEntries.forEach(([address, param]) => {
+      if (param.timestamp && param.timestamp < oldestTimestamp) {
+        oldestTimestamp = param.timestamp;
+        oldestAddress = address;
+      }
+    });
+    if (oldestAddress) {
+      delete this.parameters[oldestAddress];
+    }
   }
   findAvailablePort(startPort, endPort) {
     const net = require('net');

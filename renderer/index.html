@@ -17,6 +17,10 @@
                         <span class="theme-toggle-moon">🌙</span>
                     </button>
                 </div>
+                <div class="runtime-timer" style="text-align: center; margin-bottom: 15px;">
+                    <span style="font-size: 0.85em; opacity: 0.8;">Runtime:</span>
+                    <span id="runtime-display" style="margin-left: 4px;">00:00:00</span>
+                </div>
                 <div class="connection-status">
                     <span class="status-indicator status-disconnected" id="server-status"></span>
                     <span id="server-status-text">Disconnected</span>
@@ -43,8 +47,11 @@
                     </button>
                     <div class="tree-content">
                         <div class="tree-items">
+                            <button class="tree-child" id="nav-arcfeedback" onclick="showARCFeedbackView()">ARC Feedback</button>
+                            <button class="tree-child" id="nav-chatbox" onclick="showChatboxView()">Chatbox</button>
                             <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
+                            <button class="tree-child" id="nav-vrchatapi" onclick="showVRChatAPIView()">VRChat API</button>
                         </div>
                     </div>
                 </div>
@@ -66,7 +73,13 @@
                     <input type="text" id="username" value="">
                 </div>
                 <div class="form-group">
-                    <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1;">Password</div>
+                    <div style="margin-bottom: 5px; font-weight: bold; color: #ecf0f1; display: flex; align-items: center; gap: 10px;">
+                        <span>Password</span>
+                        <label style="display: flex; align-items: center; gap: 5px; font-weight: normal; font-size: 0.9em; cursor: pointer;">
+                            <input type="checkbox" id="save-password-checkbox" style="margin: 0;">
+                            <span>Save?</span>
+                        </label>
+                    </div>
                     <input type="password" id="password" value="">
                 </div>
                 <button class="btn btn-success" onclick="authenticate()" id="auth-btn">Connect & Login</button>
@@ -118,36 +131,12 @@
             <div class="card">
                 <h3>Application Settings</h3>
                 <div class="form-group">
-                    <label for="auto-connect">Auto-connect on startup</label>
-                    <select id="auto-connect">
-                        <option value="false">Disabled</option>
-                        <option value="true">Enabled</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="enable-osc-startup">Enable OSC on startup</label>
-                    <select id="enable-osc-startup">
-                        <option value="false">Disabled</option>
-                        <option value="true">Enabled</option>
-                    </select>
-                </div>
-                <div class="form-group">
                     <label for="log-level">Log Level</label>
                     <select id="log-level">
                         <option value="info">Info</option>
                         <option value="warning">Warning</option>
                         <option value="error">Error</option>
                     </select>
-                </div>
-                <div class="form-group">
-                    <label for="enable-osc-logging">Enable OSC Data Logging</label>
-                    <select id="enable-osc-logging">
-                        <option value="false">Disabled (Recommended for Performance)</option>
-                        <option value="true">Enabled</option>
-                    </select>
-                    <small style="color: #666; font-size: 0.85em; margin-top: 5px; display: block;">
-                        Disabling OSC logging significantly reduces disk I/O and improves performance
-                    </small>
                 </div>
                 <button class="btn btn-primary" onclick="updateAppSettings()">Update Application Settings</button>
             </div>
@@ -165,16 +154,96 @@
             </div>
         </div>
 
-        <div class="main-content view-transition" id="Hyperate-view" style="display: none;">
+        <div class="main-content view-transition" id="arcfeedback-view" style="display: none;">
             <div class="header">
-                <h1>Hyperate intergration</h1>
-                <p>Feature Not Available (yet)</p>
+                <h1>ARC Feedback</h1>
+                <p>Coming soon - Advanced feedback system for ARC integration</p>
             </div>
             <div class="card">
                 <h3>Feature Not Available</h3>
                 <p style="color: #666; text-align: center; padding: 20px;">
-                    This feature is currently in development and will be available in a future update.
+                    This feature is planned for development and will be available in the future.
                 </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="chatbox-view" style="display: none;">
+            <div class="header">
+                <h1>Chatbox</h1>
+                <p>Coming soon - VRChat chatbox integration and management</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="vrchatapi-view" style="display: none;">
+            <div class="header">
+                <h1>VRChat API</h1>
+                <p>Coming soon - Direct VRChat API integration and management</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="Hyperate-view" style="display: none;">
+            <div class="header">
+                <h1>HypeRate Integration</h1>
+                <p>Monitor heart rate from HypeRate devices and send to VRChat</p>
+            </div>
+
+            <div class="card">
+                <h3>Connection Status</h3>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="hyperate-status"></span>
+                    <span id="hyperate-status-text">Disconnected</span>
+                </div>
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" id="hyperate-toggle-btn" onclick="toggleHyperate()">Start HypeRate</button>
+                    <button class="btn btn-secondary" id="hyperate-autostart-btn" onclick="toggleHyperateAutostart()">Auto-start: Disabled</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Current Heart Rate</h3>
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 48px; font-weight: bold; color: #e74c3c;" id="current-heartrate">--</div>
+                    <div style="font-size: 14px; color: #666; margin-top: 5px;">BPM</div>
+                    <div style="font-size: 12px; color: #999; margin-top: 10px;" id="primary-tracker-info">
+                        No primary tracker set
+                    </div>
+                    <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                        OSC Parameter: <code>/avatar/parameters/ARCOSC/Heartrate/Value</code>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Device Management</h3>
+                <div class="form-group">
+                    <label for="device-id-input">Device ID:</label>
+                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                        <input type="text" id="device-id-input" placeholder="Enter device ID" style="flex: 1;">
+                        <input type="text" id="device-name-input" placeholder="Device name (optional)" style="flex: 1;">
+                        <button class="btn btn-primary" onclick="addHyperateTracker()">Add Tracker</button>
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        Get your device ID from the HypeRate app or use "internal-testing" for testing
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <h4>Saved Trackers</h4>
+                    <div id="hyperate-trackers-list">
+                        <p style="color: #666; text-align: center; padding: 10px;">No trackers saved yet</p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -182,21 +251,6 @@
             <div class="header">
                 <h1>Logs</h1>
                 <p>View application logs and activity</p>
-            </div>
-            <div class="card osc-logging-status-box" style="margin-bottom: 10px; padding: 10px; background-color: #f8f9fa; border-left: 4px solid #17a2b8;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <strong>OSC Data Logging Status:</strong> 
-                        <span id="osc-logging-status" style="font-weight: bold;">Enabled</span>
-                        <br>
-                        <small style="color: #666;">
-                            Disable OSC logging in Settings to reduce disk I/O and improve performance
-                        </small>
-                    </div>
-                    <button class="btn btn-warning" onclick="toggleOscLoggingQuick()" id="osc-logging-toggle-btn" style="padding: 6px 12px; font-size: 12px;">
-                        Disable OSC Logging
-                    </button>
-                </div>
             </div>
             <div class="card">
                 <h3>Client Logs</h3>
@@ -208,6 +262,14 @@
             </div>
             <div class="card">
                 <h3>OSC Received</h3>
+                <div class="status-panel">
+                    <div class="status-row">
+                        <span class="status-label">OSC Received Display:</span>
+                        <span id="osc-received-display-status" class="status-value">Enabled</span>
+                    </div>
+                    <button id="osc-received-display-toggle-btn" class="btn btn-warning" onclick="toggleOscReceivedDisplay()">Disable OSC Received</button>
+                    <p class="status-description">Disable OSC received logs to prevent lockup's due to a slow CPU - Use as you need, This should only really be enabled when you need to check whats going in/out.</p>
+                </div>
                 <div class="log-container" id="osc-received-log-container">
                     No OSC data received yet<br>
                 </div>
@@ -318,6 +380,56 @@
                 <div id="blacklist-patterns" style="margin-top: 15px;">
                     <!-- Blacklist patterns will be shown here -->
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Save Warning Modal -->
+    <div class="modal-overlay" id="password-warning-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="color: #e74c3c; margin: 0;">⚠️ Security Warning</h3>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 15px; color: #2c3e50; font-weight: 500;">
+                    <strong>WARNING:</strong> Checking this box will save your password in plain text, readable by anyone who has access to your configuration files.
+                </p>
+                <p style="margin-bottom: 15px; color: #7f8c8d;">
+                    Your password will be stored unencrypted on your local machine. Only enable this feature if you understand the security implications and are not concerned about others potentially accessing your password.
+                </p>
+                <p style="margin-bottom: 0; color: #7f8c8d; font-size: 0.9em; font-style: italic;">
+                    This warning will not appear again until you uncheck and re-check the box.
+                </p>
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" id="password-warning-cancel">Cancel</button>
+                <button class="btn btn-danger" id="password-warning-confirm">I Understand, Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HypeRate Tracker Edit Modal -->
+    <div class="modal-overlay" id="tracker-edit-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="color: #2c3e50; margin: 0;">Edit HypeRate Tracker</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="edit-tracker-name" style="display: block; margin-bottom: 5px; font-weight: 600;">Tracker Name:</label>
+                    <input type="text" id="edit-tracker-name" placeholder="Enter custom name (optional)" style="width: 100%; padding: 8px; margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                    <small style="color: #666;">Leave empty to use device ID as display name</small>
+                </div>
+                
+                <div class="form-group" style="margin-top: 15px;">
+                    <label for="edit-tracker-id" style="display: block; margin-bottom: 5px; font-weight: 600;">Device ID:</label>
+                    <input type="text" id="edit-tracker-id" placeholder="Device ID" style="width: 100%; padding: 8px; margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px; background-color: #f5f5f5;" readonly>
+                    <small style="color: #666;">Device ID cannot be changed</small>
+                </div>
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" id="tracker-edit-cancel">Cancel</button>
+                <button class="btn btn-primary" id="tracker-edit-save">Save Changes</button>
             </div>
         </div>
     </div>

@@ -157,6 +157,7 @@ class WebSocketManager {
         this.reconnectAttempts = 0;
         // Clear internal event handlers to prevent memory leaks
         this.eventHandlers.clear();
+        // Emit disconnection status to any remaining listeners before clearing
         this.emit('connection-status', { status: 'disconnected' });
         return { success: true, message: 'Disconnected successfully' };
     }
