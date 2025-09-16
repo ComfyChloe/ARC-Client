@@ -11,15 +11,21 @@ class ConfigManager {
       targetOscAddress: '127.0.0.1',
       additionalOscConnections: [],
       websocketServerUrl: 'wss://avatar.comfychloe.uk:48255',
-      autoConnect: false,
       logLevel: 'info',
-      parameterBlacklist: [],
+      parameterBlacklist: [
+        '/avatar/parameters/FT*',
+        '/avatar/parameters/Viseme',
+        '/avatar/parameters/Voice',
+        '/avatar/parameters/Angular*',
+        '/avatar/parameters/Velocity*',
+        '/avatar/parameters/ARCOSC/Heartrate*',
+      ],
       appSettings: {
-        enableOscOnStartup: false,
         enableWebSocketForwarding: false,
-        enableOscLogging: true,
+        hyperateAutostart: false,
         theme: 'light',
-        lastUsername: ''
+        lastUsername: '',
+        savedPassword: ''
       },
       windowState: {
         width: 1200,
@@ -86,26 +92,24 @@ class ConfigManager {
   }
   getAppSettings() {
     return {
-      autoConnect: this.config.autoConnect || false,
       logLevel: this.config.logLevel || 'info',
-      enableOscOnStartup: this.config.appSettings?.enableOscOnStartup || false,
       enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
+      hyperateAutostart: this.config.appSettings?.hyperateAutostart || false,
       theme: this.config.appSettings?.theme || 'light',
-      lastUsername: this.config.appSettings?.lastUsername || ''
+      lastUsername: this.config.appSettings?.lastUsername || '',
+      savedPassword: this.config.appSettings?.savedPassword || ''
     };
   }
   updateAppSettings(settings) {
-    debug.info(`Updating app settings with: ${JSON.stringify(settings)}`);
-    this.config.autoConnect = settings.autoConnect ?? this.config.autoConnect;
     this.config.logLevel = settings.logLevel ?? this.config.logLevel;
     if (!this.config.appSettings) {
       this.config.appSettings = {};
     }
-    const oldOscStartup = this.config.appSettings.enableOscOnStartup;
-    this.config.appSettings.enableOscOnStartup = 
-      settings.enableOscOnStartup ?? this.config.appSettings.enableOscOnStartup;
     if (settings.enableWebSocketForwarding !== undefined) {
       this.config.appSettings.enableWebSocketForwarding = settings.enableWebSocketForwarding;
+    }
+    if (settings.hyperateAutostart !== undefined) {
+      this.config.appSettings.hyperateAutostart = settings.hyperateAutostart;
     }
     if (settings.theme !== undefined) {
       this.config.appSettings.theme = settings.theme;
@@ -113,10 +117,11 @@ class ConfigManager {
     if (settings.lastUsername !== undefined) {
       this.config.appSettings.lastUsername = settings.lastUsername;
     }
-    if (oldOscStartup !== this.config.appSettings.enableOscOnStartup) {
-      debug.info(`OSC startup setting changed: ${oldOscStartup} -> ${this.config.appSettings.enableOscOnStartup}`);
+    
+    if (settings.savedPassword !== undefined) {
+      this.config.appSettings.savedPassword = settings.savedPassword;
     }
-    debug.info(`Final app settings: ${JSON.stringify(this.getAppSettings())}`);
+    debug.info(`Final app settings`);
     const saveResult = this.saveConfig();
     debug.info(`Config save result: ${saveResult}`);
     return saveResult;
@@ -139,6 +144,18 @@ class ConfigManager {
       ...windowState
     };
     debug.info(`Window state updated: ${JSON.stringify(this.config.windowState)}`);
+    return this.saveConfig();
+  }
+  getSavedPassword() {
+    return this.config.appSettings?.savedPassword || '';
+  }
+  
+  setSavedPassword(password) {
+    if (!this.config.appSettings) {
+      this.config.appSettings = {};
+    }
+    this.config.appSettings.savedPassword = password || '';
+    debug.info(`Saved password ${password ? 'updated' : 'cleared'} in configuration`);
     return this.saveConfig();
   }
 }

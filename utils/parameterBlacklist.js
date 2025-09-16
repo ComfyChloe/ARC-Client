@@ -12,6 +12,7 @@ class ParameterBlacklist extends EventEmitter {
     if (!pattern || typeof pattern !== 'string') {
       return false;
     }
+    
     const cleanPattern = pattern.startsWith('/') ? pattern : `/${pattern}`;
     if (!this.blacklistPatterns.includes(cleanPattern)) {
       this.blacklistPatterns.push(cleanPattern);
@@ -35,10 +36,12 @@ class ParameterBlacklist extends EventEmitter {
       return false;
     }
     return this.blacklistPatterns.some(pattern => {
+      
       if (pattern.includes('*')) {
+        
         const regexPattern = pattern
-          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-          .replace(/\\\*/g, '.*');
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') 
+          .replace(/\\\*/g, '.*'); 
         
         const regex = new RegExp(`^${regexPattern}$`);
         return regex.test(address);

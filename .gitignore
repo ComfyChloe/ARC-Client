@@ -29,3 +29,4 @@ icons/
 package-lock.json
 dist/
 userdata/
+secrets.json
