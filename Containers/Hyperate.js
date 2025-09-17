@@ -293,33 +293,65 @@ class HyperateAddon {
       debug.warn('Invalid device ID provided to addTracker');
       return false;
     }
-    if (this.trackers.has(deviceId)) {
+    // Check if tracker already exists in saved trackers or active trackers
+    const savedTrackers = this.config.trackers || [];
+    if (this.trackers.has(deviceId) || savedTrackers.includes(deviceId)) {
       debug.info(`Tracker ${deviceId} already exists`);
       return true;
     }
-    const success = this.joinChannel(deviceId);
-    if (success) {
-      // Save device name if provided
-      if (deviceName && deviceName.trim()) {
-        this.trackerNames[deviceId] = deviceName.trim();
-      }
-      
-      this.saveConfig();
+    // Save device name if provided
+    if (deviceName && deviceName.trim()) {
+      this.trackerNames[deviceId] = deviceName.trim();
     }
-    return success;
+    // Add to saved trackers list
+    if (!savedTrackers.includes(deviceId)) {
+      this.config.trackers = [...savedTrackers, deviceId];
+    }
+    // Set as primary if no primary exists
+    if (!this.primaryTracker) {
+      this.primaryTracker = deviceId;
+    }
+    // Save configuration regardless of connection state
+    this.saveConfig();
+    // Try to join channel if connected, but don't fail if not connected
+    if (this.enabled && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.joinChannel(deviceId);
+      debug.info(`Added and joined HypeRate tracker: ${deviceId}`);
+    } else {
+      debug.info(`Added HypeRate tracker: ${deviceId} (will connect when HypeRate starts)`);
+    }
+    return true;
   }
   removeTracker(deviceId) {
-    if (!this.trackers.has(deviceId)) {
+    // Check if tracker exists in either active trackers or saved trackers
+    const savedTrackers = this.config.trackers || [];
+    const existsInActive = this.trackers.has(deviceId);
+    const existsInSaved = savedTrackers.includes(deviceId);
+    if (!existsInActive && !existsInSaved) {
       debug.warn(`Tracker ${deviceId} not found`);
       return false;
     }
-    const success = this.leaveChannel(deviceId);
-    if (success) {
-      // Remove device name as well
-      delete this.trackerNames[deviceId];
-      this.saveConfig();
+    // Remove from active trackers if connected
+    if (existsInActive && this.enabled && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.leaveChannel(deviceId);
+    } else if (existsInActive) {
+      // Remove from active trackers map even if not connected
+      this.trackers.delete(deviceId);
     }
-    return success;
+    // Remove from saved trackers list
+    if (existsInSaved) {
+      this.config.trackers = savedTrackers.filter(id => id !== deviceId);
+    }
+    // Remove device name
+    delete this.trackerNames[deviceId];
+    // If removing primary tracker, set new primary
+    if (this.primaryTracker === deviceId) {
+      const remainingTrackers = this.config.trackers || [];
+      this.primaryTracker = remainingTrackers.length > 0 ? remainingTrackers[0] : null;
+    }
+    this.saveConfig();
+    debug.info(`Removed HypeRate tracker: ${deviceId}`);
+    return true;
   }
   updateTrackerName(deviceId, newName) {
     if (!this.trackers.has(deviceId) && !this.config.trackers.includes(deviceId)) {
@@ -340,7 +372,8 @@ class HyperateAddon {
     return true;
   }
   setPrimaryTracker(deviceId) {
-    if (!this.trackers.has(deviceId)) {
+    const savedTrackers = this.config.trackers || [];
+    if (!this.trackers.has(deviceId) && !savedTrackers.includes(deviceId)) {
       debug.warn(`Cannot set primary tracker: ${deviceId} not found`);
       return false;
     }
