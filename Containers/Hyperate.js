@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
 const debug = require('../utils/debugger');
+const configManager = require('../utils/configManager');
 class HyperateAddon {
   constructor() {
     this.enabled = false;
@@ -15,10 +16,10 @@ class HyperateAddon {
     this.lastHeartRate = 0;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
-    this.reconnectDelay = 10000; // 10 seconds
+    this.reconnectDelay = 10000;
     this.primaryTracker = this.config.primaryTracker || null;
     this.trackerNames = this.config.trackerNames || {};
-    this.trackerStates = this.config.trackerStates || {}; // Store enabled/disabled state
+    this.trackerStates = this.config.trackerStates || {};
     debug.info('HypeRate addon initialized');
   }
   loadSecrets() {
@@ -27,7 +28,6 @@ class HyperateAddon {
       if (fs.existsSync(secretsPath)) {
         const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
         if (secrets.hyperate && secrets.hyperate.apiKey) {
-          debug.info('HypeRate API key loaded from secrets.json');
           return secrets;
         }
       }
@@ -40,11 +40,10 @@ class HyperateAddon {
   }
   loadConfig() {
     try {
-      const configPath = path.join(__dirname, '..', 'userdata', 'hyperate-config.json');
-      if (fs.existsSync(configPath)) {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        debug.info('HypeRate config loaded');
-        return config;
+      const hyperateConfig = configManager.getHyperateConfig();
+      if (hyperateConfig) {
+        debug.info('HypeRate config loaded from config manager');
+        return hyperateConfig;
       }
     } catch (error) {
       debug.logError(`Failed to load HypeRate config: ${error.message}`);
@@ -59,20 +58,14 @@ class HyperateAddon {
   }
   saveConfig() {
     try {
-      const configPath = path.join(__dirname, '..', 'userdata', 'hyperate-config.json');
-      const configDir = path.dirname(configPath);
-      
-      if (!fs.existsSync(configDir)) {
-        fs.mkdirSync(configDir, { recursive: true });
-      }
       const config = {
         primaryTracker: this.primaryTracker,
         trackers: Array.from(this.trackers.keys()),
         trackerNames: this.trackerNames,
         trackerStates: this.trackerStates
       };
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-      debug.info('HypeRate config saved');
+      configManager.updateHyperateConfig(config);
+      debug.info('HypeRate config saved via config manager');
     } catch (error) {
       debug.logError(`Failed to save HypeRate config: ${error.message}`);
     }
@@ -90,7 +83,7 @@ class HyperateAddon {
       return true;
     }
     this.enabled = true;
-    this.oscService = oscService; // OSC service is optional
+    this.oscService = oscService;
     this.connect();
     debug.info('HypeRate addon started');
     return true;
@@ -194,10 +187,9 @@ class HyperateAddon {
           ref: 0
         }));
       }
-    }, 30000); // 30 seconds as recommended
+    }, 30000);
   }
   loadSavedTrackers() {
-    // Load trackers from saved config
     if (this.config.trackers && Array.isArray(this.config.trackers)) {
       this.config.trackers.forEach(deviceId => {
         this.joinChannel(deviceId);
@@ -217,7 +209,6 @@ class HyperateAddon {
     };
     this.ws.send(JSON.stringify(message));
     this.trackers.set(deviceId, { joinedAt: Date.now(), lastHeartRate: 0 });
-    // Set as primary if no primary exists
     if (!this.primaryTracker) {
       this.primaryTracker = deviceId;
       this.saveConfig();
@@ -237,7 +228,6 @@ class HyperateAddon {
     };
     this.ws.send(JSON.stringify(message));
     this.trackers.delete(deviceId);
-    // If removing primary tracker, set new primary
     if (this.primaryTracker === deviceId) {
       const remainingTrackers = Array.from(this.trackers.keys());
       this.primaryTracker = remainingTrackers.length > 0 ? remainingTrackers[0] : null;
@@ -259,14 +249,12 @@ class HyperateAddon {
         debug.warn('Invalid heart rate data received');
         return;
       }
-      // Update tracker data
       if (this.trackers.has(deviceId)) {
         const tracker = this.trackers.get(deviceId);
         tracker.lastHeartRate = heartRate;
         tracker.lastUpdate = Date.now();
         this.trackers.set(deviceId, tracker);
       }
-      // Only update lastHeartRate and send to VRChat if this is the primary tracker
       if (deviceId === this.primaryTracker) {
         this.lastHeartRate = heartRate;
         this.sendHeartRateToVRChat(heartRate);
@@ -277,7 +265,6 @@ class HyperateAddon {
   }
   sendHeartRateToVRChat(heartRate) {
     if (!this.oscService) {
-      // OSC service is optional - just log and continue
       debug.info(`HypeRate: OSC service not available, heart rate: ${heartRate}`);
       return;
     }
@@ -303,7 +290,6 @@ class HyperateAddon {
     }
     const success = this.joinChannel(deviceId);
     if (success) {
-      // Save device name if provided
       if (deviceName && deviceName.trim()) {
         this.trackerNames[deviceId] = deviceName.trim();
       }
@@ -319,7 +305,6 @@ class HyperateAddon {
     }
     const success = this.leaveChannel(deviceId);
     if (success) {
-      // Remove device name as well
       delete this.trackerNames[deviceId];
       this.saveConfig();
     }
@@ -340,7 +325,6 @@ class HyperateAddon {
     return true;
   }
   updateTrackerState(deviceId, enabled) {
-    // Always return true since we no longer support enabling/disabling individual trackers
     return true;
   }
   setPrimaryTracker(deviceId) {
@@ -366,14 +350,12 @@ class HyperateAddon {
   }
   getTrackers() {
     const trackerList = [];
-    // Get all saved trackers (both active and inactive)
     const allTrackers = new Set([
       ...Array.from(this.trackers.keys()),
       ...(this.config.trackers || [])
     ]);
     for (const deviceId of allTrackers) {
       const trackerData = this.trackers.get(deviceId);
-      // Tracker is only active if HypeRate is enabled AND tracker exists in the active trackers map
       const isActive = this.enabled && !!trackerData;
       trackerList.push({
         deviceId,

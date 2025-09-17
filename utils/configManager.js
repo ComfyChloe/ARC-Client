@@ -25,7 +25,7 @@ class ConfigManager {
         hyperateAutostart: false,
         theme: 'light',
         lastUsername: '',
-        savedPassword: ''
+        savedPassword: '' // Store password in plain text as requested
       },
       windowState: {
         width: 1200,
@@ -34,6 +34,14 @@ class ConfigManager {
         y: undefined,
         maximized: false
       },
+      // HypeRate configuration
+      hyperate: {
+        primaryTracker: null,
+        trackers: [],
+        trackerNames: {},
+        trackerStates: {}
+      },
+      // Version for future migration support
       configVersion: 1
     };
     this.config = { ...this.defaultConfig };
@@ -77,9 +85,12 @@ class ConfigManager {
     return { ...this.config };
   }
   updateConfig(newConfig) {
+    // Merge new config with existing config
     this.config = { ...this.config, ...newConfig };
+    // Save the updated config
     return this.saveConfig();
   }
+  // Get specific config sections
   getServerConfig() {
     return {
       localOscPort: this.config.localOscPort,
@@ -101,16 +112,20 @@ class ConfigManager {
     };
   }
   updateAppSettings(settings) {
+    //debug.info(`Updating app settings with: ${JSON.stringify(settings)}`); // commented out as it shows userpassword in console.
     this.config.logLevel = settings.logLevel ?? this.config.logLevel;
     if (!this.config.appSettings) {
       this.config.appSettings = {};
     }
+    // Update WebSocket forwarding (transmit) setting
     if (settings.enableWebSocketForwarding !== undefined) {
       this.config.appSettings.enableWebSocketForwarding = settings.enableWebSocketForwarding;
     }
+    // Update HypeRate autostart setting
     if (settings.hyperateAutostart !== undefined) {
       this.config.appSettings.hyperateAutostart = settings.hyperateAutostart;
     }
+    // Update theme setting
     if (settings.theme !== undefined) {
       this.config.appSettings.theme = settings.theme;
     }
@@ -126,6 +141,7 @@ class ConfigManager {
     debug.info(`Config save result: ${saveResult}`);
     return saveResult;
   }
+  // Window state management
   getWindowState() {
     return {
       width: this.config.windowState?.width || 1200,
@@ -146,6 +162,7 @@ class ConfigManager {
     debug.info(`Window state updated: ${JSON.stringify(this.config.windowState)}`);
     return this.saveConfig();
   }
+  // Password management methods
   getSavedPassword() {
     return this.config.appSettings?.savedPassword || '';
   }
@@ -156,6 +173,31 @@ class ConfigManager {
     }
     this.config.appSettings.savedPassword = password || '';
     debug.info(`Saved password ${password ? 'updated' : 'cleared'} in configuration`);
+    return this.saveConfig();
+  }
+  
+  // HypeRate configuration methods
+  getHyperateConfig() {
+    if (!this.config.hyperate) {
+      this.config.hyperate = {
+        primaryTracker: null,
+        trackers: [],
+        trackerNames: {},
+        trackerStates: {}
+      };
+    }
+    return { ...this.config.hyperate };
+  }
+  
+  updateHyperateConfig(hyperateConfig) {
+    if (!this.config.hyperate) {
+      this.config.hyperate = {};
+    }
+    this.config.hyperate = {
+      ...this.config.hyperate,
+      ...hyperateConfig
+    };
+    debug.info('HypeRate config updated in configuration manager');
     return this.saveConfig();
   }
 }
