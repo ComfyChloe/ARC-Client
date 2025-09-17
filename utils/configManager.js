@@ -34,6 +34,13 @@ class ConfigManager {
         y: undefined,
         maximized: false
       },
+      // HypeRate configuration
+      hyperate: {
+        primaryTracker: null,
+        trackers: [],
+        trackerNames: {},
+        trackerStates: {}
+      },
       // Version for future migration support
       configVersion: 1
     };
@@ -166,6 +173,31 @@ class ConfigManager {
     }
     this.config.appSettings.savedPassword = password || '';
     debug.info(`Saved password ${password ? 'updated' : 'cleared'} in configuration`);
+    return this.saveConfig();
+  }
+  
+  // HypeRate configuration methods
+  getHyperateConfig() {
+    if (!this.config.hyperate) {
+      this.config.hyperate = {
+        primaryTracker: null,
+        trackers: [],
+        trackerNames: {},
+        trackerStates: {}
+      };
+    }
+    return { ...this.config.hyperate };
+  }
+  
+  updateHyperateConfig(hyperateConfig) {
+    if (!this.config.hyperate) {
+      this.config.hyperate = {};
+    }
+    this.config.hyperate = {
+      ...this.config.hyperate,
+      ...hyperateConfig
+    };
+    debug.info('HypeRate config updated in configuration manager');
     return this.saveConfig();
   }
 }

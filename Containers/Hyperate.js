@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const WebSocket = require('ws');
 const debug = require('../utils/debugger');
+const configManager = require('../utils/configManager');
 class HyperateAddon {
   constructor() {
     this.enabled = false;
@@ -40,11 +41,10 @@ class HyperateAddon {
   }
   loadConfig() {
     try {
-      const configPath = path.join(__dirname, '..', 'userdata', 'hyperate-config.json');
-      if (fs.existsSync(configPath)) {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        debug.info('HypeRate config loaded');
-        return config;
+      const hyperateConfig = configManager.getHyperateConfig();
+      if (hyperateConfig) {
+        debug.info('HypeRate config loaded from config manager');
+        return hyperateConfig;
       }
     } catch (error) {
       debug.logError(`Failed to load HypeRate config: ${error.message}`);
@@ -59,20 +59,16 @@ class HyperateAddon {
   }
   saveConfig() {
     try {
-      const configPath = path.join(__dirname, '..', 'userdata', 'hyperate-config.json');
-      const configDir = path.dirname(configPath);
-      
-      if (!fs.existsSync(configDir)) {
-        fs.mkdirSync(configDir, { recursive: true });
-      }
       const config = {
         primaryTracker: this.primaryTracker,
         trackers: Array.from(this.trackers.keys()),
         trackerNames: this.trackerNames,
         trackerStates: this.trackerStates
       };
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-      debug.info('HypeRate config saved');
+      
+      // Update the hyperate section in the main config
+      configManager.updateHyperateConfig(config);
+      debug.info('HypeRate config saved via config manager');
     } catch (error) {
       debug.logError(`Failed to save HypeRate config: ${error.message}`);
     }
