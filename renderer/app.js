@@ -1065,13 +1065,15 @@ function showMainView() {
     const arcfeedbackView = document.getElementById('arcfeedback-view');
     const chatboxView = document.getElementById('chatbox-view');
     const vrchatapiView = document.getElementById('vrchatapi-view');
+    const oscLeashView = document.getElementById('osc-leash-view');
+    const autoInviterView = document.getElementById('auto-inviter-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
+    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1109,13 +1111,15 @@ function showOscView() {
     const arcfeedbackView = document.getElementById('arcfeedback-view');
     const chatboxView = document.getElementById('chatbox-view');
     const vrchatapiView = document.getElementById('vrchatapi-view');
+    const oscLeashView = document.getElementById('osc-leash-view');
+    const autoInviterView = document.getElementById('auto-inviter-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
+    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1159,9 +1163,11 @@ function showSettingsView() {
     const arcfeedbackView = document.getElementById('arcfeedback-view');
     const chatboxView = document.getElementById('chatbox-view');
     const vrchatapiView = document.getElementById('vrchatapi-view');
+    const oscLeashView = document.getElementById('osc-leash-view');
+    const autoInviterView = document.getElementById('auto-inviter-view');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
+    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1199,13 +1205,15 @@ function showLogsView() {
     const arcfeedbackView = document.getElementById('arcfeedback-view');
     const chatboxView = document.getElementById('chatbox-view');
     const vrchatapiView = document.getElementById('vrchatapi-view');
+    const oscLeashView = document.getElementById('osc-leash-view');
+    const autoInviterView = document.getElementById('auto-inviter-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
+    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1260,7 +1268,7 @@ function setupExtrasDropdown() {
     });
 }
 function showVOSKView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
 
     views.forEach(view => {
@@ -1312,7 +1320,7 @@ function showVOSKView() {
 }
 function showHyperateView() {
     debugLog('showHyperateView called');
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1368,7 +1376,7 @@ function showHyperateView() {
     debugLog('Switched to Hyperate view');
 }
 function showARCFeedbackView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1418,7 +1426,7 @@ function showARCFeedbackView() {
     debugLog('Switched to ARC Feedback view');
 }
 function showChatboxView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1468,7 +1476,7 @@ function showChatboxView() {
     debugLog('Switched to Chatbox view');
 }
 function showVRChatAPIView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1516,6 +1524,108 @@ function showVRChatAPIView() {
         }
     }
     debugLog('Switched to VRChat API view');
+}
+
+function showOSCLeashView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const oscLeashView = document.getElementById('osc-leash-view');
+        oscLeashView.style.display = 'block';
+        oscLeashView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            oscLeashView.style.opacity = '1';
+        });
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set OSC Leash as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navOSCLeash = document.getElementById('nav-osc-leash');
+    if (navOSCLeash) {
+        navOSCLeash.classList.add('active');
+        navOSCLeash.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to OSC Leash view');
+}
+
+function showAutoInviterView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const autoInviterView = document.getElementById('auto-inviter-view');
+        autoInviterView.style.display = 'block';
+        autoInviterView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            autoInviterView.style.opacity = '1';
+        });
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set Auto-Inviter as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navAutoInviter = document.getElementById('nav-auto-inviter');
+    if (navAutoInviter) {
+        navAutoInviter.classList.add('active');
+        navAutoInviter.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to Auto-Inviter view');
 }
 async function updateAppSettings() {
     try {
