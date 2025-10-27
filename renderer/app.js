@@ -48,21 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     debugLog('Application initialized');
     // Initialize runtime timer
     initializeRuntimeTimer();
-    // Load blacklist when page loads
-    setTimeout(() => {
-        loadParameterBlacklist();
-    }, 500);
-    // Add Enter key support for blacklist input
-    setTimeout(() => {
-        const blacklistInput = document.getElementById('blacklist-pattern');
-        if (blacklistInput) {
-            blacklistInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    addBlacklistPattern();
-                }
-            });
-        }
-    }, 100);
+
     // Add username auto-save functionality and Enter key support
     setTimeout(() => {
         const usernameInput = document.getElementById('username');
@@ -1963,67 +1949,70 @@ function createConnectionElement(connection, index, typeLabel) {
     `;
     return connectionDiv;
 }
-// Parameter Blacklist Management
-async function loadParameterBlacklist() {
+// OSC-Query Subscription Management
+// Note: OSC-Query subscriptions allow VRChat to send only the parameters you're interested in
+// This reduces network traffic and improves performance
+
+async function loadOscQuerySubscriptions() {
     try {
-        const patterns = await window.electronAPI.getParameterBlacklist();
-        renderBlacklistPatterns(patterns);
+        // TODO: Implement OSC-Query subscription loading
+        debugLog('OSC-Query subscriptions feature coming soon', 'info');
+        renderOscQuerySubscriptions([]);
     } catch (error) {
-        debugLog(`Error loading parameter blacklist: ${error.message}`, 'error');
+        debugLog(`Error loading OSC-Query subscriptions: ${error.message}`, 'error');
     }
 }
-function renderBlacklistPatterns(patterns) {
-    const container = document.getElementById('blacklist-patterns');
-    if (patterns.length === 0) {
+
+function renderOscQuerySubscriptions(subscriptions) {
+    const container = document.getElementById('oscquery-subscriptions');
+    if (!container) return;
+
+    if (subscriptions.length === 0) {
         const isDarkTheme = document.body.classList.contains('dark-theme');
         const textColor = isDarkTheme ? '#b0b0b0' : '#666';
-        container.innerHTML = `<p style="color: ${textColor}; font-style: italic;">No patterns configured</p>`;
+        container.innerHTML = `<p style="color: ${textColor}; font-style: italic;">No subscriptions configured. OSC-Query feature coming soon.</p>`;
         return;
     }
-    const patternsHtml = patterns.map(pattern => `
+
+    const subscriptionsHtml = subscriptions.map(sub => `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
-                    background-color: #f8f9fa; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #007bff;">
-            <span style="font-family: monospace; color: #495057;">${pattern}</span>
-            <button class="btn btn-danger" onclick="removeBlacklistPattern('${pattern}')" 
+                    background-color: #f8f9fa; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #28a745;">
+            <span style="font-family: monospace; color: #495057;">${sub}</span>
+            <button class="btn btn-danger" onclick="removeOscQuerySubscription('${sub}')" 
                     style="padding: 2px 8px; font-size: 12px;">Remove</button>
         </div>
     `).join('');
 
-    container.innerHTML = patternsHtml;
+    container.innerHTML = subscriptionsHtml;
 }
-async function addBlacklistPattern() {
-    const input = document.getElementById('blacklist-pattern');
+
+async function addOscQuerySubscription() {
+    const input = document.getElementById('oscquery-subscription');
     const pattern = input.value.trim();
+
     if (!pattern) {
-        debugLog('Please enter a pattern to blacklist', 'warning');
+        debugLog('Please enter a parameter path to subscribe to', 'warning');
         return;
     }
+
     try {
-        const result = await window.electronAPI.addBlacklistPattern(pattern);
-        if (result.success) {
-            input.value = '';
-            renderBlacklistPatterns(result.patterns);
-            debugLog(`Added blacklist pattern: ${pattern}`);
-        } else {
-            debugLog(result.error || 'Failed to add pattern', 'error');
-        }
+        // TODO: Implement OSC-Query subscription addition
+        debugLog('OSC-Query subscriptions feature coming soon', 'info');
+        input.value = '';
     } catch (error) {
-        debugLog(`Error adding blacklist pattern: ${error.message}`, 'error');
+        debugLog(`Error adding OSC-Query subscription: ${error.message}`, 'error');
     }
 }
-async function removeBlacklistPattern(pattern) {
+
+async function removeOscQuerySubscription(pattern) {
     try {
-        const result = await window.electronAPI.removeBlacklistPattern(pattern);
-        if (result.success) {
-            renderBlacklistPatterns(result.patterns);
-            debugLog(`Removed blacklist pattern: ${pattern}`);
-        } else {
-            debugLog(result.error || 'Failed to remove pattern', 'error');
-        }
+        // TODO: Implement OSC-Query subscription removal
+        debugLog('OSC-Query subscriptions feature coming soon', 'info');
     } catch (error) {
-        debugLog(`Error removing blacklist pattern: ${error.message}`, 'error');
+        debugLog(`Error removing OSC-Query subscription: ${error.message}`, 'error');
     }
 }
+
 function updateOscReceivedDisplayStatus() {
     const statusElement = document.getElementById('osc-received-display-status');
     const toggleBtn = document.getElementById('osc-received-display-toggle-btn');

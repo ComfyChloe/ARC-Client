@@ -607,11 +607,13 @@ body.dark-theme .osc-sender .form-group select {
     color: #ecf0f1;
     border-color: #34495e;
 }
-body.dark-theme .blacklist-patterns div {
+
+body.dark-theme #oscquery-subscriptions div {
     background-color: #34495e !important;
     color: #ecf0f1;
-    border-left-color: #3498db !important;
+    border-left-color: #28a745 !important;
 }
+
 body.dark-theme p {
     color: #bdc3c7 !important;
 }
@@ -644,11 +646,13 @@ body.dark-theme .osc-sender .form-group select {
     color: #ecf0f1;
     border-color: #34495e;
 }
-body.dark-theme .blacklist-patterns div {
+
+body.dark-theme #oscquery-subscriptions div {
     background-color: #34495e !important;
     color: #ecf0f1;
-    border-left-color: #3498db !important;
+    border-left-color: #28a745 !important;
 }
+
 body.dark-theme .card[style*="background-color: #f8f9fa"],
 body.dark-theme div[style*="background-color: #f8f9fa"] {
     background-color: #2b2b2b !important;
@@ -683,12 +687,15 @@ body.dark-theme .osc-connection-controls {
     color: #e0e0e0 !important;
     border-color: #454545 !important;
 }
-body.dark-theme #blacklist-patterns span[style*="color: #495057"] {
+
+body.dark-theme #oscquery-subscriptions span[style*="color: #495057"] {
     color: #e0e0e0 !important;
 }
-body.dark-theme #blacklist-pattern::placeholder {
+
+body.dark-theme #oscquery-subscription::placeholder {
     color: #95a5a6 !important;
 }
+
 /* Modal styles */
 .modal-overlay {
     position: fixed;

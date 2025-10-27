@@ -10,7 +10,6 @@ app.setPath('userData', userDataPath);
 const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
-const parameterBlacklist = require('./utils/parameterBlacklist');
 const HyperateAddon = require('./Containers/Hyperate');
 // Logger will be loaded after app is ready
 let logger;
@@ -221,8 +220,7 @@ function initWebSocket() {
     });
   }
 }
-// OSC message rate limiting for debug logging
-let oscMessageCounter = 0;
+
 function initOscServer() {
   if (oscService) {
     debug.info('Stopping existing OSC service before reinitialization...');
@@ -253,72 +251,9 @@ function initOscServer() {
       debug.info('Updated HypeRate addon with OSC service');
     }
   });
-  oscService.on('messageReceived', (data) => {
-    // Reduce debug logging frequency for OSC messages to prevent excessive I/O
-    // Reset counter periodically to prevent overflow
-    oscMessageCounter++;
-    if (oscMessageCounter > 10000) { // Reset much more frequently for memory efficiency
-      oscMessageCounter = 1; // Reset to prevent integer overflow
-    }
-    // Only log every 100th message or if it's the first message
-    if (oscMessageCounter === 1 || oscMessageCounter % 100 === 0) {
-      debug.oscMessageReceived(data.address, data.value, data.type);
-    }
-    // Only forward to WebSocket if both OSC and WebSocket forwarding are enabled
-    const wsConnected = wsManager && wsManager.isConnected;
-    let wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
-    // If this message comes from an additional connection, check its individual forwarding setting
-    if (data.connectionId) {
-      const connection = serverConfig.additionalOscConnections?.find(conn => conn.id === data.connectionId);
-      if (connection && connection.type === 'incoming') {
-        // For incoming additional connections, use their individual WebSocket forwarding setting
-        wsForwardingEnabled = connection.enableWebSocketForwarding || false;
-      }
-    }
-    if (wsConnected && wsForwardingEnabled) {
-      // Check if the parameter is blacklisted before forwarding
-      if (!parameterBlacklist.isBlacklisted(data.address)) {
-        try {
-          const result = wsManager.sendOscData({
-            address: data.address,
-            value: data.value
-          });
-          debug.logWebSocketForwarding(`${data.address} = ${data.value} (result: ${JSON.stringify(result)})`);
-          // Send forwarded message to renderer for the new forwarded log
-          sendToRenderer('osc-forwarded', { 
-            address: data.address, 
-            value: data.value,
-            connectionId: data.connectionId,
-            timestamp: Date.now()
-          });
-        } catch (error) {
-          debug.error(`Failed to forward OSC to WebSocket: ${error.message}`);
-        }
-      } else {
-        debug.logWebSocketForwarding(`Parameter blacklisted - not forwarding: ${data.address}`);
-      }
-    } else {
-      if (wsConnected && !wsForwardingEnabled) {
-        if (data.connectionId) {
-          debug.logWebSocketForwarding(`Additional connection WebSocket forwarding disabled - not forwarding: ${data.address}`);
-        } else {
-          // debug.logWebSocketForwarding(`WebSocket forwarding disabled - not forwarding: ${data.address}`);
-        }
-      }
-    }
-    if (!data.connectionId && oscService) {
-      oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
-    }
-    // Only send to renderer if OSC received display is enabled to reduce IPC traffic
-    const oscReceivedDisplayEnabled = serverConfig.appSettings?.oscReceivedDisplayEnabled !== false;
-    if (oscReceivedDisplayEnabled) {
-      sendToRenderer('osc-received', { 
-        address: data.address, 
-        value: data.value,
-        connectionId: data.connectionId 
-      });
-    }
-  });
+
+  // OSC receiving functionality removed - only sending is supported
+
   oscService.on('additionalPortReady', (data) => {
     debug.logAdditionalPortReady(data);
     sendToRenderer('osc-server-status', { 
@@ -473,14 +408,7 @@ ipcMain.handle('get-osc-status', () => {
   }
   return { error: 'OSC service not initialized' };
 });
-ipcMain.handle('set-osc-forwarding', (event, enabled) => {
-  if (oscService) {
-    oscService.setForwardingEnabled(enabled);
-    debug.logOscForwardingChange(enabled);
-    return { success: true, enabled: oscService.isForwardingEnabled() };
-  }
-  return { success: false, error: 'OSC service not initialized' };
-});
+
 ipcMain.handle('get-last-username', () => {
   const appSettings = configManager.getAppSettings();
   return appSettings.lastUsername || '';
@@ -499,44 +427,35 @@ ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
 });
+
 ipcMain.handle('get-memory-stats', () => {
   const memoryUsage = process.memoryUsage();
-  const parameterCount = oscService ? Object.keys(oscService.getParameters()).length : 0;
-  const maxParameterCount = oscService ? oscService.maxParameterCount : 1000;
   return {
     rss: Math.round(memoryUsage.rss / 1024 / 1024),
     heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
     heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
     external: Math.round(memoryUsage.external / 1024 / 1024),
     arrayBuffers: Math.round(memoryUsage.arrayBuffers / 1024 / 1024),
-    parameterCount: parameterCount,
-    maxParameterCount: maxParameterCount,
     // Additional memory health indicators
-    heapPercentUsed: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
-    parameterPercentUsed: Math.round((parameterCount / maxParameterCount) * 100),
-    // Log view specific info
-    isLogsOnly: true,
-    parameterMaxAge: oscService ? Math.round(oscService.maxParameterAge / 1000) : 60 // in seconds
+    heapPercentUsed: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100)
   };
 });
+
 ipcMain.handle('force-memory-cleanup', () => {
   try {
     if (global.gc) {
       global.gc();
     }
-    if (oscService && typeof oscService.cleanupOldParameters === 'function') {
-      oscService.cleanupOldParameters();
-    }
     const memoryUsage = process.memoryUsage();
     debug.logMemoryCleanup({
-      heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
-      parameterCount: oscService ? Object.keys(oscService.getParameters()).length : 0
+      heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024)
     });
     return { success: true, message: 'Memory cleanup performed' };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
+
 ipcMain.handle('websocket-connect', async (event, credentials) => {
   try {
     initWebSocket();
@@ -639,51 +558,7 @@ ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
     return { success: false, error: error.message };
   }
 });
-// Parameter blacklist IPC handlers
-ipcMain.handle('get-parameter-blacklist', () => {
-  return parameterBlacklist.getPatterns();
-});
-ipcMain.handle('add-blacklist-pattern', (event, pattern) => {
-  try {
-    const success = parameterBlacklist.addPattern(pattern);
-    if (success) {
-      // Save to config
-      const patterns = parameterBlacklist.getPatterns();
-      configManager.updateConfig({ parameterBlacklist: patterns });
-      debug.info(`Added blacklist pattern: ${pattern}`);
-    }
-    return { success, patterns: parameterBlacklist.getPatterns() };
-  } catch (error) {
-    debug.error(`Failed to add blacklist pattern: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-});
-ipcMain.handle('remove-blacklist-pattern', (event, pattern) => {
-  try {
-    const success = parameterBlacklist.removePattern(pattern);
-    if (success) {
-      // Save to config
-      const patterns = parameterBlacklist.getPatterns();
-      configManager.updateConfig({ parameterBlacklist: patterns });
-      debug.info(`Removed blacklist pattern: ${pattern}`);
-    }
-    return { success, patterns: parameterBlacklist.getPatterns() };
-  } catch (error) {
-    debug.error(`Failed to remove blacklist pattern: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-});
-ipcMain.handle('clear-parameter-blacklist', () => {
-  try {
-    parameterBlacklist.clear();
-    configManager.updateConfig({ parameterBlacklist: [] });
-    debug.info('Cleared parameter blacklist');
-    return { success: true, patterns: [] };
-  } catch (error) {
-    debug.error(`Failed to clear blacklist: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-});
+
 ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
@@ -913,9 +788,7 @@ app.whenReady().then(() => {
   hyperateAddon = new HyperateAddon();
   // Get app settings from config
   const appSettings = configManager.getAppSettings();
-  // Load parameter blacklist from config
-  const config = configManager.getConfig();
-  parameterBlacklist.loadBlacklist(config.parameterBlacklist || []);
+  
   // Ensure serverConfig has appSettings
   if (!serverConfig.appSettings) {
     serverConfig.appSettings = appSettings || {};
@@ -961,6 +834,7 @@ function setupMemoryManagement() {
   if (global.memoryManagementInterval) {
     clearInterval(global.memoryManagementInterval);
   }
+
   // Set up periodic garbage collection and memory cleanup
   global.memoryManagementInterval = setInterval(() => {
     try {
@@ -968,10 +842,7 @@ function setupMemoryManagement() {
       if (global.gc) {
         global.gc();
       }
-      // Clean up OSC parameters if service exists
-      if (oscService && typeof oscService.cleanupOldParameters === 'function') {
-        oscService.cleanupOldParameters();
-      }
+
       // Log memory usage periodically for monitoring
       const memoryUsage = process.memoryUsage();
       const memoryMB = {
@@ -980,25 +851,15 @@ function setupMemoryManagement() {
         heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
         external: Math.round(memoryUsage.external / 1024 / 1024)
       };
-      // Log if memory usage is concerning (lowered threshold)
-      if (memoryUsage.heapUsed > 80 * 1024 * 1024) { // Over 80MB heap (reduced from 100MB)
+
+      // Log if memory usage is concerning
+      if (memoryUsage.heapUsed > 80 * 1024 * 1024) { // Over 80MB heap
         debug.warn('High memory usage detected', memoryMB);
+
         // Force additional cleanup if memory is very high
-        if (memoryUsage.heapUsed > 120 * 1024 * 1024) { // Over 120MB (reduced from 150MB)
+        if (memoryUsage.heapUsed > 120 * 1024 * 1024) { // Over 120MB
           debug.warn('Very high memory usage - forcing aggressive cleanup');
-          if (oscService) {
-            // Clear most parameters immediately, keep only last 30 for logs
-            const params = oscService.getParameters();
-            const paramEntries = Object.entries(params)
-              .filter(([_, param]) => param.timestamp)
-              .sort(([_, a], [__, b]) => b.timestamp - a.timestamp)
-              .slice(0, 30); // Keep only last 30 parameters (reduced from 50)
-            oscService.parameters = {};
-            paramEntries.forEach(([address, param]) => {
-              oscService.parameters[address] = param;
-            });
-            debug.warn(`Aggressive cleanup: reduced parameters to ${paramEntries.length} for logs view`);
-          }
+          
           // Force garbage collection multiple times
           if (global.gc) {
             global.gc();
@@ -1010,7 +871,7 @@ function setupMemoryManagement() {
     } catch (error) {
       debug.error(`Memory management error: ${error.message}`);
     }
-  }, 20000); // Reduced from 30 seconds to 20 seconds for more frequent cleanup
+  }, 20000); // 20 seconds
 }
 function cleanup(source = 'unknown') {
   if (isShuttingDown) {

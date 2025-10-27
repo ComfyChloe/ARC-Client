@@ -390,23 +390,26 @@
                 </div>
             </div>
             <div class="card">
-                <h3>Parameter Blacklist</h3>
+                <h3>OSC-Query Subscriptions</h3>
                 <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
-                    Block excessive parameters from being sent to the ARC server.
+                    Subscribe to specific parameters using OSC-Query protocol.
                 </p>
-                <p>Use * as a wildcard (e.g., /avatar/parameters/Hue/* to block all parameters after /avatar/parameters/Hue/).
-                </p><br>
-                <p>View the Logs section of the app and check what data is being sent in excess to ARC and consider blacklisting those parameters.
-                </p><br>
+                <p style="margin-bottom: 10px; color: #666; font-size: 0.9em;">
+                    VRChat will only send subscribed parameters, reducing network traffic and improving performance.
+                    Use wildcards with * (e.g., /avatar/parameters/* for all avatar parameters).
+                </p>
+                <p style="margin-bottom: 15px; color: #e74c3c; font-size: 0.85em; font-weight: 500;">
+                    ⚠️ Feature coming soon - OSC-Query implementation in progress
+                </p>
                 <div class="form-group">
-                    <label for="blacklist-pattern">Parameter Pattern</label>
+                    <label for="oscquery-subscription">Parameter Path</label>
                     <div style="display: flex; gap: 10px;">
-                        <input type="text" id="blacklist-pattern" placeholder="/avatar/parameters/FT*" style="flex: 1;">
-                        <button class="btn btn-success" onclick="addBlacklistPattern()">Add Pattern</button>
+                        <input type="text" id="oscquery-subscription" placeholder="/avatar/parameters/*" style="flex: 1;" disabled>
+                        <button class="btn btn-success" onclick="addOscQuerySubscription()" disabled>Add Subscription</button>
                     </div>
                 </div>
-                <div id="blacklist-patterns" style="margin-top: 15px;">
-                    <!-- Blacklist patterns will be shown here -->
+                <div id="oscquery-subscriptions" style="margin-top: 15px;">
+                    <!-- OSC-Query subscriptions will be shown here -->
                 </div>
             </div>
         </div>

@@ -39,11 +39,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hyperateUpdateTrackerState: (deviceId, enabled) => ipcRenderer.invoke('hyperate-update-tracker-state', deviceId, enabled),
   hyperateGetAutostart: () => ipcRenderer.invoke('hyperate-get-autostart'),
   hyperateSetAutostart: (enabled) => ipcRenderer.invoke('hyperate-set-autostart', enabled),
-  // Parameter blacklist API
-  getParameterBlacklist: () => ipcRenderer.invoke('get-parameter-blacklist'),
-  addBlacklistPattern: (pattern) => ipcRenderer.invoke('add-blacklist-pattern', pattern),
-  removeBlacklistPattern: (pattern) => ipcRenderer.invoke('remove-blacklist-pattern', pattern),
-  clearParameterBlacklist: () => ipcRenderer.invoke('clear-parameter-blacklist'),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
