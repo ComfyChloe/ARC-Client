@@ -390,26 +390,19 @@
                 </div>
             </div>
             <div class="card">
-                <h3>OSC-Query Subscriptions</h3>
+                <h3>OSC-Query Service</h3>
                 <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
-                    Subscribe to specific parameters using OSC-Query protocol.
+                    Automatic service discovery for VRChat using OSC-Query protocol.
                 </p>
                 <p style="margin-bottom: 10px; color: #666; font-size: 0.9em;">
-                    VRChat will only send subscribed parameters, reducing network traffic and improving performance.
-                    Use wildcards with * (e.g., /avatar/parameters/* for all avatar parameters).
+                    OSC-Query enables VRChat to automatically discover this client on your network,
+                    eliminating manual configuration. The service starts automatically when OSC is enabled.
                 </p>
-                <p style="margin-bottom: 15px; color: #e74c3c; font-size: 0.85em; font-weight: 500;">
-                    ⚠️ Feature coming soon - OSC-Query implementation in progress
+                <p style="margin-bottom: 15px; color: #28a745; font-size: 0.85em; font-weight: 500;">
+                    ✓ OSC-Query service is active and discoverable by VRChat
                 </p>
-                <div class="form-group">
-                    <label for="oscquery-subscription">Parameter Path</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="oscquery-subscription" placeholder="/avatar/parameters/*" style="flex: 1;" disabled>
-                        <button class="btn btn-success" onclick="addOscQuerySubscription()" disabled>Add Subscription</button>
-                    </div>
-                </div>
                 <div id="oscquery-subscriptions" style="margin-top: 15px;">
-                    <!-- OSC-Query subscriptions will be shown here -->
+                    <!-- OSC-Query status will be shown here -->
                 </div>
             </div>
         </div>

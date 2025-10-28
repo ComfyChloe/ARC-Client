@@ -181,6 +181,19 @@ function setupEventListeners() {
             debugLog(`OSC Server error: ${data.error}`, 'error');
         }
     });
+    // Handle OSC Query status updates
+    if (window.electronAPI.onOscQueryStatus) {
+        window.electronAPI.onOscQueryStatus((data) => {
+            if (data.status === 'started') {
+                debugLog(`OSC-Query service started on HTTP port ${data.httpPort}`, 'success');
+                loadOscQuerySubscriptions();
+            } else if (data.status === 'error') {
+                debugLog(`OSC-Query service error: ${data.error}`, 'error');
+            } else if (data.status === 'stopped') {
+                debugLog('OSC-Query service stopped');
+            }
+        });
+    }
     // Handle app settings event from main process
     window.electronAPI.onAppSettings((settings) => {
         console.log('Received app settings from main process:', settings);
@@ -1955,8 +1968,8 @@ function createConnectionElement(connection, index, typeLabel) {
 
 async function loadOscQuerySubscriptions() {
     try {
-        // TODO: Implement OSC-Query subscription loading
-        debugLog('OSC-Query subscriptions feature coming soon', 'info');
+        // OSC-Query is now active and running
+        debugLog('OSC-Query service is active - VRChat can discover this client automatically', 'info');
         renderOscQuerySubscriptions([]);
     } catch (error) {
         debugLog(`Error loading OSC-Query subscriptions: ${error.message}`, 'error');
@@ -1970,7 +1983,16 @@ function renderOscQuerySubscriptions(subscriptions) {
     if (subscriptions.length === 0) {
         const isDarkTheme = document.body.classList.contains('dark-theme');
         const textColor = isDarkTheme ? '#b0b0b0' : '#666';
-        container.innerHTML = `<p style="color: ${textColor}; font-style: italic;">No subscriptions configured. OSC-Query feature coming soon.</p>`;
+        const successColor = isDarkTheme ? '#4CAF50' : '#28a745';
+        container.innerHTML = `
+            <p style="color: ${successColor}; font-style: italic; font-weight: 500;">
+                ✓ OSC-Query service is running - VRChat can now discover this client automatically
+            </p>
+            <p style="color: ${textColor}; font-size: 0.9em; margin-top: 10px;">
+                The OSC-Query protocol enables automatic discovery and reduces network traffic.
+                VRChat will detect this client when both are running on the same network.
+            </p>
+        `;
         return;
     }
 
@@ -1986,31 +2008,15 @@ function renderOscQuerySubscriptions(subscriptions) {
     container.innerHTML = subscriptionsHtml;
 }
 
+// Note: Subscription management functions remain for future enhancement
+// OSC-Query automatic discovery is now active without requiring manual subscriptions
+
 async function addOscQuerySubscription() {
-    const input = document.getElementById('oscquery-subscription');
-    const pattern = input.value.trim();
-
-    if (!pattern) {
-        debugLog('Please enter a parameter path to subscribe to', 'warning');
-        return;
-    }
-
-    try {
-        // TODO: Implement OSC-Query subscription addition
-        debugLog('OSC-Query subscriptions feature coming soon', 'info');
-        input.value = '';
-    } catch (error) {
-        debugLog(`Error adding OSC-Query subscription: ${error.message}`, 'error');
-    }
+    debugLog('OSC-Query automatic discovery is active - manual subscriptions not required', 'info');
 }
 
 async function removeOscQuerySubscription(pattern) {
-    try {
-        // TODO: Implement OSC-Query subscription removal
-        debugLog('OSC-Query subscriptions feature coming soon', 'info');
-    } catch (error) {
-        debugLog(`Error removing OSC-Query subscription: ${error.message}`, 'error');
-    }
+    debugLog('OSC-Query automatic discovery is active - manual subscriptions not required', 'info');
 }
 
 function updateOscReceivedDisplayStatus() {

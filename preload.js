@@ -49,6 +49,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOscServerStatus: (callback) => {
     ipcRenderer.on('osc-server-status', (event, data) => callback(data));
   },
+  onOscQueryStatus: (callback) => {
+    ipcRenderer.on('oscquery-status', (event, data) => callback(data));
+  },
   onWebSocketStatus: (callback) => {
     ipcRenderer.on('websocket-status', (event, data) => callback(data));
   },

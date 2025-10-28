@@ -10,6 +10,7 @@ app.setPath('userData', userDataPath);
 const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
+const { OSCQueryService } = require('./utils/oscQueryService');
 const HyperateAddon = require('./Containers/Hyperate');
 // Logger will be loaded after app is ready
 let logger;
@@ -19,6 +20,7 @@ let mainWindow;
 let oscServer;
 let oscClient;
 let oscService;
+let oscQueryService;
 let oscEnabled = false;
 let wsManager;
 let serverConfig = configManager.getServerConfig();
@@ -129,6 +131,13 @@ function createWindow() {
     sendToRenderer('websocket-status', {
       status: 'disconnected'
     });
+    // Trigger OSC Query mDNS discovery after UI is fully loaded (4-6 seconds)
+    setTimeout(() => {
+      if (oscQueryService && oscQueryService.isRunning) {
+        debug.info('Triggering OSC Query mDNS discovery for VRChat awareness...');
+        oscQueryService.triggerDiscovery();
+      }
+    }, 5000); // 5 seconds after UI loads
   });
   mainWindow.webContents.on('crashed', () => {
     if (hasShownCriticalError) {
@@ -289,6 +298,43 @@ function initOscServer() {
     oscService.setAdditionalConnections(serverConfig.additionalOscConnections);
     oscService.start();
     global.oscService = oscService;
+    // Initialize OSC Query service for automatic VRChat discovery
+    initOscQueryService();
+  }
+}
+async function initOscQueryService() {
+  try {
+    if (!oscQueryService) {
+      oscQueryService = new OSCQueryService();
+    }
+    // Initialize with OSC port
+    await oscQueryService.initialize(serverConfig.localOscPort);
+    // Setup event listeners
+    oscQueryService.on('started', (info) => {
+      debug.info(`OSC Query service started on HTTP port ${info.httpPort}`);
+      sendToRenderer('oscquery-status', {
+        status: 'started',
+        httpPort: info.httpPort,
+        oscPort: info.oscPort
+      });
+    });
+    oscQueryService.on('error', (error) => {
+      debug.error(`OSC Query service error: ${error.message}`);
+      sendToRenderer('oscquery-status', {
+        status: 'error',
+        error: error.message
+      });
+    });
+    oscQueryService.on('stopped', () => {
+      debug.info('OSC Query service stopped');
+      sendToRenderer('oscquery-status', {
+        status: 'stopped'
+      });
+    });
+    // Start the service
+    await oscQueryService.start();
+  } catch (error) {
+    debug.error(`Failed to initialize OSC Query service: ${error.message}`);
   }
 }
 function initOscClient() {
@@ -614,6 +660,15 @@ ipcMain.handle('disable-osc', () => {
           } catch (error) {
             debug.error(`Error closing OSC client: ${error.message}`);
           }
+          // Stop OSC Query service
+          try {
+            if (oscQueryService) {
+              oscQueryService.stop();
+              oscQueryService = null;
+            }
+          } catch (error) {
+            debug.error(`Error stopping OSC Query service: ${error.message}`);
+          }
           sendToRenderer('osc-server-status', { 
             status: 'disabled', 
             port: serverConfig.localOscPort 
@@ -899,6 +954,16 @@ function cleanup(source = 'unknown') {
     }
   } catch (error) {
     debug.error(`Error stopping OSC service: ${error.message}`);
+  }
+  try {
+    if (oscQueryService) {
+      debug.info('Stopping OSC Query service during cleanup...');
+      oscQueryService.stop();
+      oscQueryService = null;
+      debug.info('OSC Query service cleanup completed');
+    }
+  } catch (error) {
+    debug.error(`Error stopping OSC Query service: ${error.message}`);
   }
   try {
     if (oscServer) {

@@ -1,0 +1,407 @@
+/**
+ * OSCQueryService - Manages OSC Query protocol for VRChat integration
+ * 
+ * This service provides OSC Query functionality which allows VRChat to discover
+ * the ARC-OSC Client automatically and subscribe to specific parameters.
+ * 
+ * Key Features:
+ * - Automatic service discovery via mDNS
+ * - HTTP server for OSC Query protocol
+ * - Parameter subscription management
+ * - Integration with existing OSC service
+ */
+const http = require('http');
+const { Bonjour } = require('bonjour-service');
+const EventEmitter = require('events');
+/**
+ * OSC Query Access Control enumeration
+ */
+const OSCQAccess = {
+    NO_VALUE: 0,    // Parameter has no value (container node only)
+    READONLY: 1,    // Parameter can only be read
+    WRITEONLY: 2,   // Parameter can only be written
+    READWRITE: 3,   // Parameter supports both operations
+};
+/**
+ * OSC Type enumeration
+ */
+const OSCTypeSimple = {
+    INT: "i",
+    FLOAT: "f",
+    STRING: "s",
+    BLOB: "b",
+    TRUE: "T",
+    FALSE: "F",
+};
+/**
+ * OSC Query Extensions
+ */
+const EXTENSIONS = {
+    ACCESS: true,
+    VALUE: true,
+    RANGE: true,
+    DESCRIPTION: true,
+    TAGS: true,
+    CRITICAL: true,
+    CLIPMODE: true,
+};
+class OSCQueryService extends EventEmitter {
+    constructor() {
+        super();
+        this.httpPort = null;
+        this.oscPort = null;
+        this.httpServer = null;
+        this.bonjour = null;
+        this.bonjourService = null;
+        this.isRunning = false;
+        this.appName = "ARC-OSC-Client";
+        this.subscriptions = new Set();
+        this._discoveryTimer = null;
+        // Root node for OSC parameter tree
+        this.rootNode = {
+            description: "ARC OSC Client - VRChat Integration",
+            access: OSCQAccess.NO_VALUE,
+            children: {}
+        };
+    }
+    /**
+     * Initialize the OSC Query service
+     * @param {number} oscPort - The OSC UDP port being used
+     * @param {number} httpPort - Optional HTTP port (auto-detected if not provided)
+     */
+    async initialize(oscPort, httpPort = null) {
+        this.oscPort = oscPort;
+        // Find available HTTP port if not specified
+        if (!httpPort) {
+            this.httpPort = await this._findAvailablePort(22000, 50000);
+        } else {
+            this.httpPort = httpPort;
+        }
+        console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}`);
+
+        // Setup OSC Query endpoints
+        this._setupEndpoints();
+    }
+    /**
+     * Setup default OSC Query endpoints for VRChat
+     * @private
+     */
+    _setupEndpoints() {
+        // Add avatar parameters endpoint
+        this._addNode('/avatar/parameters', {
+            description: 'VRChat Avatar Parameters',
+            access: OSCQAccess.WRITEONLY,
+        });
+        // Add chatbox input endpoint
+        this._addNode('/chatbox/input', {
+            description: 'VRChat Chatbox Input',
+            access: OSCQAccess.WRITEONLY,
+        });
+        // Add input controls endpoint
+        this._addNode('/input', {
+            description: 'VRChat Input Controls',
+            access: OSCQAccess.WRITEONLY,
+        });
+    }
+    /**
+     * Add a node to the OSC parameter tree
+     * @private
+     */
+    _addNode(path, params) {
+        const pathParts = path.split('/').filter(p => p !== '');
+        let currentNode = this.rootNode;
+        for (let i = 0; i < pathParts.length; i++) {
+            const part = pathParts[i];
+            if (!currentNode.children) {
+                currentNode.children = {};
+            }
+            if (!currentNode.children[part]) {
+                currentNode.children[part] = {
+                    name: part,
+                    children: {}
+                };
+            }
+            // If this is the last part, set the parameters
+            if (i === pathParts.length - 1) {
+                currentNode.children[part] = {
+                    ...currentNode.children[part],
+                    ...params
+                };
+            }
+            currentNode = currentNode.children[part];
+        }
+    }
+    /**
+     * Build full path for a node
+     * @private
+     */
+    _buildFullPath(pathParts) {
+        if (pathParts.length === 0) return '/';
+        return '/' + pathParts.join('/');
+    }
+    /**
+     * Serialize node to OSC Query JSON format
+     * @private
+     */
+    _serializeNode(node, fullPath) {
+        const result = {
+            FULL_PATH: fullPath || '/'
+        };
+        if (node.description) {
+            result.DESCRIPTION = node.description;
+        }
+        if (node.access !== undefined) {
+            result.ACCESS = node.access;
+        } else if (node.children && Object.keys(node.children).length > 0) {
+            result.ACCESS = OSCQAccess.NO_VALUE;
+        }
+        if (node.children && Object.keys(node.children).length > 0) {
+            result.CONTENTS = {};
+            for (const [name, child] of Object.entries(node.children)) {
+                const childPath = fullPath === '/' ? `/${name}` : `${fullPath}/${name}`;
+                result.CONTENTS[name] = this._serializeNode(child, childPath);
+            }
+        }
+        return result;
+    }
+    /**
+     * HTTP request handler
+     * @private
+     */
+    _handleRequest(req, res) {
+        if (req.method !== 'GET') {
+            res.statusCode = 400;
+            res.end();
+            return;
+        }
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const query = url.search.length > 0 ? url.search.substring(1) : null;
+        // Handle HOST_INFO query
+        if (query === 'HOST_INFO') {
+            const hostInfo = {
+                NAME: this.appName,
+                EXTENSIONS,
+                OSC_IP: '127.0.0.1',
+                OSC_PORT: this.oscPort,
+                OSC_TRANSPORT: 'UDP',
+            };
+            this._respondJson(hostInfo, res);
+            return;
+        }
+        // Navigate to requested node
+        const pathParts = url.pathname.split('/').filter(p => p !== '');
+        let node = this.rootNode;
+        let currentPath = '';
+        for (const part of pathParts) {
+            if (!node.children || !node.children[part]) {
+                res.statusCode = 404;
+                res.end();
+                return;
+            }
+            node = node.children[part];
+            currentPath += '/' + part;
+        }
+        // Return serialized node
+        const fullPath = currentPath || '/';
+        const serialized = this._serializeNode(node, fullPath);
+        this._respondJson(serialized, res);
+    }
+    /**
+     * Send JSON response
+     * @private
+     */
+    _respondJson(json, res) {
+        res.setHeader('Content-Type', 'application/json');
+        res.write(JSON.stringify(json));
+        res.end();
+    }
+    /**
+     * Find an available port
+     * @private
+     */
+    async _findAvailablePort(min, max) {
+        const net = require('net');
+        return new Promise((resolve, reject) => {
+            const tryPort = (port) => {
+                if (port > max) {
+                    reject(new Error('No available ports found'));
+                    return;
+                }
+                const server = net.createServer();
+                server.once('error', (err) => {
+                    if (err.code === 'EADDRINUSE') {
+                        tryPort(port + 1);
+                    } else {
+                        reject(err);
+                    }
+                });
+                server.once('listening', () => {
+                    server.close(() => {
+                        resolve(port);
+                    });
+                });
+                server.listen(port, '0.0.0.0');
+            };
+            const randomPort = Math.floor(Math.random() * (max - min + 1)) + min;
+            tryPort(randomPort);
+        });
+    }
+    /**
+     * Start the OSC Query service
+     */
+    async start() {
+        if (this.isRunning) {
+            console.log('[OSCQuery] Service already running');
+            return;
+        }
+        try {
+            // Create HTTP server
+            this.httpServer = http.createServer(this._handleRequest.bind(this));
+            // Start HTTP server
+            await new Promise((resolve, reject) => {
+                this.httpServer.listen(this.httpPort, '0.0.0.0', (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+            console.log(`[OSCQuery] HTTP Server started on port ${this.httpPort}`);
+            // Initialize Bonjour for mDNS
+            this.bonjour = new Bonjour();
+            // Advertise service via mDNS
+            this.bonjourService = this.bonjour.publish({
+                name: this.appName,
+                type: 'oscjson',
+                port: this.httpPort,
+                protocol: 'tcp'
+            });
+            console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}'`);
+            this.isRunning = true;
+            this.emit('started', {
+                httpPort: this.httpPort,
+                oscPort: this.oscPort
+            });
+            // IMPORTANT: trigger mDNS discovery 1 second after service start to avoid timing bottlenecks
+            if (this._discoveryTimer) {
+                clearTimeout(this._discoveryTimer);
+                this._discoveryTimer = null;
+            }
+            this._discoveryTimer = setTimeout(() => {
+                // Only trigger if still running
+                if (this.isRunning) {
+                    this.triggerDiscovery();
+                }
+            }, 1000);
+            return {
+                httpPort: this.httpPort,
+                oscPort: this.oscPort,
+                serviceName: this.appName
+            };
+        } catch (error) {
+            console.error('[OSCQuery] Failed to start service:', error);
+            this.emit('error', error);
+            throw error;
+        }
+    }
+    /**
+     * Trigger mDNS discovery to wake up VRChat
+     */
+    triggerDiscovery() {
+        if (!this.bonjour) {
+            console.log('[OSCQuery] Bonjour not initialized, skipping discovery trigger');
+            return;
+        }
+        console.log('[OSCQuery] Triggering mDNS discovery...');
+        // Perform a brief scan to wake up the network
+        const browser = this.bonjour.find({ type: 'oscjson' }, (service) => {
+            console.log(`[OSCQuery] Found service during discovery: ${service.name}`);
+        });
+        // Stop discovery after 1 second
+        setTimeout(() => {
+            try {
+                browser.stop();
+                console.log('[OSCQuery] Discovery trigger completed');
+            } catch (error) {
+                // Ignore errors during cleanup
+            }
+        }, 1000);
+    }
+    /**
+     * Stop the OSC Query service
+     */
+    async stop() {
+        if (!this.isRunning) {
+            return;
+        }
+        try {
+            console.log('[OSCQuery] Stopping service...');
+            // Clear any pending discovery timer
+            if (this._discoveryTimer) {
+                clearTimeout(this._discoveryTimer);
+                this._discoveryTimer = null;
+            }
+            // Stop HTTP server
+            if (this.httpServer) {
+                await new Promise((resolve) => {
+                    this.httpServer.close(() => resolve());
+                });
+            }
+            // Stop mDNS service
+            if (this.bonjourService) {
+                this.bonjourService.stop();
+            }
+            // Destroy Bonjour
+            if (this.bonjour) {
+                this.bonjour.destroy();
+            }
+            this.isRunning = false;
+            this.emit('stopped');
+            console.log('[OSCQuery] Service stopped');
+        } catch (error) {
+            console.error('[OSCQuery] Error stopping service:', error);
+            this.emit('error', error);
+        }
+    }
+    /**
+     * Add a subscription path
+     */
+    addSubscription(path) {
+        this.subscriptions.add(path);
+        console.log(`[OSCQuery] Added subscription: ${path}`);
+        this.emit('subscription-added', path);
+    }
+    /**
+     * Remove a subscription path
+     */
+    removeSubscription(path) {
+        this.subscriptions.delete(path);
+        console.log(`[OSCQuery] Removed subscription: ${path}`);
+        this.emit('subscription-removed', path);
+    }
+    /**
+     * Get all current subscriptions
+     */
+    getSubscriptions() {
+        return Array.from(this.subscriptions);
+    }
+    /**
+     * Clear all subscriptions
+     */
+    clearSubscriptions() {
+        this.subscriptions.clear();
+        console.log('[OSCQuery] Cleared all subscriptions');
+        this.emit('subscriptions-cleared');
+    }
+    /**
+     * Get service status
+     */
+    getStatus() {
+        return {
+            isRunning: this.isRunning,
+            httpPort: this.httpPort,
+            oscPort: this.oscPort,
+            serviceName: this.appName,
+            subscriptions: this.getSubscriptions()
+        };
+    }
+}
+module.exports = { OSCQueryService, OSCQAccess, OSCTypeSimple };
