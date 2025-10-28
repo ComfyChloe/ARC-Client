@@ -16,10 +16,10 @@ class HyperateAddon {
     this.lastHeartRate = 0;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
-    this.reconnectDelay = 10000;
+    this.reconnectDelay = 10000; // 10 seconds
     this.primaryTracker = this.config.primaryTracker || null;
     this.trackerNames = this.config.trackerNames || {};
-    this.trackerStates = this.config.trackerStates || {};
+    this.trackerStates = this.config.trackerStates || {}; // Store enabled/disabled state
     debug.info('HypeRate addon initialized');
   }
   loadSecrets() {
@@ -28,6 +28,7 @@ class HyperateAddon {
       if (fs.existsSync(secretsPath)) {
         const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'));
         if (secrets.hyperate && secrets.hyperate.apiKey) {
+          debug.info('HypeRate API key loaded from secrets.json');
           return secrets;
         }
       }
@@ -64,6 +65,8 @@ class HyperateAddon {
         trackerNames: this.trackerNames,
         trackerStates: this.trackerStates
       };
+      
+      // Update the hyperate section in the main config
       configManager.updateHyperateConfig(config);
       debug.info('HypeRate config saved via config manager');
     } catch (error) {
@@ -83,7 +86,7 @@ class HyperateAddon {
       return true;
     }
     this.enabled = true;
-    this.oscService = oscService;
+    this.oscService = oscService; // OSC service is optional
     this.connect();
     debug.info('HypeRate addon started');
     return true;
@@ -187,9 +190,10 @@ class HyperateAddon {
           ref: 0
         }));
       }
-    }, 30000);
+    }, 30000); // 30 seconds as recommended
   }
   loadSavedTrackers() {
+    // Load trackers from saved config
     if (this.config.trackers && Array.isArray(this.config.trackers)) {
       this.config.trackers.forEach(deviceId => {
         this.joinChannel(deviceId);
@@ -209,6 +213,7 @@ class HyperateAddon {
     };
     this.ws.send(JSON.stringify(message));
     this.trackers.set(deviceId, { joinedAt: Date.now(), lastHeartRate: 0 });
+    // Set as primary if no primary exists
     if (!this.primaryTracker) {
       this.primaryTracker = deviceId;
       this.saveConfig();
@@ -228,6 +233,7 @@ class HyperateAddon {
     };
     this.ws.send(JSON.stringify(message));
     this.trackers.delete(deviceId);
+    // If removing primary tracker, set new primary
     if (this.primaryTracker === deviceId) {
       const remainingTrackers = Array.from(this.trackers.keys());
       this.primaryTracker = remainingTrackers.length > 0 ? remainingTrackers[0] : null;
@@ -249,12 +255,14 @@ class HyperateAddon {
         debug.warn('Invalid heart rate data received');
         return;
       }
+      // Update tracker data
       if (this.trackers.has(deviceId)) {
         const tracker = this.trackers.get(deviceId);
         tracker.lastHeartRate = heartRate;
         tracker.lastUpdate = Date.now();
         this.trackers.set(deviceId, tracker);
       }
+      // Only update lastHeartRate and send to VRChat if this is the primary tracker
       if (deviceId === this.primaryTracker) {
         this.lastHeartRate = heartRate;
         this.sendHeartRateToVRChat(heartRate);
@@ -265,6 +273,7 @@ class HyperateAddon {
   }
   sendHeartRateToVRChat(heartRate) {
     if (!this.oscService) {
+      // OSC service is optional - just log and continue
       debug.info(`HypeRate: OSC service not available, heart rate: ${heartRate}`);
       return;
     }
@@ -284,31 +293,65 @@ class HyperateAddon {
       debug.warn('Invalid device ID provided to addTracker');
       return false;
     }
-    if (this.trackers.has(deviceId)) {
+    // Check if tracker already exists in saved trackers or active trackers
+    const savedTrackers = this.config.trackers || [];
+    if (this.trackers.has(deviceId) || savedTrackers.includes(deviceId)) {
       debug.info(`Tracker ${deviceId} already exists`);
       return true;
     }
-    const success = this.joinChannel(deviceId);
-    if (success) {
-      if (deviceName && deviceName.trim()) {
-        this.trackerNames[deviceId] = deviceName.trim();
-      }
-      
-      this.saveConfig();
+    // Save device name if provided
+    if (deviceName && deviceName.trim()) {
+      this.trackerNames[deviceId] = deviceName.trim();
     }
-    return success;
+    // Add to saved trackers list
+    if (!savedTrackers.includes(deviceId)) {
+      this.config.trackers = [...savedTrackers, deviceId];
+    }
+    // Set as primary if no primary exists
+    if (!this.primaryTracker) {
+      this.primaryTracker = deviceId;
+    }
+    // Save configuration regardless of connection state
+    this.saveConfig();
+    // Try to join channel if connected, but don't fail if not connected
+    if (this.enabled && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.joinChannel(deviceId);
+      debug.info(`Added and joined HypeRate tracker: ${deviceId}`);
+    } else {
+      debug.info(`Added HypeRate tracker: ${deviceId} (will connect when HypeRate starts)`);
+    }
+    return true;
   }
   removeTracker(deviceId) {
-    if (!this.trackers.has(deviceId)) {
+    // Check if tracker exists in either active trackers or saved trackers
+    const savedTrackers = this.config.trackers || [];
+    const existsInActive = this.trackers.has(deviceId);
+    const existsInSaved = savedTrackers.includes(deviceId);
+    if (!existsInActive && !existsInSaved) {
       debug.warn(`Tracker ${deviceId} not found`);
       return false;
     }
-    const success = this.leaveChannel(deviceId);
-    if (success) {
-      delete this.trackerNames[deviceId];
-      this.saveConfig();
+    // Remove from active trackers if connected
+    if (existsInActive && this.enabled && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.leaveChannel(deviceId);
+    } else if (existsInActive) {
+      // Remove from active trackers map even if not connected
+      this.trackers.delete(deviceId);
     }
-    return success;
+    // Remove from saved trackers list
+    if (existsInSaved) {
+      this.config.trackers = savedTrackers.filter(id => id !== deviceId);
+    }
+    // Remove device name
+    delete this.trackerNames[deviceId];
+    // If removing primary tracker, set new primary
+    if (this.primaryTracker === deviceId) {
+      const remainingTrackers = this.config.trackers || [];
+      this.primaryTracker = remainingTrackers.length > 0 ? remainingTrackers[0] : null;
+    }
+    this.saveConfig();
+    debug.info(`Removed HypeRate tracker: ${deviceId}`);
+    return true;
   }
   updateTrackerName(deviceId, newName) {
     if (!this.trackers.has(deviceId) && !this.config.trackers.includes(deviceId)) {
@@ -325,10 +368,12 @@ class HyperateAddon {
     return true;
   }
   updateTrackerState(deviceId, enabled) {
+    // Always return true since we no longer support enabling/disabling individual trackers
     return true;
   }
   setPrimaryTracker(deviceId) {
-    if (!this.trackers.has(deviceId)) {
+    const savedTrackers = this.config.trackers || [];
+    if (!this.trackers.has(deviceId) && !savedTrackers.includes(deviceId)) {
       debug.warn(`Cannot set primary tracker: ${deviceId} not found`);
       return false;
     }
@@ -350,12 +395,14 @@ class HyperateAddon {
   }
   getTrackers() {
     const trackerList = [];
+    // Get all saved trackers (both active and inactive)
     const allTrackers = new Set([
       ...Array.from(this.trackers.keys()),
       ...(this.config.trackers || [])
     ]);
     for (const deviceId of allTrackers) {
       const trackerData = this.trackers.get(deviceId);
+      // Tracker is only active if HypeRate is enabled AND tracker exists in the active trackers map
       const isActive = this.enabled && !!trackerData;
       trackerList.push({
         deviceId,

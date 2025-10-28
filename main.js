@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-
+// Set userdata path and ensure it exists
 const userDataPath = path.join(process.cwd(), 'userdata');
 if (!fs.existsSync(userDataPath)) {
     fs.mkdirSync(userDataPath, { recursive: true });
@@ -10,9 +10,9 @@ app.setPath('userData', userDataPath);
 const osc = require('osc');
 const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
-const parameterBlacklist = require('./utils/parameterBlacklist');
+const { OSCQueryService } = require('./utils/oscQueryService');
 const HyperateAddon = require('./Containers/Hyperate');
-
+// Logger will be loaded after app is ready
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
 const configManager = require('./utils/configManager');
@@ -20,11 +20,12 @@ let mainWindow;
 let oscServer;
 let oscClient;
 let oscService;
+let oscQueryService;
 let oscEnabled = false;
 let wsManager;
 let serverConfig = configManager.getServerConfig();
 let hyperateAddon;
-
+// On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
 if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
   serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
   debug.info('Custom WebSocket URL detected on startup, reset to live server');
@@ -46,9 +47,9 @@ function createWindow() {
     },
     icon: path.join(__dirname, 'assets', 'icon.png'),
     title: 'ARC-OSC Client',
-    show: false 
+    show: false // Start hidden so we can control when it appears
   })
-  
+  // Restore maximized state if it was maximized
   if (windowState.maximized) {
     mainWindow.maximize();
   }
@@ -63,15 +64,15 @@ function createWindow() {
   } else {
     mainWindow.loadFile('renderer/index.html');
   }
-  
+  // Save window state on resize and move with throttling to prevent excessive saves
   let saveWindowStateTimeout;
   const saveWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    
+    // Clear any existing timeout
     if (saveWindowStateTimeout) {
       clearTimeout(saveWindowStateTimeout);
     }
-    
+    // Set a new timeout to save after 100ms delay
     saveWindowStateTimeout = setTimeout(() => {
       const bounds = mainWindow.getBounds();
       const isMaximized = mainWindow.isMaximized();
@@ -85,14 +86,14 @@ function createWindow() {
       saveWindowStateTimeout = undefined;
     }, 100);
   };
-  
+  // Store timeout globally for cleanup
   global.saveWindowStateTimeout = saveWindowStateTimeout;
   mainWindow.on('resize', saveWindowState);
   mainWindow.on('move', saveWindowState);
   mainWindow.on('maximize', saveWindowState);
   mainWindow.on('unmaximize', saveWindowState);
   mainWindow.on('close', () => {
-    
+    // Save final window state immediately when closing
     if (saveWindowStateTimeout) {
       clearTimeout(saveWindowStateTimeout);
       saveWindowStateTimeout = undefined;
@@ -113,7 +114,7 @@ function createWindow() {
     mainWindow = null;
   });
   mainWindow.webContents.once('did-finish-load', () => {
-    
+    // Send the current app settings to the renderer
     const appSettings = configManager.getAppSettings();
     sendToRenderer('app-settings', appSettings);
     if (oscEnabled && oscService) {
@@ -130,6 +131,13 @@ function createWindow() {
     sendToRenderer('websocket-status', {
       status: 'disconnected'
     });
+    // Trigger OSC Query mDNS discovery after UI is fully loaded (4-6 seconds)
+    setTimeout(() => {
+      if (oscQueryService && oscQueryService.isRunning) {
+        debug.info('Triggering OSC Query mDNS discovery for VRChat awareness...');
+        oscQueryService.triggerDiscovery();
+      }
+    }, 5000); // 5 seconds after UI loads
   });
   mainWindow.webContents.on('crashed', () => {
     if (hasShownCriticalError) {
@@ -172,23 +180,23 @@ function initWebSocket() {
     wsManager.on('authenticated', (data) => {
       sendToRenderer('websocket-authenticated', data);
       debug.logWebSocketConnection(`Authenticated as ${data.username} in room ${data.room}`);
-      
+      // Always ready to forward when connected
       debug.logWebSocketForwarding(`Ready to forward OSC data to server`);
     });
     wsManager.on('osc-data', (data) => {
       sendToRenderer('websocket-osc-data', data);
-      
-      
+      // debug.logWebSocketConnection(`Received OSC data: ${data.address} = ${data.value}`);
+      // Check if WebSocket forwarding is enabled before processing data from server
       const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
       if (!wsForwardingEnabled) {
         debug.logWebSocketForwarding(`WebSocket forwarding disabled - ignoring incoming OSC data: ${data.address} = ${data.value}`);
         return;
       }
-      
+      // Forward received OSC data to VRChat via normal OSC
       if (oscService && oscService.getStatus().isListening) {
         try {
-          
-          let type = 'f'; 
+          // Determine the type based on the value
+          let type = 'f'; // default to float
           if (typeof data.value === 'boolean') {
             type = 'bool';
           } else if (typeof data.value === 'string') {
@@ -198,7 +206,7 @@ function initWebSocket() {
           }
           const success = oscService.sendMessage(data.address, data.value, type);
           if (success) {
-            
+            // debug.logWebSocketConnection(`Forwarded WebSocket OSC to VRChat: ${data.address} = ${data.value} (${type})`);
           }
         } catch (error) {
           debug.error(`Failed to forward WebSocket OSC to VRChat: ${error.message}`);
@@ -222,7 +230,6 @@ function initWebSocket() {
   }
 }
 
-let oscMessageCounter = 0;
 function initOscServer() {
   if (oscService) {
     debug.info('Stopping existing OSC service before reinitialization...');
@@ -247,78 +254,15 @@ function initOscServer() {
       port: config.localPort 
     });
     debug.logAdditionalConnections(serverConfig.additionalOscConnections);
-    
+    // Update HypeRate addon with OSC service if it's running
     if (hyperateAddon && hyperateAddon.isEnabled()) {
       hyperateAddon.oscService = oscService;
       debug.info('Updated HypeRate addon with OSC service');
     }
   });
-  oscService.on('messageReceived', (data) => {
-    
-    
-    oscMessageCounter++;
-    if (oscMessageCounter > 10000) { 
-      oscMessageCounter = 1; 
-    }
-    
-    if (oscMessageCounter === 1 || oscMessageCounter % 100 === 0) {
-      debug.oscMessageReceived(data.address, data.value, data.type);
-    }
-    
-    const wsConnected = wsManager && wsManager.isConnected;
-    let wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
-    
-    if (data.connectionId) {
-      const connection = serverConfig.additionalOscConnections?.find(conn => conn.id === data.connectionId);
-      if (connection && connection.type === 'incoming') {
-        
-        wsForwardingEnabled = connection.enableWebSocketForwarding || false;
-      }
-    }
-    if (wsConnected && wsForwardingEnabled) {
-      
-      if (!parameterBlacklist.isBlacklisted(data.address)) {
-        try {
-          const result = wsManager.sendOscData({
-            address: data.address,
-            value: data.value
-          });
-          debug.logWebSocketForwarding(`${data.address} = ${data.value} (result: ${JSON.stringify(result)})`);
-          
-          sendToRenderer('osc-forwarded', { 
-            address: data.address, 
-            value: data.value,
-            connectionId: data.connectionId,
-            timestamp: Date.now()
-          });
-        } catch (error) {
-          debug.error(`Failed to forward OSC to WebSocket: ${error.message}`);
-        }
-      } else {
-        debug.logWebSocketForwarding(`Parameter blacklisted - not forwarding: ${data.address}`);
-      }
-    } else {
-      if (wsConnected && !wsForwardingEnabled) {
-        if (data.connectionId) {
-          debug.logWebSocketForwarding(`Additional connection WebSocket forwarding disabled - not forwarding: ${data.address}`);
-        } else {
-          
-        }
-      }
-    }
-    if (!data.connectionId && oscService) {
-      oscService.broadcastToAllOutgoing(data.address, data.value, data.type);
-    }
-    
-    const oscReceivedDisplayEnabled = serverConfig.appSettings?.oscReceivedDisplayEnabled !== false;
-    if (oscReceivedDisplayEnabled) {
-      sendToRenderer('osc-received', { 
-        address: data.address, 
-        value: data.value,
-        connectionId: data.connectionId 
-      });
-    }
-  });
+
+  // OSC receiving functionality removed - only sending is supported
+
   oscService.on('additionalPortReady', (data) => {
     debug.logAdditionalPortReady(data);
     sendToRenderer('osc-server-status', { 
@@ -345,7 +289,7 @@ function initOscServer() {
     const status = logger ? logger.handleOscError(err) : { status: 'error', error: err.message };
     sendToRenderer('osc-server-status', status);
   });
-  
+  // Initialize and start the service
   if (oscService.initialize(
     serverConfig.localOscPort, 
     serverConfig.targetOscPort, 
@@ -354,6 +298,43 @@ function initOscServer() {
     oscService.setAdditionalConnections(serverConfig.additionalOscConnections);
     oscService.start();
     global.oscService = oscService;
+    // Initialize OSC Query service for automatic VRChat discovery
+    initOscQueryService();
+  }
+}
+async function initOscQueryService() {
+  try {
+    if (!oscQueryService) {
+      oscQueryService = new OSCQueryService();
+    }
+    // Initialize with OSC port
+    await oscQueryService.initialize(serverConfig.localOscPort);
+    // Setup event listeners
+    oscQueryService.on('started', (info) => {
+      debug.info(`OSC Query service started on HTTP port ${info.httpPort}`);
+      sendToRenderer('oscquery-status', {
+        status: 'started',
+        httpPort: info.httpPort,
+        oscPort: info.oscPort
+      });
+    });
+    oscQueryService.on('error', (error) => {
+      debug.error(`OSC Query service error: ${error.message}`);
+      sendToRenderer('oscquery-status', {
+        status: 'error',
+        error: error.message
+      });
+    });
+    oscQueryService.on('stopped', () => {
+      debug.info('OSC Query service stopped');
+      sendToRenderer('oscquery-status', {
+        status: 'stopped'
+      });
+    });
+    // Start the service
+    await oscQueryService.start();
+  } catch (error) {
+    debug.error(`Failed to initialize OSC Query service: ${error.message}`);
   }
 }
 function initOscClient() {
@@ -384,26 +365,26 @@ ipcMain.handle('get-server-config', () => {
 ipcMain.handle('set-config', (event, newConfig) => {
   const oldConfig = { ...serverConfig };
   serverConfig = { ...serverConfig, ...newConfig };
-  
+  // Log changes to additional connections
   const oldConnections = oldConfig.additionalOscConnections || [];
   const newConnections = newConfig.additionalOscConnections || [];
   if (oldConnections.length !== newConnections.length) {
     debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
   debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
-  
+  // Check if this is a custom/dev URL that shouldn't persist
   const isCustomUrl = newConfig.websocketServerUrl && newConfig.websocketServerUrl.includes('127.0.0.1');
-  
+  // Save the updated config to file (excluding custom URLs)
   if (!isCustomUrl) {
     configManager.updateConfig(serverConfig);
   } else {
-    
+    // For custom URLs, save everything except the websocket URL
     const configToSave = { ...serverConfig };
     delete configToSave.websocketServerUrl;
     configManager.updateConfig(configToSave);
     debug.info('Custom/dev WebSocket URL not persisted to config file');
   }
-  
+  // Update WebSocket configuration if URL changed
   if (newConfig.websocketServerUrl && oldConfig.websocketServerUrl !== newConfig.websocketServerUrl) {
     debug.info(`WebSocket URL changed from ${oldConfig.websocketServerUrl} to ${newConfig.websocketServerUrl}`);
     if (wsManager) {
@@ -412,25 +393,25 @@ ipcMain.handle('set-config', (event, newConfig) => {
         debug.info('Disconnecting WebSocket to apply new URL...');
         wsManager.disconnect();
       }
-      
+      // Update the WebSocket manager's configuration
       wsManager.setConfig({
         serverUrl: serverConfig.websocketServerUrl
       });
       debug.info(`WebSocket configuration updated to: ${serverConfig.websocketServerUrl}`);
     }
   }
-  
+  // Check if only additional connections changed, if so, just update them
   const portsChanged = (oldConfig.localOscPort !== serverConfig.localOscPort) ||
                        (oldConfig.targetOscPort !== serverConfig.targetOscPort) ||
                        (oldConfig.targetOscAddress !== serverConfig.targetOscAddress);
   const additionalConnectionsChanged = JSON.stringify(oldConfig.additionalOscConnections || []) !== 
                                        JSON.stringify(serverConfig.additionalOscConnections || []);
   if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
-    
+    // Only additional connections changed, update them efficiently
     debug.info('Only additional connections changed, updating without restarting OSC service');
     oscService.updateAdditionalConnections(serverConfig.additionalOscConnections);
   } else if (portsChanged || !oscEnabled) {
-    
+    // Ports changed or OSC service needs full restart
     debug.info('OSC configuration changed, restarting OSC service');
     initOscServer();
     initOscClient();
@@ -443,7 +424,7 @@ ipcMain.handle('get-app-settings', () => {
   return configManager.getAppSettings();
 });
 ipcMain.handle('set-app-settings', (event, newSettings) => {
-  
+  // Update the settings in the config manager
   const result = configManager.updateAppSettings(newSettings);
   debug.info(`App settings updated`);
   if (!result) {
@@ -473,14 +454,7 @@ ipcMain.handle('get-osc-status', () => {
   }
   return { error: 'OSC service not initialized' };
 });
-ipcMain.handle('set-osc-forwarding', (event, enabled) => {
-  if (oscService) {
-    oscService.setForwardingEnabled(enabled);
-    debug.logOscForwardingChange(enabled);
-    return { success: true, enabled: oscService.isForwardingEnabled() };
-  }
-  return { success: false, error: 'OSC service not initialized' };
-});
+
 ipcMain.handle('get-last-username', () => {
   const appSettings = configManager.getAppSettings();
   return appSettings.lastUsername || '';
@@ -499,44 +473,35 @@ ipcMain.handle('clear-debug-logs', () => {
   debug.clearOldLogs();
   debug.info('Debug logs cleared by user request');
 });
+
 ipcMain.handle('get-memory-stats', () => {
   const memoryUsage = process.memoryUsage();
-  const parameterCount = oscService ? Object.keys(oscService.getParameters()).length : 0;
-  const maxParameterCount = oscService ? oscService.maxParameterCount : 1000;
   return {
     rss: Math.round(memoryUsage.rss / 1024 / 1024),
     heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
     heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
     external: Math.round(memoryUsage.external / 1024 / 1024),
     arrayBuffers: Math.round(memoryUsage.arrayBuffers / 1024 / 1024),
-    parameterCount: parameterCount,
-    maxParameterCount: maxParameterCount,
-    
-    heapPercentUsed: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
-    parameterPercentUsed: Math.round((parameterCount / maxParameterCount) * 100),
-    
-    isLogsOnly: true,
-    parameterMaxAge: oscService ? Math.round(oscService.maxParameterAge / 1000) : 60 
+    // Additional memory health indicators
+    heapPercentUsed: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100)
   };
 });
+
 ipcMain.handle('force-memory-cleanup', () => {
   try {
     if (global.gc) {
       global.gc();
     }
-    if (oscService && typeof oscService.cleanupOldParameters === 'function') {
-      oscService.cleanupOldParameters();
-    }
     const memoryUsage = process.memoryUsage();
     debug.logMemoryCleanup({
-      heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
-      parameterCount: oscService ? Object.keys(oscService.getParameters()).length : 0
+      heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024)
     });
     return { success: true, message: 'Memory cleanup performed' };
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
+
 ipcMain.handle('websocket-connect', async (event, credentials) => {
   try {
     initWebSocket();
@@ -569,7 +534,7 @@ ipcMain.handle('websocket-send-osc', (event, data) => {
     return { success: false, error: error.message };
   }
 });
-
+// Add test method
 ipcMain.handle('websocket-test-send', () => {
   try {
     if (wsManager && wsManager.isConnected) {
@@ -624,7 +589,7 @@ ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
     const newSettings = { enableWebSocketForwarding: enabled };
     const result = configManager.updateAppSettings(newSettings);
     if (result) {
-      
+      // Ensure appSettings exists
       if (!serverConfig.appSettings) {
         serverConfig.appSettings = {};
       }
@@ -640,55 +605,11 @@ ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
   }
 });
 
-ipcMain.handle('get-parameter-blacklist', () => {
-  return parameterBlacklist.getPatterns();
-});
-ipcMain.handle('add-blacklist-pattern', (event, pattern) => {
-  try {
-    const success = parameterBlacklist.addPattern(pattern);
-    if (success) {
-      
-      const patterns = parameterBlacklist.getPatterns();
-      configManager.updateConfig({ parameterBlacklist: patterns });
-      debug.info(`Added blacklist pattern: ${pattern}`);
-    }
-    return { success, patterns: parameterBlacklist.getPatterns() };
-  } catch (error) {
-    debug.error(`Failed to add blacklist pattern: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-});
-ipcMain.handle('remove-blacklist-pattern', (event, pattern) => {
-  try {
-    const success = parameterBlacklist.removePattern(pattern);
-    if (success) {
-      
-      const patterns = parameterBlacklist.getPatterns();
-      configManager.updateConfig({ parameterBlacklist: patterns });
-      debug.info(`Removed blacklist pattern: ${pattern}`);
-    }
-    return { success, patterns: parameterBlacklist.getPatterns() };
-  } catch (error) {
-    debug.error(`Failed to remove blacklist pattern: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-});
-ipcMain.handle('clear-parameter-blacklist', () => {
-  try {
-    parameterBlacklist.clear();
-    configManager.updateConfig({ parameterBlacklist: [] });
-    debug.info('Cleared parameter blacklist');
-    return { success: true, patterns: [] };
-  } catch (error) {
-    debug.error(`Failed to clear blacklist: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-});
 ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
   debug.info('OSC explicitly enabled by user');
-  
+  // Ensure any existing service is properly cleaned up before creating new one
   if (oscService) {
     debug.info('Cleaning up existing OSC service before enabling...');
     try {
@@ -699,7 +620,7 @@ ipcMain.handle('enable-osc', () => {
       debug.error(`Error cleaning up existing OSC service: ${error.message}`);
     }
   }
-  
+  // Force initialization of OSC service
   initOscServer();
   initOscClient();
   return { success: true, message: 'OSC enabled' };
@@ -707,12 +628,12 @@ ipcMain.handle('enable-osc', () => {
 ipcMain.handle('disable-osc', () => {
   oscEnabled = false;
   debug.logOscServerStateChange(false);
-  
+  // More controlled shutdown sequence
   return new Promise((resolve) => {
     try {
       if (oscService) {
         debug.info('Stopping OSC service and all additional connections...');
-        
+        // Give the service a moment to complete any pending operations
         setTimeout(() => {
           try {
             oscService.stop();
@@ -722,7 +643,7 @@ ipcMain.handle('disable-osc', () => {
           } catch (error) {
             debug.error(`Error stopping OSC service: ${error.message}`);
           }
-          
+          // Clean up other OSC components
           try {
             if (oscServer) {
               oscServer.close();
@@ -738,6 +659,15 @@ ipcMain.handle('disable-osc', () => {
             }
           } catch (error) {
             debug.error(`Error closing OSC client: ${error.message}`);
+          }
+          // Stop OSC Query service
+          try {
+            if (oscQueryService) {
+              oscQueryService.stop();
+              oscQueryService = null;
+            }
+          } catch (error) {
+            debug.error(`Error stopping OSC Query service: ${error.message}`);
           }
           sendToRenderer('osc-server-status', { 
             status: 'disabled', 
@@ -779,7 +709,7 @@ ipcMain.handle('set-saved-password', (event, password) => {
     return { success: false, error: error.message };
   }
 });
-
+// HypeRate addon IPC handlers
 ipcMain.handle('hyperate-get-status', () => {
   if (hyperateAddon) {
     return hyperateAddon.getStatus();
@@ -791,7 +721,7 @@ ipcMain.handle('hyperate-start', () => {
     if (!hyperateAddon) {
       return { success: false, error: 'HypeRate addon not initialized' };
     }
-    
+    // Pass OSC service if available, but don't require it
     const result = hyperateAddon.start(oscService);
     return { success: result };
   } catch (error) {
@@ -881,7 +811,7 @@ ipcMain.handle('hyperate-set-primary', (event, deviceId) => {
     return { success: false, error: error.message };
   }
 });
-
+// HypeRate auto-start IPC handlers
 ipcMain.handle('hyperate-get-autostart', () => {
   try {
     const appSettings = configManager.getAppSettings();
@@ -907,29 +837,27 @@ ipcMain.handle('hyperate-set-autostart', (event, enabled) => {
 });
 app.whenReady().then(() => {
   debug.logAppStartup();
-  
+  // Load logger after app is ready
   logger = require('./utils/logger');
-  
+  // Initialize HypeRate addon
   hyperateAddon = new HyperateAddon();
-  
+  // Get app settings from config
   const appSettings = configManager.getAppSettings();
   
-  const config = configManager.getConfig();
-  parameterBlacklist.loadBlacklist(config.parameterBlacklist || []);
-  
+  // Ensure serverConfig has appSettings
   if (!serverConfig.appSettings) {
     serverConfig.appSettings = appSettings || {};
   } else {
-    
+    // Merge app settings to ensure all settings are available
     serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
-  
+  // Initialize OSC server
   oscEnabled = false;
-  
+  // Important: Window before initializing OSC service
   createWindow();
-  
+  // Set up periodic memory management
   setupMemoryManagement();
-  
+  // Initialize OSC after a short delay to ensure the window is ready
   setTimeout(() => {
     if (oscEnabled) {
       debug.info('Starting OSC service based on saved config...');
@@ -941,15 +869,15 @@ app.whenReady().then(() => {
         port: serverConfig.localOscPort 
       });
     }
-    
+    // Start HypeRate if auto-start is enabled
     if (appSettings.hyperateAutostart) {
       debug.info('Starting HypeRate addon based on autostart setting...');
       hyperateAddon.start(oscService);
     }
-  }, 500); 
+  }, 500); // Short delay to ensure window is ready
   setTimeout(() => {
     debug.connectionTimeout();
-  }, 30000); 
+  }, 30000); // Check after 30 seconds
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -957,22 +885,20 @@ app.whenReady().then(() => {
   });
 });
 function setupMemoryManagement() {
-  
+  // Clear any existing interval to prevent duplicates
   if (global.memoryManagementInterval) {
     clearInterval(global.memoryManagementInterval);
   }
-  
+
+  // Set up periodic garbage collection and memory cleanup
   global.memoryManagementInterval = setInterval(() => {
     try {
-      
+      // Force garbage collection if available
       if (global.gc) {
         global.gc();
       }
-      
-      if (oscService && typeof oscService.cleanupOldParameters === 'function') {
-        oscService.cleanupOldParameters();
-      }
-      
+
+      // Log memory usage periodically for monitoring
       const memoryUsage = process.memoryUsage();
       const memoryMB = {
         rss: Math.round(memoryUsage.rss / 1024 / 1024),
@@ -980,26 +906,16 @@ function setupMemoryManagement() {
         heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
         external: Math.round(memoryUsage.external / 1024 / 1024)
       };
-      
-      if (memoryUsage.heapUsed > 80 * 1024 * 1024) { 
+
+      // Log if memory usage is concerning
+      if (memoryUsage.heapUsed > 80 * 1024 * 1024) { // Over 80MB heap
         debug.warn('High memory usage detected', memoryMB);
-        
-        if (memoryUsage.heapUsed > 120 * 1024 * 1024) { 
+
+        // Force additional cleanup if memory is very high
+        if (memoryUsage.heapUsed > 120 * 1024 * 1024) { // Over 120MB
           debug.warn('Very high memory usage - forcing aggressive cleanup');
-          if (oscService) {
-            
-            const params = oscService.getParameters();
-            const paramEntries = Object.entries(params)
-              .filter(([_, param]) => param.timestamp)
-              .sort(([_, a], [__, b]) => b.timestamp - a.timestamp)
-              .slice(0, 30); 
-            oscService.parameters = {};
-            paramEntries.forEach(([address, param]) => {
-              oscService.parameters[address] = param;
-            });
-            debug.warn(`Aggressive cleanup: reduced parameters to ${paramEntries.length} for logs view`);
-          }
           
+          // Force garbage collection multiple times
           if (global.gc) {
             global.gc();
             setTimeout(() => global.gc && global.gc(), 100);
@@ -1010,7 +926,7 @@ function setupMemoryManagement() {
     } catch (error) {
       debug.error(`Memory management error: ${error.message}`);
     }
-  }, 20000); 
+  }, 20000); // 20 seconds
 }
 function cleanup(source = 'unknown') {
   if (isShuttingDown) {
@@ -1018,12 +934,12 @@ function cleanup(source = 'unknown') {
   }
   isShuttingDown = true;
   debug.logAppShutdown(`Cleanup initiated from: ${source}`);
-  
+  // Clear memory management interval
   if (global.memoryManagementInterval) {
     clearInterval(global.memoryManagementInterval);
     global.memoryManagementInterval = null;
   }
-  
+  // Clear window state save timeout
   if (global.saveWindowStateTimeout) {
     clearTimeout(global.saveWindowStateTimeout);
     global.saveWindowStateTimeout = null;
@@ -1038,6 +954,16 @@ function cleanup(source = 'unknown') {
     }
   } catch (error) {
     debug.error(`Error stopping OSC service: ${error.message}`);
+  }
+  try {
+    if (oscQueryService) {
+      debug.info('Stopping OSC Query service during cleanup...');
+      oscQueryService.stop();
+      oscQueryService = null;
+      debug.info('OSC Query service cleanup completed');
+    }
+  } catch (error) {
+    debug.error(`Error stopping OSC Query service: ${error.message}`);
   }
   try {
     if (oscServer) {
@@ -1071,7 +997,7 @@ function cleanup(source = 'unknown') {
   } catch (error) {
     debug.error(`Error stopping HypeRate addon: ${error.message}`);
   }
-  
+  // Force garbage collection before exit
   if (global.gc) {
     global.gc();
   }
@@ -1091,7 +1017,7 @@ process.on('uncaughtException', (error) => {
     return;
   }
   hasShownCriticalError = true;
-  
+  // Use debug.error instead of logger.logError to avoid missing method issues
   try {
     debug.error(`Uncaught exception: ${error.message}`, { stack: error.stack });
   } catch (debugError) {
@@ -1112,7 +1038,7 @@ process.on('unhandledRejection', (reason) => {
     return;
   }
   hasShownCriticalError = true;
-  
+  // Use debug.error instead of logger.logError to avoid missing method issues
   try {
     debug.error(`Unhandled rejection: ${reason}`, { stack: reason && reason.stack ? reason.stack : 'No stack trace' });
   } catch (debugError) {

@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   disableOsc: () => ipcRenderer.invoke('disable-osc'),
   getOscStatus: () => ipcRenderer.invoke('get-osc-status'),
   setOscForwarding: (enabled) => ipcRenderer.invoke('set-osc-forwarding', enabled),
-  
+  // WebSocket API
   connectServer: (credentials) => ipcRenderer.invoke('websocket-connect', credentials),
   disconnectServer: () => ipcRenderer.invoke('websocket-disconnect'),
   authenticate: (credentials) => ipcRenderer.invoke('websocket-connect', credentials),
@@ -21,13 +21,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWebSocketStatus: () => ipcRenderer.invoke('websocket-get-status'),
   getWebSocketForwardingStatus: () => ipcRenderer.invoke('websocket-get-forwarding-status'),
   setWebSocketForwarding: (enabled) => ipcRenderer.invoke('websocket-set-forwarding', enabled),
-  
+  // Username storage API
   getLastUsername: () => ipcRenderer.invoke('get-last-username'),
   setLastUsername: (username) => ipcRenderer.invoke('set-last-username', username),
-  
+  // Password storage API
   getSavedPassword: () => ipcRenderer.invoke('get-saved-password'),
   setSavedPassword: (password) => ipcRenderer.invoke('set-saved-password', password),
-  
+  // HypeRate API
   hyperateGetStatus: () => ipcRenderer.invoke('hyperate-get-status'),
   hyperateStart: () => ipcRenderer.invoke('hyperate-start'),
   hyperateStop: () => ipcRenderer.invoke('hyperate-stop'),
@@ -39,12 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hyperateUpdateTrackerState: (deviceId, enabled) => ipcRenderer.invoke('hyperate-update-tracker-state', deviceId, enabled),
   hyperateGetAutostart: () => ipcRenderer.invoke('hyperate-get-autostart'),
   hyperateSetAutostart: (enabled) => ipcRenderer.invoke('hyperate-set-autostart', enabled),
-  
-  getParameterBlacklist: () => ipcRenderer.invoke('get-parameter-blacklist'),
-  addBlacklistPattern: (pattern) => ipcRenderer.invoke('add-blacklist-pattern', pattern),
-  removeBlacklistPattern: (pattern) => ipcRenderer.invoke('remove-blacklist-pattern', pattern),
-  clearParameterBlacklist: () => ipcRenderer.invoke('clear-parameter-blacklist'),
-  
+  // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
   },
@@ -53,6 +48,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onOscServerStatus: (callback) => {
     ipcRenderer.on('osc-server-status', (event, data) => callback(data));
+  },
+  onOscQueryStatus: (callback) => {
+    ipcRenderer.on('oscquery-status', (event, data) => callback(data));
   },
   onWebSocketStatus: (callback) => {
     ipcRenderer.on('websocket-status', (event, data) => callback(data));

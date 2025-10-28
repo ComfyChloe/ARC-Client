@@ -2,7 +2,7 @@ let additionalOscConnections = [];
 let maxAdditionalConnections = 20;
 let oscEnabled = false;
 let wsForwardingEnabled = false;
-
+// WebSocket connection state
 let isConnected = false;
 let isAuthenticated = false;
 let currentUser = null;
@@ -10,22 +10,22 @@ let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
 let currentTheme = 'light';
-
+// Runtime timer
 let startTime = Date.now();
 let runtimeInterval = null;
-
+// OSC message rate limiting
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
-let oscReceivedDisplayEnabled = true; 
-const OSC_LOG_BUFFER_SIZE = 100; 
-const OSC_LOG_FLUSH_INTERVAL = 1000; 
-const MAX_LOG_ENTRIES = 10000; 
-
-const FLOAT_THROTTLE_INTERVAL = 750; 
-let lastFloatLogTimes = new Map(); 
-let pendingFloatTimeouts = new Map(); 
-let lastFloatValues = new Map(); 
-
+let oscReceivedDisplayEnabled = true; // Controls if OSC received logs are displayed and processed
+const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
+const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
+const MAX_LOG_ENTRIES = 10000; // Maximum log entries to keep in DOM
+// Float rate limiting (similar to server implementation)
+const FLOAT_THROTTLE_INTERVAL = 750; // ms
+let lastFloatLogTimes = new Map(); // Track last log time per address
+let pendingFloatTimeouts = new Map(); // Track pending timeouts for float logging
+let lastFloatValues = new Map(); // Store latest values for delayed logging
+// Websocket connection states end
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     await loadAppSettings();
@@ -46,57 +46,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     navSettings.classList.remove('active');
     navSettings.disabled = false;
     debugLog('Application initialized');
-    
+    // Initialize runtime timer
     initializeRuntimeTimer();
-    
-    setTimeout(() => {
-        loadParameterBlacklist();
-    }, 500);
-    
-    setTimeout(() => {
-        const blacklistInput = document.getElementById('blacklist-pattern');
-        if (blacklistInput) {
-            blacklistInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    addBlacklistPattern();
-                }
-            });
-        }
-    }, 100);
-    
+
+    // Add username auto-save functionality and Enter key support
     setTimeout(() => {
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const savePasswordCheckbox = document.getElementById('save-password-checkbox');
         if (usernameInput) {
             let saveTimeout;
-            
+            // Auto-save username as user types
             usernameInput.addEventListener('input', (e) => {
-                
+                // Clear previous timeout
                 if (saveTimeout) {
                     clearTimeout(saveTimeout);
                 }
-                
+                // Debounce the save operation to avoid excessive calls
                 saveTimeout = setTimeout(async () => {
                     const username = e.target.value.trim().toLowerCase();
                     if (username) {
                         try {
                             await window.electronAPI.setLastUsername(username);
                         } catch (error) {
-                            
+                            // Silently fail on error
                             console.warn('Could not auto-save username:', error.message);
                         }
                     }
                 }, 1000);
             });
-            
+            // Enter key support for username field
             usernameInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
                     authenticate();
                 }
             });
         }
-        
+        // Enter key support for password field
         if (passwordInput) {
             passwordInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
@@ -104,36 +90,48 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         }
+        // Handle save password checkbox
         if (savePasswordCheckbox) {
             savePasswordCheckbox.addEventListener('change', handleSavePasswordCheckbox);
         }
+        // Load saved password setting on startup
         loadSavedPasswordSetting();
     }, 100);
+    // Set up periodic OSC log buffer flushing
     setInterval(() => {
         if (oscLogBuffer.length > 0) {
             flushOscLogBuffer();
         }
     }, OSC_LOG_FLUSH_INTERVAL);
+    // Add periodic memory cleanup every 30 minutes
     setInterval(() => {
+        // Clear float rate limiting data periodically
         clearFloatRateLimitingData();
+        // More aggressive cleanup when OSC received display is disabled
         if (!oscReceivedDisplayEnabled) {
             oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
             if (window.gc) window.gc();
         }
+        // If OSC received logs are getting too large, rotate them
         const receivedContainer = document.getElementById('osc-received-log-container');
         if (receivedContainer && receivedContainer.children.length > MAX_LOG_ENTRIES/2) {
             rotateLogContainers();
         }
-    }, 10000); 
+        //debugLog('Performed periodic memory cleanup');
+    }, 10000); // Every 30 minutes
+    // Add UI responsiveness monitoring
     let lastHeartbeatTime = Date.now();
     function uiHeartbeat() {
         lastHeartbeatTime = Date.now();
     }
+    // Call this on common UI interactions
     document.addEventListener('click', uiHeartbeat);
     document.addEventListener('keydown', uiHeartbeat);
+    // Monitor UI responsiveness
     setInterval(() => {
         const now = Date.now();
-        if (now - lastHeartbeatTime > 10000) {  
+        if (now - lastHeartbeatTime > 10000) {  // 30 minutes without UI interaction
+            // Force cleanup
             clearFloatRateLimitingData();
             rotateLogContainers();
             if (window.gc) window.gc();
@@ -146,9 +144,11 @@ async function loadConfig() {
         document.getElementById('local-port-settings').value = config.localOscPort;
         document.getElementById('target-port-settings').value = config.targetOscPort;
         document.getElementById('target-address-settings').value = config.targetOscAddress;
+        // Set WebSocket server URL
         const serverUrlInput = document.getElementById('server-url-settings');
         if (serverUrlInput) {
             serverUrlInput.value = config.websocketServerUrl || 'wss://avatar.comfychloe.uk:48255';
+            // Detect and update the current server status
             detectCurrentServer();
         }
         if (config.additionalOscConnections) {
@@ -181,16 +181,29 @@ function setupEventListeners() {
             debugLog(`OSC Server error: ${data.error}`, 'error');
         }
     });
-    
+    // Handle OSC Query status updates
+    if (window.electronAPI.onOscQueryStatus) {
+        window.electronAPI.onOscQueryStatus((data) => {
+            if (data.status === 'started') {
+                debugLog(`OSC-Query service started on HTTP port ${data.httpPort}`, 'success');
+                loadOscQuerySubscriptions();
+            } else if (data.status === 'error') {
+                debugLog(`OSC-Query service error: ${data.error}`, 'error');
+            } else if (data.status === 'stopped') {
+                debugLog('OSC-Query service stopped');
+            }
+        });
+    }
+    // Handle app settings event from main process
     window.electronAPI.onAppSettings((settings) => {
         console.log('Received app settings from main process:', settings);
-        
+        // Store for later use
         appSettings = settings;
-        
+        // Initialize WebSocket forwarding status
         wsForwardingEnabled = settings.enableWebSocketForwarding || false;
         updateWebSocketForwardingStatus(wsForwardingEnabled);
     });
-    
+    // WebSocket event listeners
     window.electronAPI.onWebSocketStatus((data) => {
         console.log('WebSocket status update:', data);
         debugLog(`WebSocket status changed to: ${data.status}`);
@@ -204,7 +217,7 @@ function setupEventListeners() {
             currentUser = null;
             currentAvatar = null;
             parameters = {};
-            
+            // Clear float rate limiting data on WebSocket disconnect and perform log rotation
             clearFloatRateLimitingData();
             rotateLogContainers();
             if (window.gc) window.gc();
@@ -234,21 +247,21 @@ function setupEventListeners() {
     });
     window.electronAPI.onWebSocketAvatarChange((data) => {
         console.log('Avatar change received:', data);
-        
+        // Handle avatar unload (null/empty avatar)
         if (!data.id || data.id === null) {
             currentAvatar = null;
-            parameters = {}; 
+            parameters = {}; // Clear parameters when avatar is unloaded
             updateAvatarDisplay();
             updateParameterList();
             debugLog(`Avatar unloaded for user ${data.username}`);
             return;
         }
-        
+        // Store the full avatar data including ID, name, and username
         currentAvatar = {
             id: data.id,
-            name: data.name, 
+            name: data.name, // Server-provided name
             username: data.username,
-            
+            // Use server-provided name or fall back to extracted display name
             displayName: data.name || getDisplayNameFromAvatarId(data.id)
         };
         updateAvatarDisplay();
@@ -306,7 +319,7 @@ function updateWebSocketForwardingStatus(enabled) {
     const text = document.getElementById('ws-forwarding-status-text');
     const toggleBtn = document.getElementById('ws-forwarding-toggle-btn');
     if (!indicator || !text || !toggleBtn) {
-        return; 
+        return; // Elements not found, skip update
     }
     indicator.className = 'status-indicator';
     if (enabled) {
@@ -387,7 +400,7 @@ async function updateConfigFromSettings() {
             websocketServerUrl: document.getElementById('server-url-settings').value
         };
         await window.electronAPI.setConfig(config);
-        
+        // Update the current server status after configuration update
         detectCurrentServer();
         debugLog('Server configuration updated');
     } catch (error) {
@@ -431,23 +444,36 @@ async function switchToServer(serverType) {
             default:
                 throw new Error('Unknown server type');
         }
+        
+        // Update the URL input field
         document.getElementById('server-url-settings').value = serverUrl;
+        
+        // Update the current server status
         updateCurrentServerStatus(serverName, serverType);
+        
+        // Disconnect if currently connected
         const wasConnected = isConnected;
         if (wasConnected) {
             debugLog(`Disconnecting from current server to switch to ${serverName}...`);
             await window.electronAPI.websocketDisconnect();
         }
+        
+        // Update the configuration
         const config = {
             websocketServerUrl: serverUrl
         };
+        
+        // For custom server, don't persist the configuration
         if (serverType !== 'custom') {
             await window.electronAPI.setConfig(config);
             debugLog(`Switched to ${serverName} (${serverUrl}) - configuration saved`);
         } else {
+            // Just update the WebSocket manager configuration without saving to file
             await window.electronAPI.setConfig(config);
             debugLog(`Switched to ${serverName} (${serverUrl}) - configuration NOT saved (dev mode)`);
         }
+        
+        // Auto-reconnect if we were previously connected
         if (wasConnected && currentUser) {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
@@ -463,6 +489,7 @@ async function switchToServer(serverType) {
                 }, 1000);
             }
         }
+        
     } catch (error) {
         debugLog(`Error switching servers: ${error.message}`, 'error');
     }
@@ -470,27 +497,33 @@ async function switchToServer(serverType) {
 function updateCurrentServerStatus(serverName, serverType) {
     const statusElement = document.getElementById('current-server-status');
     const nameElement = document.getElementById('current-server-name');
+    
     if (nameElement) {
         nameElement.textContent = serverName;
     }
+    
     if (statusElement) {
-        let borderColor = '#3498db'; 
+        // Update border color based on server type
+        let borderColor = '#3498db'; // default blue
         switch (serverType) {
             case 'live':
-                borderColor = '#3498db'; 
+                borderColor = '#3498db'; // blue
                 break;
             case 'beta':
-                borderColor = '#95a5a6'; 
+                borderColor = '#95a5a6'; // grey
                 break;
             case 'custom':
-                borderColor = '#f39c12'; 
+                borderColor = '#f39c12'; // orange
                 break;
         }
         statusElement.style.borderLeftColor = borderColor;
     }
+    
+    // Update button active states
     updateServerButtonStates(serverType);
 }
 function updateServerButtonStates(activeServerType) {
+    // Remove active class from all buttons
     const buttons = ['server-btn-live', 'server-btn-beta', 'server-btn-custom'];
     buttons.forEach(buttonId => {
         const button = document.getElementById(buttonId);
@@ -499,7 +532,7 @@ function updateServerButtonStates(activeServerType) {
         }
     });
     
-    
+    // Add active class to the current server button
     const activeButtonId = `server-btn-${activeServerType}`;
     const activeButton = document.getElementById(activeButtonId);
     if (activeButton) {
@@ -582,7 +615,7 @@ async function authenticate() {
             currentUser = result.user;
             debugLog(`Successfully authenticated as ${username}`);
             updateUI();
-            
+            // Save the username for next time
             try {
                 await window.electronAPI.setLastUsername(username);
                 debugLog(`Username saved for future use`);
@@ -606,7 +639,7 @@ async function disconnect() {
         currentUser = null;
         currentAvatar = null;
         parameters = {};
-        
+        // Clear float rate limiting data on disconnect
         clearFloatRateLimitingData();
         updateUI();
         updateAvatarDisplay();
@@ -624,8 +657,8 @@ async function unloadAvatar() {
     }
     try {
         debugLog('Unloading current avatar...');
-        
-        
+        // Send a special OSC message to VRChat to "change" to a null avatar
+        // This simulates VRChat sending /avatar/change with a null or empty value
         const result = await window.electronAPI.sendWebSocketMessage('avatar-unload', {
             username: currentUser.username
         });
@@ -646,43 +679,43 @@ function updateAvatarDisplay() {
     
     if (isAuthenticated && currentAvatar) {
         avatarSection.style.display = 'block';
-        
+        // Display the human-readable name or fallback to "Unknown Avatar"
         avatarName.textContent = currentAvatar.displayName || 'Unknown Avatar';
-        
+        // Display the full avatar ID
         avatarId.textContent = `ID: ${currentAvatar.id}`;
         avatarId.style.display = 'block';
-        
+        // Show the unload button when an avatar is loaded
         unloadBtn.style.display = 'block';
     } else if (isAuthenticated) {
         avatarSection.style.display = 'block';
         avatarName.textContent = 'No avatar detected';
         avatarId.textContent = 'ID: Not available';
         avatarId.style.display = 'block';
-        
+        // Hide the unload button when no avatar is detected
         unloadBtn.style.display = 'none';
     } else {
         avatarSection.style.display = 'none';
-        
+        // Hide the unload button when not authenticated
         unloadBtn.style.display = 'none';
     }
 }
-
+// Helper function to extract a human-readable name from avatar ID
 function getDisplayNameFromAvatarId(avatarId) {
     if (!avatarId || typeof avatarId !== 'string') {
         return null;
     }
-    
-    
-    
-    
-    
+    // VRChat avatar IDs typically start with "avtr_" followed by a UUID
+    // TODO: In the future, this could be enhanced to:
+    // 1. Query the server for known avatar names from the config
+    // 2. Store local avatar name cache from uploaded JSON files
+    // 3. Use VRChat API to resolve avatar names
     if (avatarId.startsWith('avtr_')) {
-        
-        const uuid = avatarId.substring(5); 
+        // Extract the UUID part and show first 8 characters for readability
+        const uuid = avatarId.substring(5); // Remove "avtr_" prefix
         const shortId = uuid.substring(0, 8);
         return `Avatar ${shortId}`;
     }
-    
+    // For other avatar ID formats, just return the first 16 characters
     if (avatarId.length > 16) {
         return `${avatarId.substring(0, 16)}...`;
     }
@@ -746,7 +779,7 @@ async function sendOscMessage() {
             value: parsedValue,
             type
         };
-        
+        // Send via WebSocket if authenticated, otherwise use local OSC
         if (isAuthenticated && isConnected) {
             await window.electronAPI.sendOsc(oscData);
             debugLog(`OSC Sent via WebSocket: ${address} = ${parsedValue} (${type})`);
@@ -772,7 +805,7 @@ function showTab(tabName) {
 function debugLog(message, type = 'info') {
     const container = document.getElementById('client-log-container');
     const timestamp = new Date().toLocaleTimeString();
-    let color = '#00ff00'; 
+    let color = '#00ff00'; // Default green
     if (type === 'error') color = '#ff0000';
     else if (type === 'warning') color = '#ffff00';
     const logEntry = document.createElement('div');
@@ -784,9 +817,9 @@ function debugLog(message, type = 'info') {
         container.removeChild(container.firstChild);
     }
 }
-
+// Helper function to determine if a value is a float
 function isFloatValue(value) {
-    
+    // Check if it's a number and has decimal places, or if it's a string representation of a float
     if (typeof value === 'number') {
         return !Number.isInteger(value);
     }
@@ -796,26 +829,26 @@ function isFloatValue(value) {
     }
     return false;
 }
-
+// Handle float OSC messages with rate limiting (similar to server implementation)
 function handleFloatOscLog(type, address, value, connectionId) {
-    
+    // Skip processing received logs if display is disabled
     if (type === 'received' && !oscReceivedDisplayEnabled) return;
     const key = `${type}-${address}`;
     const now = Date.now();
     const lastLogTime = lastFloatLogTimes.get(key) || 0;
-    
+    // Store the latest value for this address/type combination
     lastFloatValues.set(key, { type, address, value, connectionId, timestamp: now });
-    
+    // Clear any existing timeout for this key
     if (pendingFloatTimeouts.has(key)) {
         clearTimeout(pendingFloatTimeouts.get(key));
     }
-    
+    // If enough time has passed since last log, log immediately
     if (now - lastLogTime >= FLOAT_THROTTLE_INTERVAL) {
         logFloatValueImmediate(type, address, value, connectionId);
         lastFloatLogTimes.set(key, now);
         return;
     }
-    
+    // Otherwise, set a timeout to log the final value after the throttle interval
     const timeoutId = setTimeout(() => {
         const finalData = lastFloatValues.get(key);
         if (finalData) {
@@ -826,7 +859,7 @@ function handleFloatOscLog(type, address, value, connectionId) {
     }, FLOAT_THROTTLE_INTERVAL);
     pendingFloatTimeouts.set(key, timeoutId);
 }
-
+// Immediately log a float value to the appropriate container
 function logFloatValueImmediate(type, address, value, connectionId) {
     const timestamp = new Date().toLocaleTimeString();
     let container, color;
@@ -851,42 +884,42 @@ function logFloatValueImmediate(type, address, value, connectionId) {
         logEntry.style.color = color;
         logEntry.innerHTML = `[${timestamp}] ${address} = ${value}`;
         container.appendChild(logEntry);
-        
+        // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;
-        
+        // Limit log entries to prevent memory issues
         const maxEntries = type === 'arc-received' ? 500 : MAX_LOG_ENTRIES;
         while (container.children.length > maxEntries) {
             container.removeChild(container.firstChild);
         }
     }
 }
-
+// Clear float rate limiting data to prevent memory leaks
 function clearFloatRateLimitingData() {
-    
+    // Clear all pending timeouts
     pendingFloatTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
     lastFloatLogTimes.clear();
     pendingFloatTimeouts.clear();
     lastFloatValues.clear();
-    
+    //debugLog('Float rate limiting data cleared');
 }
 function rotateLogContainers() {
     document.getElementById('osc-received-log-container').innerHTML = 'Log rotation performed<br>';
     clearFloatRateLimitingData();
-    
+    // Explicitly clear buffer to free memory immediately
     oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
-    
+    // Force garbage collection if available
     if (window.gc) window.gc();
-    
+    //debugLog('OSC received log container rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
-    
+    // Skip processing if OSC received display is disabled
     if (!oscReceivedDisplayEnabled) return;
-    
+    // Check if this is a float value and apply rate limiting
     if (isFloatValue(value)) {
         handleFloatOscLog('received', address, value, connectionId);
         return;
     }
-    
+    // Add to buffer for non-float values
     oscLogBuffer.push({
         type: 'received',
         address,
@@ -894,19 +927,19 @@ function oscReceivedLog(address, value, connectionId = null) {
         connectionId,
         timestamp: Date.now()
     });
-    
+    // If buffer is full or enough time has passed, flush it
     const now = Date.now();
     if (oscLogBuffer.length >= OSC_LOG_BUFFER_SIZE || (now - lastOscLogFlush) >= OSC_LOG_FLUSH_INTERVAL) {
         flushOscLogBuffer();
     }
 }
 function oscForwardedLog(address, value, connectionId = null) {
-    
+    // Check if this is a float value and apply rate limiting
     if (isFloatValue(value)) {
         handleFloatOscLog('forwarded', address, value, connectionId);
         return;
     }
-    
+    // Add to buffer for non-float values
     oscLogBuffer.push({
         type: 'forwarded',
         address,
@@ -914,7 +947,7 @@ function oscForwardedLog(address, value, connectionId = null) {
         connectionId,
         timestamp: Date.now()
     });
-    
+    // If buffer is full or enough time has passed, flush it
     const now = Date.now();
     if (oscLogBuffer.length >= OSC_LOG_BUFFER_SIZE || (now - lastOscLogFlush) >= OSC_LOG_FLUSH_INTERVAL) {
         flushOscLogBuffer();
@@ -922,25 +955,25 @@ function oscForwardedLog(address, value, connectionId = null) {
 }
 function flushOscLogBuffer() {
     if (oscLogBuffer.length === 0) return;
-    
+    // More aggressive emergency cleanup
     if (oscLogBuffer.length > 5000) {
         clearFloatRateLimitingData();
         debugLog(`Emergency buffer cleanup - buffer size was ${oscLogBuffer.length}`, 'warning');
-        
+        // Only keep the most recent messages (to prevent total loss of context)
         const forwardedOnly = oscLogBuffer.filter(msg => msg.type === 'forwarded').slice(-100);
         oscLogBuffer = forwardedOnly;
         lastOscLogFlush = Date.now();
         if (window.gc) window.gc();
-        
+        // Clear DOM elements as well for complete reset
         document.getElementById('osc-received-log-container').innerHTML = 'Emergency buffer cleanup performed<br>';
         return;
     }
     const receivedContainer = document.getElementById('osc-received-log-container');
     const forwardedContainer = document.getElementById('osc-forwarded-log-container');
-    
+    // Group messages by type for batch DOM updates
     const received = oscLogBuffer.filter(msg => msg.type === 'received');
     const forwarded = oscLogBuffer.filter(msg => msg.type === 'forwarded');
-    
+    // Batch update received logs
     if (received.length > 0 && receivedContainer) {
         const fragment = document.createDocumentFragment();
         received.forEach(msg => {
@@ -952,12 +985,12 @@ function flushOscLogBuffer() {
         });
         receivedContainer.appendChild(fragment);
         receivedContainer.scrollTop = receivedContainer.scrollHeight;
-        
+        // Trim logs to prevent memory bloat - use MAX_LOG_ENTRIES
         while (receivedContainer.children.length > MAX_LOG_ENTRIES) {
             receivedContainer.removeChild(receivedContainer.firstChild);
         }
     }
-    
+    // Batch update forwarded logs
     if (forwarded.length > 0 && forwardedContainer) {
         const fragment = document.createDocumentFragment();
         forwarded.forEach(msg => {
@@ -969,12 +1002,12 @@ function flushOscLogBuffer() {
         });
         forwardedContainer.appendChild(fragment);
         forwardedContainer.scrollTop = forwardedContainer.scrollHeight;
-        
+        // Trim logs to prevent memory bloat - use MAX_LOG_ENTRIES
         while (forwardedContainer.children.length > MAX_LOG_ENTRIES) {
             forwardedContainer.removeChild(forwardedContainer.firstChild);
         }
     }
-    
+    // Clear buffer and update flush time
     oscLogBuffer = [];
     lastOscLogFlush = Date.now();
 }
@@ -989,23 +1022,23 @@ function clearOscArcReceivedLogs() {
     document.getElementById('osc-arc-received-log-container').innerHTML = 'No OSC data received from ARC Server yet<br>';
 }
 function addToOscArcReceivedLog(address, value) {
-    
+    // Apply float rate limiting for ARC received logs as well
     if (isFloatValue(value)) {
         handleFloatOscLog('arc-received', address, value, null);
         return;
     }
     
-    
+    // Immediate logging for non-float values
     const container = document.getElementById('osc-arc-received-log-container');
     if (container) {
         const timestamp = new Date().toLocaleTimeString();
         const logEntry = document.createElement('div');
-        logEntry.style.color = '#ff8c00'; 
+        logEntry.style.color = '#ff8c00'; // Orange color to distinguish from regular OSC
         logEntry.innerHTML = `[${timestamp}] ${address} = ${value}`;
         container.appendChild(logEntry);
-        
+        // Auto-scroll to bottom
         container.scrollTop = container.scrollHeight;
-        
+        // Limit log entries to prevent memory issues
         const entries = container.children;
         if (entries.length > 500) {
             container.removeChild(entries[0]);
@@ -1031,13 +1064,15 @@ function showMainView() {
     const arcfeedbackView = document.getElementById('arcfeedback-view');
     const chatboxView = document.getElementById('chatbox-view');
     const vrchatapiView = document.getElementById('vrchatapi-view');
+    const oscLeashView = document.getElementById('osc-leash-view');
+    const autoInviterView = document.getElementById('auto-inviter-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
+    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1050,12 +1085,12 @@ function showMainView() {
             mainView.style.opacity = '1';
         });
     }, 300);
-    
+    // Reset all navigation buttons
     [navOsc, navLogs, navSettings].forEach(nav => {
         nav.classList.remove('active');
         nav.disabled = false;
     });
-    
+    // Reset all tree-child buttons
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1075,13 +1110,15 @@ function showOscView() {
     const arcfeedbackView = document.getElementById('arcfeedback-view');
     const chatboxView = document.getElementById('chatbox-view');
     const vrchatapiView = document.getElementById('vrchatapi-view');
+    const oscLeashView = document.getElementById('osc-leash-view');
+    const autoInviterView = document.getElementById('auto-inviter-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
+    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1093,15 +1130,15 @@ function showOscView() {
         requestAnimationFrame(() => {
             oscView.style.opacity = '1';
         });
-        
+        // Render OSC connections when view is shown
         renderAdditionalOscConnections();
     }, 300);
-    
+    // Reset all navigation buttons
     [navMain, navLogs, navSettings].forEach(nav => {
         nav.classList.remove('active');
         nav.disabled = false;
     });
-    
+    // Reset all tree-child buttons
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1125,9 +1162,11 @@ function showSettingsView() {
     const arcfeedbackView = document.getElementById('arcfeedback-view');
     const chatboxView = document.getElementById('chatbox-view');
     const vrchatapiView = document.getElementById('vrchatapi-view');
+    const oscLeashView = document.getElementById('osc-leash-view');
+    const autoInviterView = document.getElementById('auto-inviter-view');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
+    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1140,12 +1179,12 @@ function showSettingsView() {
             settingsView.style.opacity = '1';
         });
     }, 300);
-    
+    // Reset all navigation buttons
     [navMain, navOsc, navLogs].forEach(nav => {
         nav.classList.remove('active');
         nav.disabled = false;
     });
-    
+    // Reset all tree-child buttons
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1165,13 +1204,15 @@ function showLogsView() {
     const arcfeedbackView = document.getElementById('arcfeedback-view');
     const chatboxView = document.getElementById('chatbox-view');
     const vrchatapiView = document.getElementById('vrchatapi-view');
+    const oscLeashView = document.getElementById('osc-leash-view');
+    const autoInviterView = document.getElementById('auto-inviter-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView].forEach(view => {
+    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1183,15 +1224,15 @@ function showLogsView() {
         requestAnimationFrame(() => {
             logsView.style.opacity = '1';
         });
-        
+        // Update OSC received display status when logs view is shown
         updateOscReceivedDisplayStatus();
     }, 300);
-    
+    // Reset all navigation buttons
     [navMain, navOsc, navSettings].forEach(nav => {
         nav.classList.remove('active');
         nav.disabled = false;
     });
-    
+    // Reset all tree-child buttons
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1212,7 +1253,7 @@ function setupExtrasDropdown() {
         treeToggle.classList.toggle('expanded');
         treeToggle.querySelector('.arrow').textContent = isExpanded ? '▼' : '▶';
     });
-    
+    // Handle active states for child items
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.addEventListener('click', () => {
@@ -1220,13 +1261,13 @@ function setupExtrasDropdown() {
             child.classList.add('active');
         });
     });
-    
+    // Keep the tree expanded when clicking inside it
     treeContent.addEventListener('click', (e) => {
         e.stopPropagation();
     });
 }
 function showVOSKView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
 
     views.forEach(view => {
@@ -1243,7 +1284,7 @@ function showVOSKView() {
             voskView.style.opacity = '1';
         });
     }, 300);
-    
+    // Reset ALL main navigation buttons explicitly
     const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
     allMainNavButtons.forEach(navId => {
         const navElement = document.getElementById(navId);
@@ -1252,7 +1293,7 @@ function showVOSKView() {
             navElement.disabled = false;
         }
     });
-    
+    // Reset all tree-child buttons and set VOSK as active
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1263,7 +1304,7 @@ function showVOSKView() {
         navVOSK.classList.add('active');
         navVOSK.disabled = true;
     }
-    
+    // Ensure extras dropdown is expanded
     const treeToggle = document.getElementById('nav-extras');
     const treeContent = treeToggle?.nextElementSibling;
     if (treeToggle && treeContent) {
@@ -1278,7 +1319,7 @@ function showVOSKView() {
 }
 function showHyperateView() {
     debugLog('showHyperateView called');
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1298,7 +1339,7 @@ function showHyperateView() {
             debugLog('Error: HypeRate view element not found!', 'error');
         }
     }, 300);
-    
+    // Reset ALL main navigation buttons explicitly
     const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
     allMainNavButtons.forEach(navId => {
         const navElement = document.getElementById(navId);
@@ -1307,7 +1348,7 @@ function showHyperateView() {
             navElement.disabled = false;
         }
     });
-    
+    // Reset all tree-child buttons and set HypeRate as active
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1318,7 +1359,7 @@ function showHyperateView() {
         navHyperate.classList.add('active');
         navHyperate.disabled = true;
     }
-    
+    // Ensure extras dropdown is expanded
     const treeToggle = document.getElementById('nav-extras');
     const treeContent = treeToggle?.nextElementSibling;
     if (treeToggle && treeContent) {
@@ -1329,12 +1370,12 @@ function showHyperateView() {
             arrow.textContent = '▼';
         }
     }
-    
+    // Initialize HypeRate status and auto-start UI
     refreshHyperateStatus(true);
     debugLog('Switched to Hyperate view');
 }
 function showARCFeedbackView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1350,7 +1391,7 @@ function showARCFeedbackView() {
             arcfeedbackView.style.opacity = '1';
         });
     }, 300);
-    
+    // Reset ALL main navigation buttons explicitly
     const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
     allMainNavButtons.forEach(navId => {
         const navElement = document.getElementById(navId);
@@ -1359,7 +1400,7 @@ function showARCFeedbackView() {
             navElement.disabled = false;
         }
     });
-    
+    // Reset all tree-child buttons and set ARC Feedback as active
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1370,7 +1411,7 @@ function showARCFeedbackView() {
         navARCFeedback.classList.add('active');
         navARCFeedback.disabled = true;
     }
-    
+    // Ensure extras dropdown is expanded
     const treeToggle = document.getElementById('nav-extras');
     const treeContent = treeToggle?.nextElementSibling;
     if (treeToggle && treeContent) {
@@ -1384,7 +1425,7 @@ function showARCFeedbackView() {
     debugLog('Switched to ARC Feedback view');
 }
 function showChatboxView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1400,7 +1441,7 @@ function showChatboxView() {
             chatboxView.style.opacity = '1';
         });
     }, 300);
-    
+    // Reset ALL main navigation buttons explicitly
     const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
     allMainNavButtons.forEach(navId => {
         const navElement = document.getElementById(navId);
@@ -1409,7 +1450,7 @@ function showChatboxView() {
             navElement.disabled = false;
         }
     });
-    
+    // Reset all tree-child buttons and set Chatbox as active
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1420,7 +1461,7 @@ function showChatboxView() {
         navChatbox.classList.add('active');
         navChatbox.disabled = true;
     }
-    
+    // Ensure extras dropdown is expanded
     const treeToggle = document.getElementById('nav-extras');
     const treeContent = treeToggle?.nextElementSibling;
     if (treeToggle && treeContent) {
@@ -1434,7 +1475,7 @@ function showChatboxView() {
     debugLog('Switched to Chatbox view');
 }
 function showVRChatAPIView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1450,7 +1491,7 @@ function showVRChatAPIView() {
             vrchatapiView.style.opacity = '1';
         });
     }, 300);
-    
+    // Reset ALL main navigation buttons explicitly
     const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
     allMainNavButtons.forEach(navId => {
         const navElement = document.getElementById(navId);
@@ -1459,7 +1500,7 @@ function showVRChatAPIView() {
             navElement.disabled = false;
         }
     });
-    
+    // Reset all tree-child buttons and set VRChat API as active
     const treeChildren = document.querySelectorAll('.tree-child');
     treeChildren.forEach(child => {
         child.classList.remove('active');
@@ -1470,7 +1511,7 @@ function showVRChatAPIView() {
         navVRChatAPI.classList.add('active');
         navVRChatAPI.disabled = true;
     }
-    
+    // Ensure extras dropdown is expanded
     const treeToggle = document.getElementById('nav-extras');
     const treeContent = treeToggle?.nextElementSibling;
     if (treeToggle && treeContent) {
@@ -1482,6 +1523,108 @@ function showVRChatAPIView() {
         }
     }
     debugLog('Switched to VRChat API view');
+}
+
+function showOSCLeashView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const oscLeashView = document.getElementById('osc-leash-view');
+        oscLeashView.style.display = 'block';
+        oscLeashView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            oscLeashView.style.opacity = '1';
+        });
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set OSC Leash as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navOSCLeash = document.getElementById('nav-osc-leash');
+    if (navOSCLeash) {
+        navOSCLeash.classList.add('active');
+        navOSCLeash.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to OSC Leash view');
+}
+
+function showAutoInviterView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const autoInviterView = document.getElementById('auto-inviter-view');
+        autoInviterView.style.display = 'block';
+        autoInviterView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            autoInviterView.style.opacity = '1';
+        });
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set Auto-Inviter as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navAutoInviter = document.getElementById('nav-auto-inviter');
+    if (navAutoInviter) {
+        navAutoInviter.classList.add('active');
+        navAutoInviter.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to Auto-Inviter view');
 }
 async function updateAppSettings() {
     try {
@@ -1502,13 +1645,13 @@ async function loadAppSettings() {
         if (logLevelSelect) {
             logLevelSelect.value = settings.logLevel || 'info';
         }
-        
-        oscReceivedDisplayEnabled = settings.oscReceivedDisplayEnabled !== false; 
+        // Set OSC received display state
+        oscReceivedDisplayEnabled = settings.oscReceivedDisplayEnabled !== false; // Default to true for backward compatibility
         updateOscReceivedDisplayStatus();
-        
+        // Apply theme from settings
         currentTheme = settings.theme || 'light';
         applyTheme(currentTheme);
-        
+        // Initialize WebSocket forwarding status from settings
         wsForwardingEnabled = settings.enableWebSocketForwarding || false;
         updateWebSocketForwardingStatus(wsForwardingEnabled);
         debugLog('Application settings loaded from saved config');
@@ -1529,7 +1672,7 @@ async function loadLastUsername() {
     }
 }
 window.addEventListener('beforeunload', () => {
-    
+    // Clear runtime timer
     if (runtimeInterval) {
         clearInterval(runtimeInterval);
     }
@@ -1551,16 +1694,16 @@ async function addOscConnection(type) {
     }
     const newConnection = {
         id: Date.now().toString(),
-        type: type, 
+        type: type, // 'incoming' or 'outgoing'
         port: null,
         address: '127.0.0.1',
-        enabled: false, 
-        name: '', 
-        enableWebSocketForwarding: false 
+        enabled: false, // Default to disabled for new connections
+        name: '', // Optional user-defined name
+        enableWebSocketForwarding: false // Default to disabled for WebSocket forwarding
     };
     additionalOscConnections.push(newConnection);
     
-    
+    // Apply the change immediately
     try {
         const currentConfig = await window.electronAPI.getServerConfig();
         const updatedConfig = {
@@ -1578,7 +1721,7 @@ async function addOscConnection(type) {
 async function removeOscConnection(id) {
     additionalOscConnections = additionalOscConnections.filter(conn => conn.id !== id);
     
-    
+    // Apply the change immediately
     try {
         const currentConfig = await window.electronAPI.getServerConfig();
         const updatedConfig = {
@@ -1598,14 +1741,14 @@ async function toggleOscConnection(id, enabled) {
         const connection = additionalOscConnections.find(conn => conn.id === id);
         if (connection) {
             connection.enabled = enabled;
-            
+            // Update the configuration immediately
             const currentConfig = await window.electronAPI.getServerConfig();
             const updatedConfig = {
                 ...currentConfig,
                 additionalOscConnections: additionalOscConnections
             };
             await window.electronAPI.setConfig(updatedConfig);
-            
+            // Re-render to update the UI
             renderAdditionalOscConnections();
             debugLog(`${connection.name || 'Connection'} ${enabled ? 'enabled' : 'disabled'} - configuration updated`);
         }
@@ -1618,14 +1761,14 @@ async function toggleOscConnectionWebSocketForwarding(id, enabled) {
         const connection = additionalOscConnections.find(conn => conn.id === id);
         if (connection) {
             connection.enableWebSocketForwarding = enabled;
-            
+            // Update the configuration immediately
             const currentConfig = await window.electronAPI.getServerConfig();
             const updatedConfig = {
                 ...currentConfig,
                 additionalOscConnections: additionalOscConnections
             };
             await window.electronAPI.setConfig(updatedConfig);
-            
+            // Re-render to update the UI
             renderAdditionalOscConnections();
             debugLog(`${connection.name || 'Connection'} WebSocket forwarding ${enabled ? 'enabled' : 'disabled'} - configuration updated`);
         }
@@ -1641,7 +1784,7 @@ async function updateOscConnection(id, field, value) {
         } else {
             connection[field] = value;
         }
-        
+        // Apply changes immediately if it's a critical field
         if (field === 'port' || field === 'address') {
             try {
                 const currentConfig = await window.electronAPI.getServerConfig();
@@ -1819,67 +1962,63 @@ function createConnectionElement(connection, index, typeLabel) {
     `;
     return connectionDiv;
 }
+// OSC-Query Subscription Management
+// Note: OSC-Query subscriptions allow VRChat to send only the parameters you're interested in
+// This reduces network traffic and improves performance
 
-async function loadParameterBlacklist() {
+async function loadOscQuerySubscriptions() {
     try {
-        const patterns = await window.electronAPI.getParameterBlacklist();
-        renderBlacklistPatterns(patterns);
+        // OSC-Query is now active and running
+        debugLog('OSC-Query service is active - VRChat can discover this client automatically', 'info');
+        renderOscQuerySubscriptions([]);
     } catch (error) {
-        debugLog(`Error loading parameter blacklist: ${error.message}`, 'error');
+        debugLog(`Error loading OSC-Query subscriptions: ${error.message}`, 'error');
     }
 }
-function renderBlacklistPatterns(patterns) {
-    const container = document.getElementById('blacklist-patterns');
-    if (patterns.length === 0) {
+
+function renderOscQuerySubscriptions(subscriptions) {
+    const container = document.getElementById('oscquery-subscriptions');
+    if (!container) return;
+
+    if (subscriptions.length === 0) {
         const isDarkTheme = document.body.classList.contains('dark-theme');
         const textColor = isDarkTheme ? '#b0b0b0' : '#666';
-        container.innerHTML = `<p style="color: ${textColor}; font-style: italic;">No patterns configured</p>`;
+        const successColor = isDarkTheme ? '#4CAF50' : '#28a745';
+        container.innerHTML = `
+            <p style="color: ${successColor}; font-style: italic; font-weight: 500;">
+                ✓ OSC-Query service is running - VRChat can now discover this client automatically
+            </p>
+            <p style="color: ${textColor}; font-size: 0.9em; margin-top: 10px;">
+                The OSC-Query protocol enables automatic discovery and reduces network traffic.
+                VRChat will detect this client when both are running on the same network.
+            </p>
+        `;
         return;
     }
-    const patternsHtml = patterns.map(pattern => `
+
+    const subscriptionsHtml = subscriptions.map(sub => `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
-                    background-color: #f8f9fa; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #007bff;">
-            <span style="font-family: monospace; color: #495057;">${pattern}</span>
-            <button class="btn btn-danger" onclick="removeBlacklistPattern('${pattern}')" 
+                    background-color: #f8f9fa; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #28a745;">
+            <span style="font-family: monospace; color: #495057;">${sub}</span>
+            <button class="btn btn-danger" onclick="removeOscQuerySubscription('${sub}')" 
                     style="padding: 2px 8px; font-size: 12px;">Remove</button>
         </div>
     `).join('');
 
-    container.innerHTML = patternsHtml;
+    container.innerHTML = subscriptionsHtml;
 }
-async function addBlacklistPattern() {
-    const input = document.getElementById('blacklist-pattern');
-    const pattern = input.value.trim();
-    if (!pattern) {
-        debugLog('Please enter a pattern to blacklist', 'warning');
-        return;
-    }
-    try {
-        const result = await window.electronAPI.addBlacklistPattern(pattern);
-        if (result.success) {
-            input.value = '';
-            renderBlacklistPatterns(result.patterns);
-            debugLog(`Added blacklist pattern: ${pattern}`);
-        } else {
-            debugLog(result.error || 'Failed to add pattern', 'error');
-        }
-    } catch (error) {
-        debugLog(`Error adding blacklist pattern: ${error.message}`, 'error');
-    }
+
+// Note: Subscription management functions remain for future enhancement
+// OSC-Query automatic discovery is now active without requiring manual subscriptions
+
+async function addOscQuerySubscription() {
+    debugLog('OSC-Query automatic discovery is active - manual subscriptions not required', 'info');
 }
-async function removeBlacklistPattern(pattern) {
-    try {
-        const result = await window.electronAPI.removeBlacklistPattern(pattern);
-        if (result.success) {
-            renderBlacklistPatterns(result.patterns);
-            debugLog(`Removed blacklist pattern: ${pattern}`);
-        } else {
-            debugLog(result.error || 'Failed to remove pattern', 'error');
-        }
-    } catch (error) {
-        debugLog(`Error removing blacklist pattern: ${error.message}`, 'error');
-    }
+
+async function removeOscQuerySubscription(pattern) {
+    debugLog('OSC-Query automatic discovery is active - manual subscriptions not required', 'info');
 }
+
 function updateOscReceivedDisplayStatus() {
     const statusElement = document.getElementById('osc-received-display-status');
     const toggleBtn = document.getElementById('osc-received-display-toggle-btn');
@@ -1895,22 +2034,22 @@ function updateOscReceivedDisplayStatus() {
 async function toggleOscReceivedDisplay() {
     try {
         oscReceivedDisplayEnabled = !oscReceivedDisplayEnabled;
-        
+        // Immediate and complete cleanup when disabling
         if (!oscReceivedDisplayEnabled) {
-            
+            // Remove all received messages from buffer
             oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
             clearFloatRateLimitingData();
             document.getElementById('osc-received-log-container').innerHTML = 'OSC Received Display Disabled<br>';
-            
+            // Force immediate garbage collection
             if (window.gc) window.gc();
         }
-        
+        // Save the state to backend settings
         const currentSettings = await window.electronAPI.getAppSettings();
         currentSettings.oscReceivedDisplayEnabled = oscReceivedDisplayEnabled;
         await window.electronAPI.setAppSettings(currentSettings);
-        
+        // Update the UI
         updateOscReceivedDisplayStatus();
-        
+        // Clear existing OSC received log buffer when disabling
         if (!oscReceivedDisplayEnabled) {
             debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing load reduced`);
         } else {
@@ -1945,7 +2084,7 @@ async function toggleTheme() {
     try {
         const newTheme = currentTheme === 'light' ? 'dark' : 'light';
         applyTheme(newTheme);
-        
+        // Save the theme setting
         const currentSettings = await window.electronAPI.getAppSettings();
         currentSettings.theme = newTheme;
         await window.electronAPI.setAppSettings(currentSettings);
@@ -1954,17 +2093,17 @@ async function toggleTheme() {
         debugLog(`Error toggling theme: ${error.message}`, 'error');
     }
 }
-
+// Password saving functionality
 async function handleSavePasswordCheckbox() {
     const checkbox = document.getElementById('save-password-checkbox');
     const modal = document.getElementById('password-warning-modal');
     
     if (checkbox.checked) {
-        
+        // Show warning modal
         modal.style.display = 'flex';
         setupPasswordWarningModal();
     } else {
-        
+        // Unchecking - remove saved password
         try {
             await window.electronAPI.setSavedPassword('');
             debugLog('Saved password removed from configuration');
@@ -1989,7 +2128,7 @@ function setupPasswordWarningModal() {
     confirmBtn.onclick = async () => {
         modal.style.display = 'none';
         debugLog('User confirmed password save warning');
-        
+        // Save current password if there is one
         const password = document.getElementById('password').value;
         if (password) {
             try {
@@ -2001,7 +2140,7 @@ function setupPasswordWarningModal() {
         }
     };
     
-    
+    // Close modal when clicking overlay
     modal.onclick = (e) => {
         if (e.target === modal) {
             checkbox.checked = false;
@@ -2027,7 +2166,7 @@ async function loadSavedPasswordSetting() {
     }
 }
 
-
+// Update password saving when user types new password
 async function handlePasswordChange() {
     const checkbox = document.getElementById('save-password-checkbox');
     const passwordInput = document.getElementById('password');
@@ -2042,7 +2181,7 @@ async function handlePasswordChange() {
     }
 }
 
-
+// Add password change listener after DOM loads
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         const passwordInput = document.getElementById('password');
@@ -2057,7 +2196,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 100);
 });
-
+// HypeRate Integration Functions
 let hyperateStatus = {
     enabled: false,
     connected: false,
@@ -2069,7 +2208,7 @@ async function toggleHyperate() {
         const toggleBtn = document.getElementById('hyperate-toggle-btn');
         toggleBtn.disabled = true;
         if (hyperateStatus.enabled) {
-            
+            // Stop HypeRate - show stopping status immediately
             hyperateStatus.stopping = true;
             updateHyperateUI();
             const result = await window.electronAPI.hyperateStop();
@@ -2079,12 +2218,12 @@ async function toggleHyperate() {
                 updateHyperateUI();
             } else {
                 debugLog(`Failed to stop HypeRate: ${result.error}`, 'error');
-                
+                // Reset stopping state on failure
                 hyperateStatus.stopping = false;
                 updateHyperateUI();
             }
         } else {
-            
+            // Start HypeRate - show connecting status immediately
             hyperateStatus.enabled = true;
             hyperateStatus.connected = false;
             updateHyperateUI();
@@ -2095,7 +2234,7 @@ async function toggleHyperate() {
             } else {
                 debugLog(`Failed to start HypeRate: ${result.error}`, 'error');
                 alert(`Failed to start HypeRate: ${result.error}`);
-                
+                // Reset status on failure
                 hyperateStatus.enabled = false;
                 updateHyperateUI();
             }
@@ -2107,15 +2246,15 @@ async function toggleHyperate() {
         toggleBtn.disabled = false;
     }
 }
-
+// HypeRate auto-start functions
 async function toggleHyperateAutostart() {
     try {
         const autostartBtn = document.getElementById('hyperate-autostart-btn');
         autostartBtn.disabled = true;
-        
+        // Get current autostart status
         const currentStatus = await window.electronAPI.hyperateGetAutostart();
         const newEnabled = !currentStatus.enabled;
-        
+        // Update autostart setting
         const result = await window.electronAPI.hyperateSetAutostart(newEnabled);
         if (result.success) {
             debugLog(`HypeRate autostart ${newEnabled ? 'enabled' : 'disabled'}`);
@@ -2141,14 +2280,14 @@ function updateHyperateAutostartUI(enabled) {
 async function refreshHyperateStatus(includeAutostart = false) {
     try {
         const status = await window.electronAPI.hyperateGetStatus();
-        hyperateStatus = { ...status, stopping: false }; 
+        hyperateStatus = { ...status, stopping: false }; // Ensure stopping is reset from server status
         updateHyperateUI();
-        
+        // Only refresh auto-start status when explicitly requested (not during periodic updates)
         if (includeAutostart) {
             const autostartStatus = await window.electronAPI.hyperateGetAutostart();
             updateHyperateAutostartUI(autostartStatus.enabled);
         }
-        
+        // Always refresh trackers list to show correct active/inactive states
         await refreshHyperateTrackers();
     } catch (error) {
         debugLog(`Error refreshing HypeRate status: ${error.message}`, 'error');
@@ -2292,14 +2431,14 @@ function updateHyperateUI() {
         toggleBtn.textContent = 'Start HypeRate';
         toggleBtn.disabled = false;
     }
-    
+    // Update current heart rate from status
     if (hyperateStatus.enabled && hyperateStatus.lastHeartRate) {
         updateHeartRateDisplay(hyperateStatus.lastHeartRate);
     } else if (!hyperateStatus.enabled) {
         updateHeartRateDisplay(null);
     }
 }
-
+// Auto-refresh HypeRate status when viewing the HypeRate page
 let hyperateStatusInterval = null;
 function startHyperateStatusUpdates() {
     if (hyperateStatusInterval) {
@@ -2308,12 +2447,12 @@ function startHyperateStatusUpdates() {
     hyperateStatusInterval = setInterval(async () => {
         if (document.getElementById('Hyperate-view').style.display !== 'none') {
             await refreshHyperateStatus();
-            
-            if (Math.random() < 0.1) { 
+            // Periodic cleanup during HypeRate updates
+            if (Math.random() < 0.1) { // 10% chance per update
                 clearFloatRateLimitingData();
             }
         }
-    }, 2000); 
+    }, 2000); // Update every 2 seconds
 }
 function stopHyperateStatusUpdates() {
     if (hyperateStatusInterval) {
@@ -2321,12 +2460,12 @@ function stopHyperateStatusUpdates() {
         hyperateStatusInterval = null;
     }
 }
-
+// Update heart rate display
 function updateHeartRateDisplay(heartRate) {
     const heartRateElement = document.getElementById('current-heartrate');
     if (heartRateElement) {
         heartRateElement.textContent = heartRate || '--';
-        
+        // Add a pulse animation for valid heart rates
         if (heartRate && heartRate > 0) {
             heartRateElement.style.animation = 'none';
             setTimeout(() => {
@@ -2335,24 +2474,24 @@ function updateHeartRateDisplay(heartRate) {
         }
     }
 }
-
+// Listen for heart rate updates from main process
 window.electronAPI.onHyperateUpdate?.((data) => {
     if (data.heartRate) {
         updateHeartRateDisplay(data.heartRate);
         hyperateStatus.lastHeartRate = data.heartRate;
     }
 });
-
+// Enhanced showHyperateView function to include auto-refresh
 const originalShowHyperateView = showHyperateView;
 showHyperateView = function() {
     try {
-        
+        // Stop any existing status updates first
         stopHyperateStatusUpdates();
         
-        
+        // Call the original function
         originalShowHyperateView.call(this);
         
-        
+        // Use a longer delay to ensure the view transition is complete
         setTimeout(async () => {
             try {
                 await refreshHyperateStatus();
@@ -2364,7 +2503,7 @@ showHyperateView = function() {
         }, 800);
     } catch (error) {
         debugLog(`Error in showHyperateView: ${error.message}`, 'error');
-        
+        // Fallback to original function
         try {
             originalShowHyperateView.call(this);
         } catch (fallbackError) {
@@ -2372,7 +2511,7 @@ showHyperateView = function() {
         }
     }
 };
-
+// Stop updates when leaving HypeRate view
 const originalShowMainView = showMainView;
 const originalShowOscView = showOscView;
 const originalShowLogsView = showLogsView;
@@ -2398,26 +2537,26 @@ showVOSKView = function() {
     stopHyperateStatusUpdates();
     originalShowVOSKView.call(this);
 };
-
+// Tracker edit modal functionality
 let currentEditingTrackerId = null;
 function openTrackerEditModal(deviceId, currentName) {
     currentEditingTrackerId = deviceId;
     const modal = document.getElementById('tracker-edit-modal');
     const nameInput = document.getElementById('edit-tracker-name');
     const idInput = document.getElementById('edit-tracker-id');
-    
+    // Populate the form
     nameInput.value = currentName || '';
     idInput.value = deviceId;
     modal.style.display = 'flex';
     nameInput.focus();
-    
+    // Setup event handlers
     setupTrackerEditModalHandlers();
 }
 function setupTrackerEditModalHandlers() {
     const modal = document.getElementById('tracker-edit-modal');
     const cancelBtn = document.getElementById('tracker-edit-cancel');
     const saveBtn = document.getElementById('tracker-edit-save');
-    
+    // Remove existing handlers
     cancelBtn.onclick = null;
     saveBtn.onclick = null;
     modal.onclick = null;
@@ -2429,7 +2568,7 @@ function setupTrackerEditModalHandlers() {
         const nameInput = document.getElementById('edit-tracker-name');
         if (!currentEditingTrackerId) return;
         try {
-            
+            // Update name
             const newName = nameInput.value.trim() || null;
             const nameResult = await window.electronAPI.hyperateUpdateTrackerName(currentEditingTrackerId, newName);
             if (nameResult.success) {
@@ -2446,14 +2585,14 @@ function setupTrackerEditModalHandlers() {
             alert(`Error updating tracker: ${error.message}`);
         }
     };
-    
+    // Close modal when clicking overlay
     modal.onclick = (e) => {
         if (e.target === modal) {
             modal.style.display = 'none';
             currentEditingTrackerId = null;
         }
     };
-    
+    // Handle Enter key in name input
     const nameInput = document.getElementById('edit-tracker-name');
     nameInput.onkeydown = (e) => {
         if (e.key === 'Enter') {

@@ -27,6 +27,7 @@ class WebSocketManager {
         if (this.socket && this.isConnected) {
             return { success: true, message: 'Already connected' };
         }
+        // Clean up any existing socket to prevent memory leaks
         if (this.socket) {
             this.socket.removeAllListeners();
             this.socket.disconnect();
@@ -48,6 +49,7 @@ class WebSocketManager {
                 secure: socketUrl.startsWith('wss://'),
                 rejectUnauthorized: true,
                 forceNew: true
+                // For development with self-signed certificates, pass rejectUnauthorized: false in connectionConfig
             });
             await this.setupEventHandlers();
             return new Promise((resolve, reject) => {
@@ -144,6 +146,7 @@ class WebSocketManager {
     }
     disconnect() {
         if (this.socket) {
+            // Remove all event listeners to prevent memory leaks
             this.socket.removeAllListeners();
             this.socket.disconnect();
             this.socket = null;
@@ -152,7 +155,9 @@ class WebSocketManager {
         this.isAuthenticated = false;
         this.currentUser = null;
         this.reconnectAttempts = 0;
+        // Clear internal event handlers to prevent memory leaks
         this.eventHandlers.clear();
+        // Emit disconnection status to any remaining listeners before clearing
         this.emit('connection-status', { status: 'disconnected' });
         return { success: true, message: 'Disconnected successfully' };
     }

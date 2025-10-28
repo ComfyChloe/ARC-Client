@@ -48,8 +48,10 @@
                     <div class="tree-content">
                         <div class="tree-items">
                             <button class="tree-child" id="nav-arcfeedback" onclick="showARCFeedbackView()">ARC Feedback</button>
+                            <button class="tree-child" id="nav-auto-inviter" onclick="showAutoInviterView()">Auto-Inviter</button>
                             <button class="tree-child" id="nav-chatbox" onclick="showChatboxView()">Chatbox</button>
                             <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
+                            <button class="tree-child" id="nav-osc-leash" onclick="showOSCLeashView()">OSC Leash</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
                             <button class="tree-child" id="nav-vrchatapi" onclick="showVRChatAPIView()">VRChat API</button>
                         </div>
@@ -184,6 +186,32 @@
             <div class="header">
                 <h1>VRChat API</h1>
                 <p>Coming soon - Direct VRChat API integration and management</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="osc-leash-view" style="display: none;">
+            <div class="header">
+                <h1>OSC Leash</h1>
+                <p>Coming soon - Advanced OSC parameter leashing and control system</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="auto-inviter-view" style="display: none;">
+            <div class="header">
+                <h1>Auto-Inviter</h1>
+                <p>Coming soon - Automated VRChat friend and world invitation system</p>
             </div>
             <div class="card">
                 <h3>Feature Not Available</h3>
@@ -344,6 +372,7 @@
                     and outgoing connections to send data to multiple applications.
                 </p>
                 
+                <!-- Controls moved to top -->
                 <div class="osc-connection-controls" style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
@@ -357,32 +386,29 @@
                 </div>
 
                 <div id="additional-osc-connections">
-                    <!-- Dynamic connections -->
+                    <!-- Dynamic connections will be added here -->
                 </div>
             </div>
             <div class="card">
-                <h3>Parameter Blacklist</h3>
+                <h3>OSC-Query Service</h3>
                 <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
-                    Block excessive parameters from being sent to the ARC server.
+                    Automatic service discovery for VRChat using OSC-Query protocol.
                 </p>
-                <p>Use * as a wildcard (e.g., /avatar/parameters/Hue/* to block all parameters after /avatar/parameters/Hue/).
-                </p><br>
-                <p>View the Logs section of the app and check what data is being sent in excess to ARC and consider blacklisting those parameters.
-                </p><br>
-                <div class="form-group">
-                    <label for="blacklist-pattern">Parameter Pattern</label>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="blacklist-pattern" placeholder="/avatar/parameters/FT*" style="flex: 1;">
-                        <button class="btn btn-success" onclick="addBlacklistPattern()">Add Pattern</button>
-                    </div>
-                </div>
-                <div id="blacklist-patterns" style="margin-top: 15px;">
-                    <!-- Blacklist patterns -->
+                <p style="margin-bottom: 10px; color: #666; font-size: 0.9em;">
+                    OSC-Query enables VRChat to automatically discover this client on your network,
+                    eliminating manual configuration. The service starts automatically when OSC is enabled.
+                </p>
+                <p style="margin-bottom: 15px; color: #28a745; font-size: 0.85em; font-weight: 500;">
+                    ✓ OSC-Query service is active and discoverable by VRChat
+                </p>
+                <div id="oscquery-subscriptions" style="margin-top: 15px;">
+                    <!-- OSC-Query status will be shown here -->
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Password Save Warning Modal -->
     <div class="modal-overlay" id="password-warning-modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -406,6 +432,7 @@
         </div>
     </div>
 
+    <!-- HypeRate Tracker Edit Modal -->
     <div class="modal-overlay" id="tracker-edit-modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
