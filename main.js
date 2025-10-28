@@ -304,33 +304,37 @@ function initOscServer() {
 }
 async function initOscQueryService() {
   try {
+    // Reuse existing instance if available, otherwise create new one
     if (!oscQueryService) {
       oscQueryService = new OSCQueryService();
+      
+      // Setup event listeners only once when creating new instance
+      oscQueryService.on('started', (info) => {
+        debug.info(`OSC Query service started on HTTP port ${info.httpPort}`);
+        sendToRenderer('oscquery-status', {
+          status: 'started',
+          httpPort: info.httpPort,
+          oscPort: info.oscPort
+        });
+      });
+      oscQueryService.on('error', (error) => {
+        debug.error(`OSC Query service error: ${error.message}`);
+        sendToRenderer('oscquery-status', {
+          status: 'error',
+          error: error.message
+        });
+      });
+      oscQueryService.on('stopped', () => {
+        debug.info('OSC Query service stopped');
+        sendToRenderer('oscquery-status', {
+          status: 'stopped'
+        });
+      });
+    } else {
+      debug.info('Reusing existing OSC Query service instance');
     }
-    // Initialize with OSC port
+    // Initialize with OSC port (safe to call multiple times)
     await oscQueryService.initialize(serverConfig.localOscPort);
-    // Setup event listeners
-    oscQueryService.on('started', (info) => {
-      debug.info(`OSC Query service started on HTTP port ${info.httpPort}`);
-      sendToRenderer('oscquery-status', {
-        status: 'started',
-        httpPort: info.httpPort,
-        oscPort: info.oscPort
-      });
-    });
-    oscQueryService.on('error', (error) => {
-      debug.error(`OSC Query service error: ${error.message}`);
-      sendToRenderer('oscquery-status', {
-        status: 'error',
-        error: error.message
-      });
-    });
-    oscQueryService.on('stopped', () => {
-      debug.info('OSC Query service stopped');
-      sendToRenderer('oscquery-status', {
-        status: 'stopped'
-      });
-    });
     // Start the service
     await oscQueryService.start();
   } catch (error) {
@@ -625,70 +629,73 @@ ipcMain.handle('enable-osc', () => {
   initOscClient();
   return { success: true, message: 'OSC enabled' };
 });
-ipcMain.handle('disable-osc', () => {
+ipcMain.handle('disable-osc', async () => {
   oscEnabled = false;
   debug.logOscServerStateChange(false);
-  // More controlled shutdown sequence
-  return new Promise((resolve) => {
-    try {
-      if (oscService) {
-        debug.info('Stopping OSC service and all additional connections...');
-        // Give the service a moment to complete any pending operations
-        setTimeout(() => {
-          try {
-            oscService.stop();
-            oscService = null;
-            global.oscService = null;
-            debug.info('OSC service stopped successfully');
-          } catch (error) {
-            debug.error(`Error stopping OSC service: ${error.message}`);
-          }
-          // Clean up other OSC components
-          try {
-            if (oscServer) {
-              oscServer.close();
-              oscServer = null;
-            }
-          } catch (error) {
-            debug.error(`Error closing OSC server: ${error.message}`);
-          }
-          try {
-            if (oscClient) {
-              oscClient.close();
-              oscClient = null;
-            }
-          } catch (error) {
-            debug.error(`Error closing OSC client: ${error.message}`);
-          }
-          // Stop OSC Query service
-          try {
-            if (oscQueryService) {
-              oscQueryService.stop();
-              oscQueryService = null;
-            }
-          } catch (error) {
-            debug.error(`Error stopping OSC Query service: ${error.message}`);
-          }
-          sendToRenderer('osc-server-status', { 
-            status: 'disabled', 
-            port: serverConfig.localOscPort 
-          });
-          debug.info('OSC service fully disabled - all connections closed');
-          resolve({ success: true, message: 'OSC disabled' });
-        }, 100);
-      } else {
-        debug.info('OSC service was not running');
-        sendToRenderer('osc-server-status', { 
-          status: 'disabled', 
-          port: serverConfig.localOscPort 
-        });
-        resolve({ success: true, message: 'OSC was already disabled' });
-      }
-    } catch (error) {
-      debug.error(`Error during OSC disable: ${error.message}`);
-      resolve({ success: false, error: error.message });
-    }
+  // Immediately notify UI that we're stopping
+  sendToRenderer('osc-server-status', { 
+    status: 'stopping', 
+    port: serverConfig.localOscPort 
   });
+  // More controlled shutdown sequence
+  try {
+    if (oscService) {
+      debug.info('Stopping OSC service and all additional connections...');
+      // Give the service a moment to complete any pending operations
+      await new Promise(resolve => setTimeout(resolve, 100));
+      try {
+        oscService.stop();
+        oscService = null;
+        global.oscService = null;
+        debug.info('OSC service stopped successfully');
+      } catch (error) {
+        debug.error(`Error stopping OSC service: ${error.message}`);
+      }
+      // Clean up other OSC components
+      try {
+        if (oscServer) {
+          oscServer.close();
+          oscServer = null;
+        }
+      } catch (error) {
+        debug.error(`Error closing OSC server: ${error.message}`);
+      }
+      try {
+        if (oscClient) {
+          oscClient.close();
+          oscClient = null;
+        }
+      } catch (error) {
+        debug.error(`Error closing OSC client: ${error.message}`);
+      }
+      // Stop OSC Query service and WAIT for it to fully complete
+      try {
+        if (oscQueryService) {
+          await oscQueryService.stop();
+          // Don't set to null yet - we'll reuse the instance
+          debug.info('OSC Query service stopped and ready for reuse');
+        }
+      } catch (error) {
+        debug.error(`Error stopping OSC Query service: ${error.message}`);
+      }
+      sendToRenderer('osc-server-status', { 
+        status: 'disabled', 
+        port: serverConfig.localOscPort 
+      });
+      debug.info('OSC service fully disabled - all connections closed');
+      return { success: true, message: 'OSC disabled' };
+    } else {
+      debug.info('OSC service was not running');
+      sendToRenderer('osc-server-status', { 
+        status: 'disabled', 
+        port: serverConfig.localOscPort 
+      });
+      return { success: true, message: 'OSC was already disabled' };
+    }
+  } catch (error) {
+    debug.error(`Error during OSC disable: ${error.message}`);
+    return { success: false, error: error.message };
+  }
 });
 ipcMain.handle('get-saved-password', () => {
   const savedPassword = configManager.getSavedPassword();

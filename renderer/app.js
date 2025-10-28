@@ -1,6 +1,7 @@
 let additionalOscConnections = [];
 let maxAdditionalConnections = 20;
 let oscEnabled = false;
+let oscToggling = false;
 let wsForwardingEnabled = false;
 // WebSocket connection state
 let isConnected = false;
@@ -290,13 +291,22 @@ function updateOscStatus(status, port) {
             text.textContent = `OSC Status: Enabled :${port}`;
             toggleBtn.textContent = 'Disable OSC';
             toggleBtn.className = 'btn btn-danger';
+            toggleBtn.disabled = false;
             oscEnabled = true;
+            break;
+        case 'stopping':
+            indicator.classList.add('status-warning');
+            text.textContent = 'OSC Status: Stopping...';
+            toggleBtn.textContent = 'Stopping...';
+            toggleBtn.className = 'btn btn-secondary';
+            toggleBtn.disabled = true; // Disable button while stopping
             break;
         case 'disabled':
             indicator.classList.add('status-disconnected');
             text.textContent = 'OSC Status: Disabled';
             toggleBtn.textContent = 'Enable OSC';
             toggleBtn.className = 'btn btn-primary';
+            toggleBtn.disabled = false;
             oscEnabled = false;
             break;
         case 'error':
@@ -304,6 +314,7 @@ function updateOscStatus(status, port) {
             text.textContent = 'OSC Status: Error';
             toggleBtn.textContent = 'Enable OSC';
             toggleBtn.className = 'btn btn-primary';
+            toggleBtn.disabled = false;
             oscEnabled = false;
             break;
         default:
@@ -311,6 +322,7 @@ function updateOscStatus(status, port) {
             text.textContent = 'OSC Status: Off';
             toggleBtn.textContent = 'Enable OSC';
             toggleBtn.className = 'btn btn-primary';
+            toggleBtn.disabled = false;
             oscEnabled = false;
     }
 }
@@ -565,7 +577,13 @@ async function updateOscPorts() {
 }
 
 async function toggleOscServer() {
+    // Prevent multiple simultaneous toggle attempts
+    if (oscToggling) {
+        debugLog('OSC toggle already in progress, please wait...', 'warn');
+        return;
+    }
     try {
+        oscToggling = true;
         if (oscEnabled) {
             await window.electronAPI.disableOsc();
             oscEnabled = false;
@@ -577,6 +595,8 @@ async function toggleOscServer() {
         }
     } catch (error) {
         debugLog(`Error toggling OSC server: ${error.message}`, 'error');
+    } finally {
+        oscToggling = false;
     }
 }
 async function toggleWebSocketForwarding() {

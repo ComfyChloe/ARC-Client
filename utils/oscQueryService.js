@@ -267,14 +267,42 @@ class OSCQueryService extends EventEmitter {
             console.log(`[OSCQuery] HTTP Server started on port ${this.httpPort}`);
             // Initialize Bonjour for mDNS
             this.bonjour = new Bonjour();
-            // Advertise service via mDNS
-            this.bonjourService = this.bonjour.publish({
-                name: this.appName,
-                type: 'oscjson',
-                port: this.httpPort,
-                protocol: 'tcp'
-            });
-            console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}'`);
+            // Advertise service via mDNS with error handling for name conflicts
+            try {
+                this.bonjourService = this.bonjour.publish({
+                    name: this.appName,
+                    type: 'oscjson',
+                    port: this.httpPort,
+                    protocol: 'tcp'
+                });
+                console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}'`);
+            } catch (publishError) {
+                // If service name is already in use, try to destroy and retry once
+                if (publishError.message && publishError.message.includes('already in use')) {
+                    console.log('[OSCQuery] Service name in use, attempting cleanup and retry...');
+                    try {
+                        if (this.bonjour) {
+                            this.bonjour.destroy();
+                        }
+                        // Wait a moment for cleanup
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        // Reinitialize and retry
+                        this.bonjour = new Bonjour();
+                        this.bonjourService = this.bonjour.publish({
+                            name: this.appName,
+                            type: 'oscjson',
+                            port: this.httpPort,
+                            protocol: 'tcp'
+                        });
+                        console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}' (after retry)`);
+                    } catch (retryError) {
+                        console.error('[OSCQuery] Failed to publish service after retry:', retryError);
+                        throw retryError;
+                    }
+                } else {
+                    throw publishError;
+                }
+            }
             this.isRunning = true;
             this.emit('started', {
                 httpPort: this.httpPort,
@@ -339,19 +367,34 @@ class OSCQueryService extends EventEmitter {
                 clearTimeout(this._discoveryTimer);
                 this._discoveryTimer = null;
             }
-            // Stop HTTP server
+            // Stop mDNS service first to unpublish from network
+            if (this.bonjourService) {
+                try {
+                    this.bonjourService.stop();
+                    this.bonjourService = null;
+                } catch (error) {
+                    console.error('[OSCQuery] Error stopping Bonjour service:', error);
+                }
+            }
+            // Destroy Bonjour instance
+            if (this.bonjour) {
+                try {
+                    this.bonjour.destroy();
+                    // Wait for Bonjour to fully clean up network resources
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    this.bonjour = null;
+                } catch (error) {
+                    console.error('[OSCQuery] Error destroying Bonjour:', error);
+                }
+            }
+            // Stop HTTP server last
             if (this.httpServer) {
                 await new Promise((resolve) => {
-                    this.httpServer.close(() => resolve());
+                    this.httpServer.close(() => {
+                        this.httpServer = null;
+                        resolve();
+                    });
                 });
-            }
-            // Stop mDNS service
-            if (this.bonjourService) {
-                this.bonjourService.stop();
-            }
-            // Destroy Bonjour
-            if (this.bonjour) {
-                this.bonjour.destroy();
             }
             this.isRunning = false;
             this.emit('stopped');

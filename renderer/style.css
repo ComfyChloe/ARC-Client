@@ -81,6 +81,7 @@ body {
 .status-connected { background-color: #27ae60; }
 .status-disconnected { background-color: #e74c3c; }
 .status-pending { background-color: #f39c12; }
+.status-warning { background-color: #f39c12; } /* Orange for stopping/warning states */
 .card {
     background: white;
     border-radius: 8px;
