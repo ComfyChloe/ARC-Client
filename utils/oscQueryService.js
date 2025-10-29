@@ -56,7 +56,7 @@ class OSCQueryService extends EventEmitter {
         this.bonjour = null;
         this.bonjourService = null;
         this.isRunning = false;
-        this.appName = "ARC-OSC-Client";
+        this.appName = null; // randomly generated on each start
         this.subscriptions = new Set();
         this._discoveryTimer = null;
         // Root node for OSC parameter tree
@@ -68,18 +68,19 @@ class OSCQueryService extends EventEmitter {
     }
     /**
      * Initialize the OSC Query service
-     * @param {number} oscPort - The OSC UDP port being used
+     * @param {number} legacyPort - Legacy OSC port (not used, kept for compatibility)
      * @param {number} httpPort - Optional HTTP port (auto-detected if not provided)
      */
-    async initialize(oscPort, httpPort = null) {
-        this.oscPort = oscPort;
+    async initialize(legacyPort = null, httpPort = null) {
+        // Always auto-assign both OSC and HTTP ports (ignore legacy port)
+        this.oscPort = await this._findAvailablePort(22000, 50000);
         // Find available HTTP port if not specified
         if (!httpPort) {
             this.httpPort = await this._findAvailablePort(22000, 50000);
         } else {
             this.httpPort = httpPort;
         }
-        console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}`);
+        console.log(`[OSCQuery] Initializing with auto-assigned OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}`);
 
         // Setup OSC Query endpoints
         this._setupEndpoints();
@@ -320,6 +321,22 @@ class OSCQueryService extends EventEmitter {
             return;
         }
         try {
+            // Generate NEW unique service name on each start to force VRChat to see as new service
+            const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+            this.appName = `ARC-OSC-Client-${randomSuffix}`;
+            console.log(`[OSCQuery] Generated new service name: ${this.appName}`);
+            // Close any existing OSC UDP port before creating a new one
+            if (this.oscUdpPort) {
+                try {
+                    console.log('[OSCQuery] Closing existing OSC UDP port before restart...');
+                    this.oscUdpPort.close();
+                    this.oscUdpPort = null;
+                    // Wait a moment for the port to be fully released
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                } catch (error) {
+                    console.error('[OSCQuery] Error closing existing OSC UDP port:', error);
+                }
+            }
             // Create HTTP server
             this.httpServer = http.createServer(this._handleRequest.bind(this));
             // Start HTTP server
@@ -451,17 +468,21 @@ class OSCQueryService extends EventEmitter {
                 clearTimeout(this._discoveryTimer);
                 this._discoveryTimer = null;
             }
-            // Stop OSC UDP listener
+            // Stop OSC UDP listener FIRST to prevent new messages
             if (this.oscUdpPort) {
                 try {
+                    // Remove all event listeners to prevent memory leaks
+                    this.oscUdpPort.removeAllListeners();
                     this.oscUdpPort.close();
                     this.oscUdpPort = null;
                     console.log('[OSCQuery] OSC UDP listener stopped');
+                    // Wait for port to be fully released
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 } catch (error) {
                     console.error('[OSCQuery] Error stopping OSC UDP listener:', error);
                 }
             }
-            // Stop mDNS service first to unpublish from network
+            // Stop mDNS service to unpublish from network
             if (this.bonjourService) {
                 try {
                     this.bonjourService.stop();

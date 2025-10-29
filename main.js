@@ -120,12 +120,12 @@ function createWindow() {
     if (oscEnabled && oscService) {
       sendToRenderer('osc-server-status', { 
         status: 'connected', 
-        port: serverConfig.localOscPort 
+        port: serverConfig.legacyOscPort 
       });
     } else {
       sendToRenderer('osc-server-status', { 
         status: oscEnabled ? 'disconnected' : 'disabled', 
-        port: serverConfig.localOscPort 
+        port: serverConfig.legacyOscPort 
       });
     }
     sendToRenderer('websocket-status', {
@@ -241,11 +241,11 @@ function initOscServer() {
     debug.info('OSC is disabled, not initializing server');
     sendToRenderer('osc-server-status', { 
       status: 'disabled', 
-      port: serverConfig.localOscPort 
+      port: serverConfig.legacyOscPort 
     });
     return;
   }
-  debug.info(`Initializing OSC service with port ${serverConfig.localOscPort}`);
+  debug.info(`Initializing OSC service with port ${serverConfig.legacyOscPort}`);
   oscService = new OscService();
   oscService.on('ready', (config) => {
     debug.logOscServiceReady(config);
@@ -291,7 +291,7 @@ function initOscServer() {
   });
   // Initialize and start the service
   if (oscService.initialize(
-    serverConfig.localOscPort, 
+    serverConfig.legacyOscPort, 
     serverConfig.targetOscPort, 
     serverConfig.targetOscAddress
   )) {
@@ -370,8 +370,8 @@ async function initOscQueryService() {
     } else {
       debug.info('Reusing existing OSC Query service instance');
     }
-    // Initialize with OSC port (safe to call multiple times)
-    await oscQueryService.initialize(serverConfig.localOscPort);
+    // Initialize with legacy port (not actually used - OSC Query auto-assigns ports)
+    await oscQueryService.initialize(serverConfig.legacyOscPort);
     // Load and set subscriptions from config
     const subscriptions = serverConfig.oscQuerySubscriptions || ['/*'];
     oscQueryService.setSubscriptions(subscriptions);
@@ -446,7 +446,7 @@ ipcMain.handle('set-config', (event, newConfig) => {
     }
   }
   // Check if only additional connections changed, if so, just update them
-  const portsChanged = (oldConfig.localOscPort !== serverConfig.localOscPort) ||
+  const portsChanged = (oldConfig.legacyOscPort !== serverConfig.legacyOscPort) ||
                        (oldConfig.targetOscPort !== serverConfig.targetOscPort) ||
                        (oldConfig.targetOscAddress !== serverConfig.targetOscAddress);
   const additionalConnectionsChanged = JSON.stringify(oldConfig.additionalOscConnections || []) !== 
@@ -676,7 +676,7 @@ ipcMain.handle('disable-osc', async () => {
   // Immediately notify UI that we're stopping
   sendToRenderer('osc-server-status', { 
     status: 'stopping', 
-    port: serverConfig.localOscPort 
+    port: serverConfig.legacyOscPort 
   });
   // More controlled shutdown sequence
   try {
@@ -721,7 +721,7 @@ ipcMain.handle('disable-osc', async () => {
       }
       sendToRenderer('osc-server-status', { 
         status: 'disabled', 
-        port: serverConfig.localOscPort 
+        port: serverConfig.legacyOscPort 
       });
       debug.info('OSC service fully disabled - all connections closed');
       return { success: true, message: 'OSC disabled' };
@@ -729,7 +729,7 @@ ipcMain.handle('disable-osc', async () => {
       debug.info('OSC service was not running');
       sendToRenderer('osc-server-status', { 
         status: 'disabled', 
-        port: serverConfig.localOscPort 
+        port: serverConfig.legacyOscPort 
       });
       return { success: true, message: 'OSC was already disabled' };
     }
@@ -990,7 +990,7 @@ app.whenReady().then(() => {
     } else {
       sendToRenderer('osc-server-status', { 
         status: 'disabled', 
-        port: serverConfig.localOscPort 
+        port: serverConfig.legacyOscPort 
       });
     }
     // Start HypeRate if auto-start is enabled
