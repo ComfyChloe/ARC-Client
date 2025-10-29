@@ -12,21 +12,14 @@ class ConfigManager {
       additionalOscConnections: [],
       websocketServerUrl: 'wss://avatar.comfychloe.uk:48255',
       logLevel: 'info',
-      parameterBlacklist: [
-        '/avatar/parameters/FT*',
-        '/avatar/parameters/Viseme',
-        '/avatar/parameters/Voice',
-        '/avatar/parameters/Angular*',
-        '/avatar/parameters/Velocity*',
-        '/avatar/parameters/ARCOSC/Heartrate*',
-      ],
       appSettings: {
         enableWebSocketForwarding: false,
         hyperateAutostart: false,
         theme: 'light',
         lastUsername: '',
-        savedPassword: '' // Store password in plain text as requested
+        savedPassword: ''
       },
+      oscQuerySubscriptions: ['/*'],
       windowState: {
         width: 1200,
         height: 800,
@@ -98,6 +91,7 @@ class ConfigManager {
       targetOscAddress: this.config.targetOscAddress,
       additionalOscConnections: this.config.additionalOscConnections || [],
       websocketServerUrl: this.config.websocketServerUrl,
+      oscQuerySubscriptions: this.config.oscQuerySubscriptions || ['/*'],
       appSettings: this.config.appSettings || {}
     };
   }

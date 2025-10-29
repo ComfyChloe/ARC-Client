@@ -13,6 +13,7 @@
 const http = require('http');
 const { Bonjour } = require('bonjour-service');
 const EventEmitter = require('events');
+const osc = require('osc');
 /**
  * OSC Query Access Control enumeration
  */
@@ -51,6 +52,7 @@ class OSCQueryService extends EventEmitter {
         this.httpPort = null;
         this.oscPort = null;
         this.httpServer = null;
+        this.oscUdpPort = null; // OSC UDP listener
         this.bonjour = null;
         this.bonjourService = null;
         this.isRunning = false;
@@ -216,6 +218,69 @@ class OSCQueryService extends EventEmitter {
         res.end();
     }
     /**
+     * Handle received OSC messages and check against subscriptions
+     * @private
+     */
+    _handleOscMessage(oscMsg) {
+        const address = oscMsg.address;
+        // Check if this message matches any subscription
+        const isSubscribed = this._matchesSubscription(address);
+        if (!isSubscribed) {
+            // Silently ignore messages that don't match subscriptions
+            return;
+        }
+        // Parse OSC value from args
+        let value = null;
+        let type = 'f'; // default type
+        if (oscMsg.args && oscMsg.args.length > 0) {
+            const arg = oscMsg.args[0];
+            value = arg.value;
+            type = arg.type || 'f';
+        }
+        // Emit the OSC message for forwarding
+        this.emit('osc-message', {
+            address: address,
+            value: value,
+            type: type,
+            timestamp: Date.now()
+        });
+    }
+    /**
+     * Check if an OSC address matches any subscription pattern
+     * @private
+     */
+    _matchesSubscription(address) {
+        if (this.subscriptions.size === 0) {
+            return false;
+        }
+        for (const pattern of this.subscriptions) {
+            if (this._matchPattern(address, pattern)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
+     * Match an OSC address against a subscription pattern
+     * Supports wildcard patterns like /avatar/parameters/*
+     * @private
+     */
+    _matchPattern(address, pattern) {
+        // Exact match
+        if (address === pattern) {
+            return true;
+        }
+        // Wildcard pattern matching
+        if (pattern.includes('*')) {
+            const regexPattern = pattern
+                .replace(/\//g, '\\/')  // Escape slashes
+                .replace(/\*/g, '.*');  // Convert * to .*
+            const regex = new RegExp(`^${regexPattern}$`);
+            return regex.test(address);
+        }
+        return false;
+    }
+    /**
      * Find an available port
      * @private
      */
@@ -265,6 +330,25 @@ class OSCQueryService extends EventEmitter {
                 });
             });
             console.log(`[OSCQuery] HTTP Server started on port ${this.httpPort}`);
+            // Create OSC UDP listener on the configured OSC port
+            this.oscUdpPort = new osc.UDPPort({
+                localAddress: '0.0.0.0',
+                localPort: this.oscPort,
+                metadata: true
+            });
+            // Setup OSC message handler
+            this.oscUdpPort.on('message', (oscMsg) => {
+                this._handleOscMessage(oscMsg);
+            });
+            this.oscUdpPort.on('ready', () => {
+                console.log(`[OSCQuery] OSC UDP listener started on port ${this.oscPort}`);
+            });
+            this.oscUdpPort.on('error', (error) => {
+                console.error(`[OSCQuery] OSC UDP port error:`, error);
+                this.emit('error', error);
+            });
+            // Open the OSC UDP port
+            this.oscUdpPort.open();
             // Initialize Bonjour for mDNS
             this.bonjour = new Bonjour();
             // Advertise service via mDNS with error handling for name conflicts
@@ -367,6 +451,16 @@ class OSCQueryService extends EventEmitter {
                 clearTimeout(this._discoveryTimer);
                 this._discoveryTimer = null;
             }
+            // Stop OSC UDP listener
+            if (this.oscUdpPort) {
+                try {
+                    this.oscUdpPort.close();
+                    this.oscUdpPort = null;
+                    console.log('[OSCQuery] OSC UDP listener stopped');
+                } catch (error) {
+                    console.error('[OSCQuery] Error stopping OSC UDP listener:', error);
+                }
+            }
             // Stop mDNS service first to unpublish from network
             if (this.bonjourService) {
                 try {
@@ -419,6 +513,17 @@ class OSCQueryService extends EventEmitter {
         this.subscriptions.delete(path);
         console.log(`[OSCQuery] Removed subscription: ${path}`);
         this.emit('subscription-removed', path);
+    }
+    /**
+     * Set subscription paths (replaces all existing subscriptions)
+     */
+    setSubscriptions(paths) {
+        this.subscriptions.clear();
+        if (Array.isArray(paths)) {
+            paths.forEach(path => this.subscriptions.add(path));
+            console.log(`[OSCQuery] Set ${paths.length} subscription(s):`, paths);
+            this.emit('subscriptions-updated', paths);
+        }
     }
     /**
      * Get all current subscriptions

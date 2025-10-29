@@ -330,11 +330,52 @@ async function initOscQueryService() {
           status: 'stopped'
         });
       });
+      // Setup OSC message forwarding to WebSocket
+      oscQueryService.on('osc-message', (oscData) => {
+        // Send to renderer for logging (always, regardless of forwarding status)
+        sendToRenderer('osc-received', {
+          address: oscData.address,
+          value: oscData.value,
+          type: oscData.type,
+          connectionId: null // OSC Query messages don't have a connection ID
+        });
+        // Check if WebSocket forwarding is enabled
+        const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false;
+        if (!wsForwardingEnabled) {
+          // Don't forward to WebSocket, but still logged above
+          return;
+        }
+        // Forward to WebSocket if connected
+        if (wsManager && wsManager.isConnected) {
+          try {
+            wsManager.sendOscData({
+              address: oscData.address,
+              value: oscData.value,
+              type: oscData.type
+            });
+            // Send to renderer for "forwarded" logging
+            sendToRenderer('osc-forwarded', {
+              address: oscData.address,
+              value: oscData.value,
+              type: oscData.type,
+              connectionId: null
+            });
+            // Optionally log forwarded messages (commented out to reduce spam)
+            // debug.info(`Forwarded OSC to WebSocket: ${oscData.address} = ${oscData.value}`);
+          } catch (error) {
+            debug.error(`Failed to forward OSC to WebSocket: ${error.message}`);
+          }
+        }
+      });
     } else {
       debug.info('Reusing existing OSC Query service instance');
     }
     // Initialize with OSC port (safe to call multiple times)
     await oscQueryService.initialize(serverConfig.localOscPort);
+    // Load and set subscriptions from config
+    const subscriptions = serverConfig.oscQuerySubscriptions || ['/*'];
+    oscQueryService.setSubscriptions(subscriptions);
+    debug.info(`OSC Query subscriptions loaded: ${subscriptions.join(', ')}`);
     // Start the service
     await oscQueryService.start();
   } catch (error) {
@@ -694,6 +735,82 @@ ipcMain.handle('disable-osc', async () => {
     }
   } catch (error) {
     debug.error(`Error during OSC disable: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+// OSC Query subscription management IPC handlers
+ipcMain.handle('get-oscquery-subscriptions', () => {
+  try {
+    if (oscQueryService) {
+      return { 
+        success: true, 
+        subscriptions: oscQueryService.getSubscriptions() 
+      };
+    }
+    // Return from config if service isn't running
+    return { 
+      success: true, 
+      subscriptions: serverConfig.oscQuerySubscriptions || ['/*'] 
+    };
+  } catch (error) {
+    debug.error(`Failed to get OSC Query subscriptions: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('set-oscquery-subscriptions', (event, subscriptions) => {
+  try {
+    if (!Array.isArray(subscriptions)) {
+      throw new Error('Subscriptions must be an array');
+    }
+    // Update config
+    serverConfig.oscQuerySubscriptions = subscriptions;
+    const result = configManager.updateConfig({ oscQuerySubscriptions: subscriptions });
+    if (!result) {
+      throw new Error('Failed to save subscriptions to config');
+    }
+    // Update active service if running
+    if (oscQueryService && oscQueryService.isRunning) {
+      oscQueryService.setSubscriptions(subscriptions);
+      debug.info(`OSC Query subscriptions updated: ${subscriptions.join(', ')}`);
+    }
+    return { success: true, subscriptions };
+  } catch (error) {
+    debug.error(`Failed to set OSC Query subscriptions: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('add-oscquery-subscription', (event, path) => {
+  try {
+    const currentSubs = serverConfig.oscQuerySubscriptions || ['/*'];
+    if (currentSubs.includes(path)) {
+      return { success: true, message: 'Subscription already exists', subscriptions: currentSubs };
+    }
+    const newSubs = [...currentSubs, path];
+    serverConfig.oscQuerySubscriptions = newSubs;
+    configManager.updateConfig({ oscQuerySubscriptions: newSubs });
+    if (oscQueryService && oscQueryService.isRunning) {
+      oscQueryService.addSubscription(path);
+    }
+    debug.info(`Added OSC Query subscription: ${path}`);
+    return { success: true, subscriptions: newSubs };
+  } catch (error) {
+    debug.error(`Failed to add OSC Query subscription: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('remove-oscquery-subscription', (event, path) => {
+  try {
+    const currentSubs = serverConfig.oscQuerySubscriptions || [];
+    const newSubs = currentSubs.filter(sub => sub !== path);
+    serverConfig.oscQuerySubscriptions = newSubs;
+    configManager.updateConfig({ oscQuerySubscriptions: newSubs });
+    if (oscQueryService && oscQueryService.isRunning) {
+      oscQueryService.removeSubscription(path);
+    }
+    debug.info(`Removed OSC Query subscription: ${path}`);
+    return { success: true, subscriptions: newSubs };
+  } catch (error) {
+    debug.error(`Failed to remove OSC Query subscription: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
