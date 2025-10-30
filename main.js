@@ -266,6 +266,7 @@ function initOscServer() {
       oscLeashAddon.oscService = oscService;
       debug.info('Updated OSCLeash addon with OSC service');
     }
+    
     // Start autostart addons now that OSC service is ready
     const appSettings = configManager.getAppSettings();
     if (appSettings.hyperateAutostart && hyperateAddon && !hyperateAddon.isEnabled()) {
@@ -1049,6 +1050,7 @@ ipcMain.handle('oscleash-update-config', (event, newConfig) => {
     return { success: false, error: error.message };
   }
 });
+
 // OSCLeash auto-start IPC handlers
 ipcMain.handle('oscleash-get-autostart', () => {
   try {
@@ -1059,6 +1061,7 @@ ipcMain.handle('oscleash-get-autostart', () => {
     return { enabled: false };
   }
 });
+
 ipcMain.handle('oscleash-set-autostart', (event, enabled) => {
   try {
     const result = configManager.updateAppSettings({ oscleashAutostart: enabled });
@@ -1097,6 +1100,7 @@ app.whenReady().then(() => {
   const needsOscForAutostart = appSettings.hyperateAutostart || appSettings.oscleashAutostart;
   // Only enable OSC if user has previously enabled it AND autostart features need it
   // Don't override client-wide OSC setting - autostart should work with user's OSC preference
+  
   // Important: Window before initializing OSC service
   createWindow();
   // Set up periodic memory management
@@ -1112,11 +1116,13 @@ app.whenReady().then(() => {
         status: 'disabled', 
         port: serverConfig.legacyOscPort 
       });
+      
       // Inform user if autostart features are enabled but OSC is disabled
       if (needsOscForAutostart) {
         debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
       }
     }
+
   }, 500); // Short delay to ensure window is ready
   setTimeout(() => {
     debug.connectionTimeout();

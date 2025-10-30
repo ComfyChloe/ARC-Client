@@ -3917,58 +3917,24 @@ showOSCLeashView = function() {
     originalShowOSCLeashView();
     startOSCLeashStatusUpdates();
 };
-
-// Mock data updates for demonstration (remove this in production if real data is available)
-function simulateOSCLeashData() {
-    if (oscLeashStatus.enabled && document.getElementById('osc-leash-view').style.display !== 'none') {
-        // Simulate some movement data
-        const time = Date.now() / 1000;
-        const vertical = Math.sin(time * 0.5) * 0.3;
-        const horizontal = Math.cos(time * 0.3) * 0.2;
-        const run = Math.abs(vertical) > 0.25 ? 1 : 0;
-        
-        updateMovementDisplay(vertical, horizontal, run, 0);
-        
-        // Simulate physbone inputs
-        updatePhysboneInputsDisplay({
-            stretch: Math.abs(vertical) + Math.abs(horizontal),
-            grabbed: Math.abs(vertical) > 0.1 || Math.abs(horizontal) > 0.1,
-            zPos: Math.max(0, vertical),
-            zNeg: Math.max(0, -vertical),
-            xPos: Math.max(0, horizontal),
-            xNeg: Math.max(0, -horizontal),
-            yPos: 0,
-            yNeg: 0
-        });
-    }
-}
-
-// Start simulation (remove this in production)
-setInterval(simulateOSCLeashData, 100);
-
 // =============================================
 // OSC LEASH CONFIGURATION FUNCTIONS
 // =============================================
-
 let currentOSCLeashConfig = null;
-
 // Tab switching for configuration
 function showConfigTab(tabName) {
     // Remove active class from all tabs
     document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.remove('active');
     });
-    
     // Hide all config content
     document.querySelectorAll('.config-tab-content').forEach(content => {
         content.style.display = 'none';
     });
-    
     // Show selected tab and content
     document.getElementById(`config-tab-${tabName}`).classList.add('active');
     document.getElementById(`config-content-${tabName}`).style.display = 'block';
 }
-
 // Load current configuration from backend
 async function loadOSCLeashConfig() {
     try {
@@ -3986,7 +3952,6 @@ async function loadOSCLeashConfig() {
         alert('Failed to load configuration. Please try again.');
     }
 }
-
 // Populate form fields with config values
 function populateConfigForm(config) {
     // Movement settings
@@ -3995,18 +3960,15 @@ function populateConfigForm(config) {
     document.getElementById('config-strength-multiplier').value = config.StrengthMultiplier;
     document.getElementById('config-updown-compensation').value = config.UpDownCompensation;
     document.getElementById('config-updown-deadzone').value = (config.UpDownDeadzone * 100);
-    
     // Timing settings
     document.getElementById('config-active-delay').value = config.ActiveDelay;
     document.getElementById('config-inactive-delay').value = config.InactiveDelay;
     document.getElementById('config-logging').checked = config.Logging;
-    
     // Turning settings
     document.getElementById('config-turning-enabled').checked = config.TurningEnabled;
     document.getElementById('config-turning-multiplier').value = config.TurningMultiplier;
     document.getElementById('config-turning-deadzone').value = config.TurningDeadzone;
     document.getElementById('config-turning-goal').value = config.TurningGoal;
-    
     // Advanced settings (physbone parameters)
     document.getElementById('config-physbone-params').value = config.PhysboneParameters.join(', ');
     document.getElementById('config-z-positive').value = config.DirectionalParameters.Z_Positive_Param;
@@ -4015,12 +3977,10 @@ function populateConfigForm(config) {
     document.getElementById('config-x-negative').value = config.DirectionalParameters.X_Negative_Param;
     document.getElementById('config-y-positive').value = config.DirectionalParameters.Y_Positive_Param;
     document.getElementById('config-y-negative').value = config.DirectionalParameters.Y_Negative_Param;
-    
     // Update all slider displays
     updateSliderDisplays();
     toggleTurningSettings();
 }
-
 // Update slider value displays
 function updateSliderDisplays() {
     const sliders = [
