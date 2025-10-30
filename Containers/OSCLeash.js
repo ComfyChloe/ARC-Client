@@ -192,6 +192,7 @@ class OSCPackageController {
 
       // Physbone Grab Status
       const grabbedAddress = `/avatar/parameters/${leash.Name}_IsGrabbed`;
+      debug.info(`[OSCLeash Debug] Registering listener for: ${grabbedAddress}`);
       this.registerListener(grabbedAddress, (value) => {
         this.updateGrabbed(leash, value);
       });
@@ -234,14 +235,25 @@ class OSCPackageController {
     if (this.oscService && this.oscService.registerOSCLeashListener) {
       this.oscService.registerOSCLeashListener(address, callback);
       this.listeners.set(address, callback);
+      debug.info(`[OSCLeash Debug] Registered OSC listener: ${address}`);
+    } else {
+      debug.warn(`[OSCLeash Debug] Failed to register listener - OSC service not available: ${address}`);
     }
   }
 
   updateGrabbed(currLeash, value) {
-    currLeash.Grabbed = value;
+    const wasGrabbed = currLeash.Grabbed;
+    // Convert OSC value to boolean (VRChat sends 0/1 for boolean parameters)
+    currLeash.Grabbed = Boolean(value);
+    
+    debug.info(`[OSCLeash Debug] ${currLeash.Name}_IsGrabbed: ${value} -> ${currLeash.Grabbed} (was: ${wasGrabbed})`);
 
-    let threadInProgress = false;
-    if (currLeash.Grabbed) {
+    if (currLeash.Grabbed && !wasGrabbed) {
+      // Leash was just grabbed - start monitoring
+      debug.info(`${currLeash.Name} grabbed - starting active monitoring`);
+      currLeash.wasGrabbed = true;
+      
+      let threadInProgress = false;
       for (const leash of this.leashes) {
         if (leash.Name !== currLeash.Name && leash.Active) {
           threadInProgress = true;
@@ -251,6 +263,14 @@ class OSCPackageController {
       if (!threadInProgress && this.onLeashActivate) {
         currLeash.Active = true;
         this.onLeashActivate(currLeash);
+      }
+    } else if (!currLeash.Grabbed && wasGrabbed) {
+      // Leash was just released - stop monitoring
+      debug.info(`${currLeash.Name} released - stopping active monitoring`);
+      currLeash.wasGrabbed = false;
+      
+      if (this.onLeashDeactivate) {
+        this.onLeashDeactivate(currLeash);
       }
     }
   }
@@ -272,28 +292,64 @@ class OSCLeashProgram {
   constructor(oscService) {
     this.oscService = oscService;
     this.running = false;
+    this.activeIntervals = new Map(); // Track active polling intervals
   }
 
   resetProgram() {
     this.running = false;
+    // Clear all active intervals
+    for (const [leashName, intervalId] of this.activeIntervals) {
+      clearInterval(intervalId);
+      debug.info(`Stopped monitoring thread for ${leashName}`);
+    }
+    this.activeIntervals.clear();
   }
 
   updateProgram(runBool) {
     this.running = runBool;
   }
 
-  async leashRun(leash, counter = 0) {
-    if (counter === 0 && this.running || !leash.Active) {
-      return;
+  // Start active polling when leash is grabbed
+  startLeashMonitoring(leash) {
+    if (this.activeIntervals.has(leash.Name)) {
+      return; // Already monitoring this leash
     }
 
-    if (counter < 0) {
-      counter = 1;
+    debug.info(`Starting active monitoring thread for ${leash.Name}`);
+    const intervalId = setInterval(() => {
+      this.processLeashMovement(leash);
+    }, leash.settings.ActiveDelay);
+    
+    this.activeIntervals.set(leash.Name, intervalId);
+  }
+
+  // Stop active polling when leash is released
+  stopLeashMonitoring(leash) {
+    const intervalId = this.activeIntervals.get(leash.Name);
+    if (intervalId) {
+      clearInterval(intervalId);
+      this.activeIntervals.delete(leash.Name);
+      debug.info(`Stopped monitoring thread for ${leash.Name}`);
+      
+      // Send stop signals
+      this.leashOutput(0.0, 0.0, 0.0, 0, leash.settings);
+      
+      // Reset leash state
+      leash.Active = false;
+      leash.resetMovement();
+    }
+  }
+
+  processLeashMovement(leash) {
+    // Only process if leash is grabbed and active
+    if (!leash.Grabbed || !leash.Active) {
+      this.stopLeashMonitoring(leash);
+      return;
     }
 
     if (!leash.settings.Logging) {
       // In browser context, we'd clear console, but in Node we just log status
-      debug.info('OSCLeash is Running');
+      debug.info(`OSCLeash is Running - ${leash.Name}`);
     } else {
       leash.printDirections();
     }
@@ -379,62 +435,27 @@ class OSCLeashProgram {
       TurningSpeed = this.clamp(TurningSpeed);
     }
 
-    // Leash is grabbed
-    if (leash.Grabbed) {
-      this.updateProgram(true);
-
-      if (leash.settings.Logging) {
-        if (leash.wasGrabbed === false) {
-          debug.info(`${leash.Name} grabbed`);
-          leash.wasGrabbed = true;
-        }
-      } else {
-        debug.info(`${leash.Name} is grabbed`);
-      }
-
-      if (leash.Stretch > leash.settings.RunDeadzone) {
-        // Running
-        this.leashOutput(VerticalOutput, HorizontalOutput, TurningSpeed, 1, leash.settings);
-      } else if (leash.Stretch > leash.settings.WalkDeadzone) {
-        // Walking
-        this.leashOutput(VerticalOutput, HorizontalOutput, TurningSpeed, 0, leash.settings);
-      } else {
-        // Not stretched enough to move
-        this.leashOutput(0.0, 0.0, 0.0, 0, leash.settings);
-      }
-
-      await this.delay(leash.settings.ActiveDelay);
-      this.leashRun(leash, counter + 1);
-    } else if (leash.Grabbed !== leash.wasGrabbed) {
-      if (leash.settings.Logging) {
-        debug.info(`${leash.Name} dropped`);
-      } else {
-        debug.info(`${leash.Name} dropped`);
-      }
-
-      leash.Active = false;
-      leash.resetMovement();
-
-      // Very important stop message - fires twice to ensure VRC receives it
-      for (let i = 0; i < 2; i++) {
-        await this.delay(leash.settings.ActiveDelay);
-        this.leashOutput(0.0, 0.0, 0.0, 0, leash.settings);
-      }
-
-      leash.wasGrabbed = false;
-      this.resetProgram();
+    // Process movement based on stretch
+    if (leash.Stretch > leash.settings.RunDeadzone) {
+      // Running
+      this.leashOutput(VerticalOutput, HorizontalOutput, TurningSpeed, 1, leash.settings);
+    } else if (leash.Stretch > leash.settings.WalkDeadzone) {
+      // Walking
+      this.leashOutput(VerticalOutput, HorizontalOutput, TurningSpeed, 0, leash.settings);
     } else {
-      // Only used at the start
-      if (!leash.settings.Logging) {
-        debug.info('Waiting for Initial Input');
-      }
-
-      leash.Active = false;
+      // Not stretched enough to move
       this.leashOutput(0.0, 0.0, 0.0, 0, leash.settings);
-      this.resetProgram();
-
-      await this.delay(leash.settings.InactiveDelay);
     }
+  }
+
+  // Legacy method for compatibility - now just starts monitoring
+  async leashRun(leash) {
+    if (!leash.Active) {
+      return;
+    }
+    
+    // Start monitoring this leash
+    this.startLeashMonitoring(leash);
   }
 
   leashOutput(vert, hori, turn, runType, settings) {
@@ -548,6 +569,9 @@ class OSCLeashAddon {
       this.packageController.onLeashActivate = (leash) => {
         this.program.leashRun(leash);
       };
+      this.packageController.onLeashDeactivate = (leash) => {
+        this.program.stopLeashMonitoring(leash);
+      };
       this.packageController.listen();
 
       // Initialize first leash as active
@@ -569,6 +593,11 @@ class OSCLeashAddon {
     }
 
     this.enabled = false;
+
+    // Stop all monitoring threads
+    if (this.program) {
+      this.program.resetProgram();
+    }
 
     // Stop all active leashes
     for (const leash of this.leashes) {

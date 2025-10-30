@@ -3613,6 +3613,9 @@ function showOSCLeashView() {
             requestAnimationFrame(() => {
                 oscLeashView.style.opacity = '1';
             });
+            
+            // Automatically load the current configuration when opening OSCLeash view
+            loadOSCLeashConfig();
         } else {
             debugLog('Error: OSC Leash view element not found!', 'error');
         }
@@ -3942,3 +3945,352 @@ function simulateOSCLeashData() {
 
 // Start simulation (remove this in production)
 setInterval(simulateOSCLeashData, 100);
+
+// =============================================
+// OSC LEASH CONFIGURATION FUNCTIONS
+// =============================================
+
+let currentOSCLeashConfig = null;
+
+// Tab switching for configuration
+function showConfigTab(tabName) {
+    // Remove active class from all tabs
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Hide all config content
+    document.querySelectorAll('.config-tab-content').forEach(content => {
+        content.style.display = 'none';
+    });
+    
+    // Show selected tab and content
+    document.getElementById(`config-tab-${tabName}`).classList.add('active');
+    document.getElementById(`config-content-${tabName}`).style.display = 'block';
+}
+
+// Load current configuration from backend
+async function loadOSCLeashConfig() {
+    try {
+        const config = await window.electronAPI.oscleashGetConfig();
+        if (config) {
+            currentOSCLeashConfig = config;
+            populateConfigForm(config);
+            updateConfigDisplay(config);
+            debugLog('OSC Leash configuration loaded');
+        } else {
+            debugLog('No OSC Leash configuration available', 'warning');
+        }
+    } catch (error) {
+        debugLog(`Error loading OSC Leash config: ${error.message}`, 'error');
+        alert('Failed to load configuration. Please try again.');
+    }
+}
+
+// Populate form fields with config values
+function populateConfigForm(config) {
+    // Movement settings
+    document.getElementById('config-run-deadzone').value = (config.RunDeadzone * 100);
+    document.getElementById('config-walk-deadzone').value = (config.WalkDeadzone * 100);
+    document.getElementById('config-strength-multiplier').value = config.StrengthMultiplier;
+    document.getElementById('config-updown-compensation').value = config.UpDownCompensation;
+    document.getElementById('config-updown-deadzone').value = (config.UpDownDeadzone * 100);
+    
+    // Timing settings
+    document.getElementById('config-active-delay').value = config.ActiveDelay;
+    document.getElementById('config-inactive-delay').value = config.InactiveDelay;
+    document.getElementById('config-logging').checked = config.Logging;
+    
+    // Turning settings
+    document.getElementById('config-turning-enabled').checked = config.TurningEnabled;
+    document.getElementById('config-turning-multiplier').value = config.TurningMultiplier;
+    document.getElementById('config-turning-deadzone').value = config.TurningDeadzone;
+    document.getElementById('config-turning-goal').value = config.TurningGoal;
+    
+    // Advanced settings (physbone parameters)
+    document.getElementById('config-physbone-params').value = config.PhysboneParameters.join(', ');
+    document.getElementById('config-z-positive').value = config.DirectionalParameters.Z_Positive_Param;
+    document.getElementById('config-z-negative').value = config.DirectionalParameters.Z_Negative_Param;
+    document.getElementById('config-x-positive').value = config.DirectionalParameters.X_Positive_Param;
+    document.getElementById('config-x-negative').value = config.DirectionalParameters.X_Negative_Param;
+    document.getElementById('config-y-positive').value = config.DirectionalParameters.Y_Positive_Param;
+    document.getElementById('config-y-negative').value = config.DirectionalParameters.Y_Negative_Param;
+    
+    // Update all slider displays
+    updateSliderDisplays();
+    toggleTurningSettings();
+}
+
+// Update slider value displays
+function updateSliderDisplays() {
+    const sliders = [
+        { id: 'config-run-deadzone', suffix: '%' },
+        { id: 'config-walk-deadzone', suffix: '%' },
+        { id: 'config-strength-multiplier', suffix: '' },
+        { id: 'config-updown-compensation', suffix: '' },
+        { id: 'config-updown-deadzone', suffix: '%' },
+        { id: 'config-active-delay', suffix: 'ms' },
+        { id: 'config-inactive-delay', suffix: 'ms' },
+        { id: 'config-turning-multiplier', suffix: '' },
+        { id: 'config-turning-deadzone', suffix: '' },
+        { id: 'config-turning-goal', suffix: '°' }
+    ];
+
+    sliders.forEach(slider => {
+        const element = document.getElementById(slider.id);
+        const display = document.getElementById(slider.id + '-value');
+        if (element && display) {
+            element.addEventListener('input', () => {
+                display.textContent = element.value + slider.suffix;
+            });
+            // Trigger initial update
+            display.textContent = element.value + slider.suffix;
+        }
+    });
+}
+
+// Toggle turning settings visibility
+function toggleTurningSettings() {
+    const turningEnabled = document.getElementById('config-turning-enabled').checked;
+    const turningSettings = document.getElementById('turning-settings');
+    
+    if (turningEnabled) {
+        turningSettings.style.opacity = '1';
+        turningSettings.style.pointerEvents = 'auto';
+    } else {
+        turningSettings.style.opacity = '0.5';
+        turningSettings.style.pointerEvents = 'none';
+    }
+}
+
+// Collect configuration from form
+function collectConfigFromForm() {
+    return {
+        IP: "127.0.0.1", // Fixed
+        ListeningPort: 9001, // Fixed
+        SendingPort: 9000, // Fixed
+        RunDeadzone: parseFloat(document.getElementById('config-run-deadzone').value) / 100,
+        WalkDeadzone: parseFloat(document.getElementById('config-walk-deadzone').value) / 100,
+        StrengthMultiplier: parseFloat(document.getElementById('config-strength-multiplier').value),
+        UpDownCompensation: parseFloat(document.getElementById('config-updown-compensation').value),
+        UpDownDeadzone: parseFloat(document.getElementById('config-updown-deadzone').value) / 100,
+        TurningEnabled: document.getElementById('config-turning-enabled').checked,
+        TurningMultiplier: parseFloat(document.getElementById('config-turning-multiplier').value),
+        TurningDeadzone: parseFloat(document.getElementById('config-turning-deadzone').value),
+        TurningGoal: parseFloat(document.getElementById('config-turning-goal').value),
+        ActiveDelay: parseInt(document.getElementById('config-active-delay').value),
+        InactiveDelay: parseInt(document.getElementById('config-inactive-delay').value),
+        Logging: document.getElementById('config-logging').checked,
+        PhysboneParameters: document.getElementById('config-physbone-params').value.split(',').map(p => p.trim()),
+        DirectionalParameters: {
+            Z_Positive_Param: document.getElementById('config-z-positive').value,
+            Z_Negative_Param: document.getElementById('config-z-negative').value,
+            X_Positive_Param: document.getElementById('config-x-positive').value,
+            X_Negative_Param: document.getElementById('config-x-negative').value,
+            Y_Positive_Param: document.getElementById('config-y-positive').value,
+            Y_Negative_Param: document.getElementById('config-y-negative').value
+        }
+    };
+}
+
+// Save configuration to backend
+async function saveOSCLeashConfig() {
+    try {
+        const config = collectConfigFromForm();
+        const result = await window.electronAPI.oscleashUpdateConfig(config);
+        
+        if (result.success) {
+            currentOSCLeashConfig = config;
+            updateConfigDisplay(config);
+            debugLog('OSC Leash configuration saved successfully');
+            
+            // Show success message
+            const saveBtn = document.getElementById('oscleash-save-config-btn');
+            const originalText = saveBtn.textContent;
+            saveBtn.textContent = 'Saved!';
+            saveBtn.className = 'btn btn-success';
+            setTimeout(() => {
+                saveBtn.textContent = originalText;
+                saveBtn.className = 'btn btn-success';
+            }, 2000);
+        } else {
+            throw new Error(result.error || 'Unknown error');
+        }
+    } catch (error) {
+        debugLog(`Error saving OSC Leash config: ${error.message}`, 'error');
+        alert(`Failed to save configuration: ${error.message}`);
+    }
+}
+
+// Reset configuration to defaults
+async function resetOSCLeashConfig() {
+    if (!confirm('Are you sure you want to reset all OSC Leash settings to their default values?')) {
+        return;
+    }
+
+    const defaultConfig = {
+        IP: "127.0.0.1",
+        ListeningPort: 9001,
+        SendingPort: 9000,
+        RunDeadzone: 0.70,
+        WalkDeadzone: 0.15,
+        StrengthMultiplier: 1.2,
+        UpDownCompensation: 1.0,
+        UpDownDeadzone: 0.5,
+        TurningEnabled: false,
+        TurningMultiplier: 0.80,
+        TurningDeadzone: 0.15,
+        TurningGoal: 90,
+        ActiveDelay: 20,
+        InactiveDelay: 500,
+        Logging: false,
+        PhysboneParameters: ["Leash"],
+        DirectionalParameters: {
+            Z_Positive_Param: "Leash_Z+",
+            Z_Negative_Param: "Leash_Z-",
+            X_Positive_Param: "Leash_X+",
+            X_Negative_Param: "Leash_X-",
+            Y_Positive_Param: "Leash_Y+",
+            Y_Negative_Param: "Leash_Y-"
+        }
+    };
+
+    try {
+        populateConfigForm(defaultConfig);
+        debugLog('OSC Leash configuration reset to defaults');
+        
+        // Show reset message
+        const resetBtn = document.getElementById('oscleash-reset-config-btn');
+        const originalText = resetBtn.textContent;
+        resetBtn.textContent = 'Reset!';
+        setTimeout(() => {
+            resetBtn.textContent = originalText;
+        }, 2000);
+    } catch (error) {
+        debugLog(`Error resetting OSC Leash config: ${error.message}`, 'error');
+        alert('Failed to reset configuration. Please try again.');
+    }
+}
+
+// OSC Leash autostart functionality
+async function toggleOSCLeashAutostart() {
+    try {
+        const autostartBtn = document.getElementById('oscleash-autostart-btn');
+        autostartBtn.disabled = true;
+
+        // Get current autostart status
+        const currentStatus = await window.electronAPI.oscleashGetAutostart();
+        const newEnabled = !currentStatus.enabled;
+
+        // Update autostart setting
+        const result = await window.electronAPI.oscleashSetAutostart(newEnabled);
+        
+        if (result.success) {
+            debugLog(`OSCLeash autostart ${newEnabled ? 'enabled' : 'disabled'}`);
+            updateOSCLeashAutostartButton(newEnabled);
+        } else {
+            debugLog(`Failed to update OSCLeash autostart: ${result.error}`, 'error');
+            alert(`Failed to update autostart setting: ${result.error}`);
+        }
+    } catch (error) {
+        debugLog(`Error toggling OSCLeash autostart: ${error.message}`, 'error');
+        alert('Failed to update autostart setting. Please try again.');
+    } finally {
+        const autostartBtn = document.getElementById('oscleash-autostart-btn');
+        autostartBtn.disabled = false;
+    }
+}
+
+function updateOSCLeashAutostartButton(enabled) {
+    const autostartBtn = document.getElementById('oscleash-autostart-btn');
+    if (autostartBtn) {
+        autostartBtn.textContent = `Auto-start: ${enabled ? 'Enabled' : 'Disabled'}`;
+        autostartBtn.className = enabled ? 'btn btn-success' : 'btn btn-secondary';
+    }
+}
+
+async function loadOSCLeashAutostartStatus() {
+    try {
+        const status = await window.electronAPI.oscleashGetAutostart();
+        updateOSCLeashAutostartButton(status.enabled);
+    } catch (error) {
+        debugLog(`Error loading OSCLeash autostart status: ${error.message}`, 'error');
+    }
+}
+
+// Initialize configuration UI when OSC Leash view is shown  
+// Override the existing showOSCLeashView function to include config loading
+const originalOSCLeashView = showOSCLeashView;
+window.showOSCLeashView = function() {
+    debugLog('showOSCLeashView called with config loading');
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        
+        const oscLeashView = document.getElementById('osc-leash-view');
+        if (oscLeashView) {
+            oscLeashView.style.display = 'block';
+            oscLeashView.style.opacity = '0';
+            requestAnimationFrame(() => {
+                oscLeashView.style.opacity = '1';
+            });
+        } else {
+            debugLog('Error: OSC Leash view element not found!', 'error');
+        }
+    }, 300);
+
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+
+    // Reset all tree-child buttons and set OSC Leash as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+
+    const navOSCLeash = document.getElementById('nav-osc-leash');
+    if (navOSCLeash) {
+        navOSCLeash.classList.add('active');
+        navOSCLeash.disabled = true;
+    }
+
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+
+    // Initialize OSC Leash status and configuration
+    refreshOSCLeashStatus(true);
+    startOSCLeashStatusUpdates();
+    
+    // Load configuration and autostart status automatically
+    setTimeout(() => {
+        loadOSCLeashConfig();
+        updateSliderDisplays();
+        loadOSCLeashAutostartStatus();
+    }, 500);
+    
+    debugLog('Switched to OSC Leash view with configuration');
+};

@@ -15,6 +15,7 @@ class ConfigManager {
       appSettings: {
         enableWebSocketForwarding: false,
         hyperateAutostart: false,
+        oscleashAutostart: false,
         theme: 'light',
         lastUsername: '',
         savedPassword: ''
@@ -127,6 +128,7 @@ class ConfigManager {
       logLevel: this.config.logLevel || 'info',
       enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
       hyperateAutostart: this.config.appSettings?.hyperateAutostart || false,
+      oscleashAutostart: this.config.appSettings?.oscleashAutostart || false,
       theme: this.config.appSettings?.theme || 'light',
       lastUsername: this.config.appSettings?.lastUsername || '',
       savedPassword: this.config.appSettings?.savedPassword || ''
@@ -145,6 +147,10 @@ class ConfigManager {
     // Update HypeRate autostart setting
     if (settings.hyperateAutostart !== undefined) {
       this.config.appSettings.hyperateAutostart = settings.hyperateAutostart;
+    }
+    // Update OSC Leash autostart setting
+    if (settings.oscleashAutostart !== undefined) {
+      this.config.appSettings.oscleashAutostart = settings.oscleashAutostart;
     }
     // Update theme setting
     if (settings.theme !== undefined) {

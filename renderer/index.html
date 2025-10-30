@@ -211,8 +211,9 @@
                     <span class="status-indicator status-disconnected" id="oscleash-status"></span>
                     <span id="oscleash-status-text">Disabled</span>
                 </div>
-                <div style="margin-top: 10px;">
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-primary" id="oscleash-toggle-btn" onclick="toggleOSCLeash()">Enable OSC Leash</button>
+                    <button class="btn btn-secondary" id="oscleash-autostart-btn" onclick="toggleOSCLeashAutostart()">Auto-start: Disabled</button>
                 </div>
                 <div style="margin-top: 10px; padding: 10px; background-color: #e8f4fd; border-radius: 4px; border-left: 4px solid #3498db;">
                     <small style="color: #2c3e50;">
@@ -271,17 +272,159 @@
             <div class="card">
                 <h3>Configuration</h3>
                 <div style="margin-bottom: 15px;">
-                    <strong>Current Settings:</strong>
-                    <div id="oscleash-config-display" style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 12px;">
-                        Configuration will appear here when OSC Leash is enabled
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+                        <button class="btn btn-success" id="oscleash-save-config-btn" onclick="saveOSCLeashConfig()">Save Changes</button>
+                        <button class="btn btn-warning" id="oscleash-reset-config-btn" onclick="resetOSCLeashConfig()">Reset to Defaults</button>
                     </div>
                 </div>
-                <div style="padding: 10px; background-color: #fff3cd; border-radius: 4px; border-left: 4px solid #ffc107;">
-                    <strong style="color: #856404;">Static Configuration:</strong>
-                    <p style="color: #856404; margin: 5px 0 0 0; font-size: 0.9em;">
-                        OSC Leash parameters are determined by the VRChat prefab and cannot be modified from this interface. 
-                        The default configuration works with the standard OSCLeash prefab.
-                    </p>
+
+                <div class="tabs" style="margin-bottom: 10px;">
+                    <button class="tab active" id="config-tab-movement" onclick="showConfigTab('movement')">Movement Settings</button>
+                    <button class="tab" id="config-tab-timing" onclick="showConfigTab('timing')">Timing & Performance</button>
+                    <button class="tab" id="config-tab-turning" onclick="showConfigTab('turning')">Turning (Optional)</button>
+                    <button class="tab" id="config-tab-advanced" onclick="showConfigTab('advanced')">Advanced</button>
+                </div>
+
+                <!-- Movement Settings Tab -->
+                <div id="config-content-movement" class="config-tab-content active">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label for="config-run-deadzone">Run Deadzone (%)</label>
+                            <input type="range" id="config-run-deadzone" min="50" max="100" step="5" value="70">
+                            <span id="config-run-deadzone-value">70%</span>
+                            <small>Stretch required to start running</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-walk-deadzone">Walk Deadzone (%)</label>
+                            <input type="range" id="config-walk-deadzone" min="5" max="50" step="5" value="15">
+                            <span id="config-walk-deadzone-value">15%</span>
+                            <small>Minimum stretch to start walking</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-strength-multiplier">Strength Multiplier</label>
+                            <input type="range" id="config-strength-multiplier" min="0.5" max="3.0" step="0.1" value="1.2">
+                            <span id="config-strength-multiplier-value">1.2</span>
+                            <small>Movement force multiplier</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-updown-compensation">Up/Down Compensation</label>
+                            <input type="range" id="config-updown-compensation" min="0" max="2.0" step="0.1" value="1.0">
+                            <span id="config-updown-compensation-value">1.0</span>
+                            <small>Reduces movement when leash is pulled up/down</small>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="config-updown-deadzone">Up/Down Deadzone (%)</label>
+                        <input type="range" id="config-updown-deadzone" min="10" max="90" step="5" value="50">
+                        <span id="config-updown-deadzone-value">50%</span>
+                        <small>Stops movement if leash pulled too high/low</small>
+                    </div>
+                </div>
+
+                <!-- Timing & Performance Tab -->
+                <div id="config-content-timing" class="config-tab-content" style="display: none;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label for="config-active-delay">Active Delay (ms)</label>
+                            <input type="range" id="config-active-delay" min="10" max="100" step="5" value="20">
+                            <span id="config-active-delay-value">20ms</span>
+                            <small>Update frequency when leash is grabbed</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-inactive-delay">Inactive Delay (ms)</label>
+                            <input type="range" id="config-inactive-delay" min="100" max="2000" step="50" value="500">
+                            <span id="config-inactive-delay-value">500ms</span>
+                            <small>Update frequency when leash is released</small>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="config-logging">
+                            <span>Enable Debug Logging</span>
+                        </label>
+                        <small>Show detailed movement calculations in console</small>
+                    </div>
+                </div>
+
+                <!-- Turning Tab -->
+                <div id="config-content-turning" class="config-tab-content" style="display: none;">
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="config-turning-enabled" onchange="toggleTurningSettings()">
+                            <span>Enable Turning</span>
+                        </label>
+                        <small>Allow leash to control camera rotation</small>
+                    </div>
+                    <div id="turning-settings" style="opacity: 0.5; pointer-events: none;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label for="config-turning-multiplier">Turning Multiplier</label>
+                                <input type="range" id="config-turning-multiplier" min="0.1" max="2.0" step="0.1" value="0.8">
+                                <span id="config-turning-multiplier-value">0.8</span>
+                                <small>Turning sensitivity</small>
+                            </div>
+                            <div class="form-group">
+                                <label for="config-turning-deadzone">Turning Deadzone</label>
+                                <input type="range" id="config-turning-deadzone" min="0.05" max="0.5" step="0.05" value="0.15">
+                                <span id="config-turning-deadzone-value">0.15</span>
+                                <small>Minimum stretch to enable turning</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="config-turning-goal">Turning Goal (degrees)</label>
+                            <input type="range" id="config-turning-goal" min="30" max="180" step="15" value="90">
+                            <span id="config-turning-goal-value">90°</span>
+                            <small>Angle threshold for directional turning</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Tab -->
+                <div id="config-content-advanced" class="config-tab-content" style="display: none;">
+                    <div style="padding: 8px; background-color: #fff3cd; border-radius: 4px; border-left: 4px solid #ffc107; margin-bottom: 12px;">
+                        <strong style="color: #856404;">OSC Parameters:</strong>
+                        <p style="color: #856404; margin: 3px 0 0 0; font-size: 0.85em;">
+                            These parameters are determined by the VRChat prefab and should not be changed unless you're using a custom prefab.
+                        </p>
+                    </div>
+                    <div class="form-group">
+                        <label for="config-physbone-params">Physbone Parameters (comma-separated)</label>
+                        <input type="text" id="config-physbone-params" value="Leash" readonly style="background-color: #f8f9fa;">
+                        <small>Base names for physbone parameters</small>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label for="config-z-positive">Z+ Parameter (Forward)</label>
+                            <input type="text" id="config-z-positive" value="Leash_Z+" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-z-negative">Z- Parameter (Backward)</label>
+                            <input type="text" id="config-z-negative" value="Leash_Z-" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-x-positive">X+ Parameter (Right)</label>
+                            <input type="text" id="config-x-positive" value="Leash_X+" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-x-negative">X- Parameter (Left)</label>
+                            <input type="text" id="config-x-negative" value="Leash_X-" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-y-positive">Y+ Parameter (Up)</label>
+                            <input type="text" id="config-y-positive" value="Leash_Y+" readonly style="background-color: #f8f9fa;">
+                        </div>
+                        <div class="form-group">
+                            <label for="config-y-negative">Y- Parameter (Down)</label>
+                            <input type="text" id="config-y-negative" value="Leash_Y-" readonly style="background-color: #f8f9fa;">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 15px;">
+                    <strong>Current Settings Preview:</strong>
+                    <div id="oscleash-config-display" style="margin-top: 8px; padding: 8px; background-color: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 11px;">
+                        Configuration will appear here when OSC Leash is enabled
+                    </div>
                 </div>
             </div>
 

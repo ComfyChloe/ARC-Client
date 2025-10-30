@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   oscleashStop: () => ipcRenderer.invoke('oscleash-stop'),
   oscleashGetConfig: () => ipcRenderer.invoke('oscleash-get-config'),
   oscleashUpdateConfig: (config) => ipcRenderer.invoke('oscleash-update-config', config),
+  oscleashGetAutostart: () => ipcRenderer.invoke('oscleash-get-autostart'),
+  oscleashSetAutostart: (enabled) => ipcRenderer.invoke('oscleash-set-autostart', enabled),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));

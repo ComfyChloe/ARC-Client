@@ -53,6 +53,12 @@ class OscService extends EventEmitter {
         if (callback) {
           try {
             const value = oscMessage.args && oscMessage.args.length > 0 ? oscMessage.args[0].value : 0;
+            
+            // Debug logging for OSCLeash parameters
+            if (address.includes('IsGrabbed') || address.includes('Stretch') || address.includes('Leash')) {
+              console.log(`[OSCLeash Debug] Received: ${address} = ${value} (type: ${typeof value})`);
+            }
+            
             callback(value);
           } catch (error) {
             console.error(`Error in OSCLeash listener for ${address}:`, error);

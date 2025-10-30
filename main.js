@@ -266,6 +266,16 @@ function initOscServer() {
       oscLeashAddon.oscService = oscService;
       debug.info('Updated OSCLeash addon with OSC service');
     }
+    // Start autostart addons now that OSC service is ready
+    const appSettings = configManager.getAppSettings();
+    if (appSettings.hyperateAutostart && hyperateAddon && !hyperateAddon.isEnabled()) {
+      debug.info('Starting HypeRate addon based on autostart setting (OSC service ready)...');
+      hyperateAddon.start(oscService);
+    }
+    if (appSettings.oscleashAutostart && oscLeashAddon && !oscLeashAddon.isEnabled()) {
+      debug.info('Starting OSCLeash addon based on autostart setting (OSC service ready)...');
+      oscLeashAddon.start(oscService);
+    }
   });
 
   // OSC receiving functionality removed - only sending is supported
@@ -1039,6 +1049,30 @@ ipcMain.handle('oscleash-update-config', (event, newConfig) => {
     return { success: false, error: error.message };
   }
 });
+// OSCLeash auto-start IPC handlers
+ipcMain.handle('oscleash-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings();
+    return { enabled: appSettings.oscleashAutostart || false };
+  } catch (error) {
+    debug.error(`Failed to get OSCLeash autostart setting: ${error.message}`);
+    return { enabled: false };
+  }
+});
+ipcMain.handle('oscleash-set-autostart', (event, enabled) => {
+  try {
+    const result = configManager.updateAppSettings({ oscleashAutostart: enabled });
+    if (result) {
+      debug.info(`OSCLeash autostart ${enabled ? 'enabled' : 'disabled'}`);
+      return { success: true, enabled };
+    } else {
+      throw new Error('Failed to save autostart setting');
+    }
+  } catch (error) {
+    debug.error(`Failed to set OSCLeash autostart: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
 
 app.whenReady().then(() => {
   debug.logAppStartup();
@@ -1059,7 +1093,10 @@ app.whenReady().then(() => {
     serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
   // Initialize OSC server
-  oscEnabled = false;
+  // Check if OSC should be enabled for autostart features
+  const needsOscForAutostart = appSettings.hyperateAutostart || appSettings.oscleashAutostart;
+  // Only enable OSC if user has previously enabled it AND autostart features need it
+  // Don't override client-wide OSC setting - autostart should work with user's OSC preference
   // Important: Window before initializing OSC service
   createWindow();
   // Set up periodic memory management
@@ -1067,7 +1104,7 @@ app.whenReady().then(() => {
   // Initialize OSC after a short delay to ensure the window is ready
   setTimeout(() => {
     if (oscEnabled) {
-      debug.info('Starting OSC service based on saved config...');
+      debug.info('Starting OSC service...');
       initOscServer();
       initOscClient();
     } else {
@@ -1075,11 +1112,10 @@ app.whenReady().then(() => {
         status: 'disabled', 
         port: serverConfig.legacyOscPort 
       });
-    }
-    // Start HypeRate if auto-start is enabled
-    if (appSettings.hyperateAutostart) {
-      debug.info('Starting HypeRate addon based on autostart setting...');
-      hyperateAddon.start(oscService);
+      // Inform user if autostart features are enabled but OSC is disabled
+      if (needsOscForAutostart) {
+        debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
+      }
     }
   }, 500); // Short delay to ensure window is ready
   setTimeout(() => {
