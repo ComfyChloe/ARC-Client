@@ -6,7 +6,7 @@ class ConfigManager {
   constructor() {
     this.configFile = path.join(app.getPath('userData'), 'config.json');
     this.defaultConfig = {
-      legacyOscPort: 9040,
+      legacyOscPort: 9001,
       targetOscPort: 9000,
       targetOscAddress: '127.0.0.1',
       additionalOscConnections: [],
@@ -86,7 +86,7 @@ class ConfigManager {
   // Get specific config sections
   getServerConfig() {
     return {
-      legacyOscPort: this.config.legacyOscPort || 9040,
+      legacyOscPort: this.config.legacyOscPort || 9001,
       targetOscPort: this.config.targetOscPort,
       targetOscAddress: this.config.targetOscAddress,
       additionalOscConnections: this.config.additionalOscConnections || [],
