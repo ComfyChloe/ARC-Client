@@ -26,8 +26,26 @@ let oscParameterFrequency = new Map(); // Track message count per address
 let oscParameterLastUpdate = new Map(); // Track last update time per address
 const FREQUENCY_TRACKING_WINDOW = 10000; // 10 second window
 const HIGH_FREQUENCY_THRESHOLD = 20; // Messages per tracking window to be considered "high frequency"
-const SUGGESTION_UPDATE_INTERVAL = 5000; // Update suggestions every 5 seconds
+
+// Adaptive suggestion system configuration
+const LEARNING_PHASE_DURATION = 120000; // 2 minutes learning phase
+const LEARNING_UPDATE_INTERVAL = 5000; // 5 seconds during learning
+const NORMAL_UPDATE_INTERVAL = 30000; // 30 seconds after learning
+const PATTERN_CACHE_INVALIDATION_THRESHOLD = 10; // Re-detect if 10+ new parameters appear
+
+// Traffic monitoring thresholds (messages per second)
+const TRAFFIC_NORMAL_THRESHOLD = 100; // <100 msg/sec = normal
+const TRAFFIC_HEAVY_THRESHOLD = 1000; // 100-1000 msg/sec = heavy
+// >1000 msg/sec = excessive
+
+// Adaptive suggestion system state
 let suggestionUpdateTimer = null;
+let learningPhaseStartTime = null;
+let isInLearningPhase = false;
+let cachedPatterns = null;
+let cachedPatternFingerprint = null; // Hash of high-freq parameters for change detection
+let currentTrafficStatus = 'unknown'; // 'normal', 'heavy', 'excessive', 'unknown'
+let lastTrafficAnalysis = null;
 // Float rate limiting (similar to server implementation)
 const FLOAT_THROTTLE_INTERVAL = 750; // ms
 let lastFloatLogTimes = new Map(); // Track last log time per address
@@ -2138,6 +2156,11 @@ async function removeOscQueryUnsubscription(path) {
 
 // OSC Parameter Frequency Tracking for Suggestions
 function trackOscParameter(address) {
+    // Ignore self-sent parameters (ARCOSC client parameters)
+    if (address.startsWith('/avatar/parameters/ARCOSC/')) {
+        return; // Don't track our own parameters
+    }
+    
     const now = Date.now();
     
     // Update frequency count
@@ -2182,6 +2205,67 @@ function getHighFrequencyParameters() {
     // Return ALL high-frequency parameters (no limit here)
     // The limit of 10 is applied only to individual display, not pattern detection
     return highFreq;
+}
+
+/**
+ * Analyze current OSC traffic patterns and determine traffic status
+ * Returns analysis including total msg/sec, parameter type breakdown, and status
+ */
+function analyzeTrafficStatus() {
+    const now = Date.now();
+    let totalMessagesPerSecond = 0;
+    let floatCount = 0;
+    let boolCount = 0;
+    let intCount = 0;
+    let otherCount = 0;
+    
+    // Calculate total traffic and categorize by likely parameter type
+    for (const [address, count] of oscParameterFrequency.entries()) {
+        const lastUpdate = oscParameterLastUpdate.get(address) || 0;
+        
+        // Only consider parameters updated recently
+        if (now - lastUpdate < FREQUENCY_TRACKING_WINDOW) {
+            const messagesPerSecond = count / (FREQUENCY_TRACKING_WINDOW / 1000);
+            totalMessagesPerSecond += messagesPerSecond;
+            
+            // Categorize by parameter name patterns
+            // Floats are typically high-spam but user-induced (tracking, positions, etc.)
+            if (address.includes('Float') || address.includes('X') || address.includes('Y') || 
+                address.includes('Z') || address.includes('Velocity') || address.includes('Angular') ||
+                address.includes('Position') || address.includes('/FT/')) {
+                floatCount += messagesPerSecond;
+            } else if (address.includes('Bool')) {
+                boolCount += messagesPerSecond;
+            } else if (address.includes('Int')) {
+                intCount += messagesPerSecond;
+            } else {
+                otherCount += messagesPerSecond;
+            }
+        }
+    }
+    
+    // Determine status based on total traffic
+    let status = 'normal';
+    if (totalMessagesPerSecond >= TRAFFIC_HEAVY_THRESHOLD) {
+        status = 'excessive';
+    } else if (totalMessagesPerSecond >= TRAFFIC_NORMAL_THRESHOLD) {
+        status = 'heavy';
+    }
+    
+    const analysis = {
+        totalMessagesPerSecond: Math.round(totalMessagesPerSecond),
+        floatMessagesPerSecond: Math.round(floatCount),
+        boolMessagesPerSecond: Math.round(boolCount),
+        intMessagesPerSecond: Math.round(intCount),
+        otherMessagesPerSecond: Math.round(otherCount),
+        status: status,
+        timestamp: now
+    };
+    
+    lastTrafficAnalysis = analysis;
+    currentTrafficStatus = status;
+    
+    return analysis;
 }
 
 /**
@@ -2371,7 +2455,9 @@ function renderHighFrequencySuggestions() {
     if (!container) return;
     
     const highFreq = getHighFrequencyParameters();
-    const patterns = detectParameterPatterns(highFreq);
+    
+    // Use cached patterns if available, otherwise detect new patterns
+    const patterns = cachedPatterns || detectParameterPatterns(highFreq);
     const isDarkTheme = document.body.classList.contains('dark-theme');
     
     // Theme-aware colors
@@ -2521,8 +2607,14 @@ function renderHighFrequencySuggestions() {
         
         patternSuggestionsHtml = `
             <div style="margin-bottom: 15px;">
-                <div style="color: #28a745; font-size: 0.9em; font-weight: bold; margin-bottom: 8px;">
-                    Smart Pattern Suggestions (Ignore Multiple at Once):
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="color: #28a745; font-size: 0.9em; font-weight: bold;">
+                        Smart Pattern Suggestions (Ignore Multiple at Once):
+                    </div>
+                    <button class="btn btn-secondary" onclick="manualReanalyze()" 
+                            style="padding: 4px 12px; font-size: 11px; white-space: nowrap;">
+                        Re-analyze Now
+                    </button>
                 </div>
                 <div style="background-color: ${isDarkTheme ? '#1a1a1a' : '#f8f9fa'}; border-radius: 4px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid ${isDarkTheme ? '#444' : '#dee2e6'};">
                     <div style="font-size: 0.8em; color: ${statsColor}; font-weight: bold; margin-bottom: 4px;">Risk Level Legend:</div>
@@ -2682,16 +2774,147 @@ async function ignorePatternIndividually(addresses) {
     }
 }
 
+function manualReanalyze() {
+    debugLog('Manual re-analysis triggered by user', 'info');
+    
+    // Clear cache to force re-detection
+    cachedPatterns = null;
+    cachedPatternFingerprint = null;
+    
+    // Get fresh data and re-detect patterns
+    const highFreq = getHighFrequencyParameters();
+    cachedPatterns = detectParameterPatterns(highFreq);
+    
+    // Update fingerprint
+    const addresses = Array.from(oscParameterFrequency.keys()).sort();
+    cachedPatternFingerprint = addresses.join('|');
+    
+    // Re-analyze traffic
+    const trafficAnalysis = analyzeTrafficStatus();
+    updateTrafficStatusUI(trafficAnalysis);
+    
+    // Re-render suggestions
+    renderHighFrequencySuggestions();
+    
+    debugLog('Re-analysis complete', 'info');
+}
+
+function updateTrafficStatusUI(analysis) {
+    // Update or create traffic status indicator
+    const statusContainer = document.getElementById('osc-traffic-status');
+    if (!statusContainer) return;
+    
+    let statusText = 'Unknown';
+    let statusColor = '#6c757d';
+    let tooltipText = 'No traffic data available';
+    
+    if (analysis) {
+        const { totalMessagesPerSecond, floatMessagesPerSecond, status } = analysis;
+        
+        switch (status) {
+            case 'normal':
+                statusText = 'Normal';
+                statusColor = '#28a745';
+                tooltipText = `${totalMessagesPerSecond} msg/sec - Traffic is within normal range`;
+                break;
+            case 'heavy':
+                statusText = 'Heavy Traffic';
+                statusColor = '#ffc107';
+                tooltipText = `${totalMessagesPerSecond} msg/sec - YOU are sending high traffic. Consider ignoring high-frequency parameters. Float params: ${floatMessagesPerSecond} msg/sec (user-induced, typically safe)`;
+                break;
+            case 'excessive':
+                statusText = 'Excessive';
+                statusColor = '#dc3545';
+                tooltipText = `${totalMessagesPerSecond} msg/sec - EXCESSIVE traffic! You are over-sending. Review and ignore unnecessary parameters immediately. Float params: ${floatMessagesPerSecond} msg/sec`;
+                break;
+        }
+    }
+    
+    statusContainer.innerHTML = `
+        <span style="color: ${statusColor}; font-weight: bold;" title="${tooltipText}">
+            ${statusText}
+        </span>
+    `;
+}
+
 function setupSuggestionUpdater() {
     // Clear any existing timer
     if (suggestionUpdateTimer) {
         clearInterval(suggestionUpdateTimer);
     }
     
-    // Update suggestions periodically
-    suggestionUpdateTimer = setInterval(() => {
-        renderHighFrequencySuggestions();
-    }, SUGGESTION_UPDATE_INTERVAL);
+    // Start learning phase
+    learningPhaseStartTime = Date.now();
+    isInLearningPhase = true;
+    cachedPatterns = null;
+    cachedPatternFingerprint = null;
+    currentTrafficStatus = 'unknown';
+    
+    debugLog('Started learning phase for OSC traffic analysis (2 minutes)', 'info');
+    
+    // Create fingerprint of current high-frequency parameters for change detection
+    const createFingerprint = () => {
+        const addresses = Array.from(oscParameterFrequency.keys()).sort();
+        return addresses.join('|');
+    };
+    
+    // Adaptive update function with caching
+    const adaptiveUpdate = () => {
+        const now = Date.now();
+        
+        // Check if learning phase is complete
+        if (isInLearningPhase && (now - learningPhaseStartTime) >= LEARNING_PHASE_DURATION) {
+            isInLearningPhase = false;
+            debugLog('Learning phase complete - switching to 30s update interval', 'info');
+            
+            // Restart timer with normal interval
+            clearInterval(suggestionUpdateTimer);
+            suggestionUpdateTimer = setInterval(adaptiveUpdate, NORMAL_UPDATE_INTERVAL);
+        }
+        
+        // Analyze traffic status
+        const trafficAnalysis = analyzeTrafficStatus();
+        updateTrafficStatusUI(trafficAnalysis);
+        
+        // Check if patterns need re-detection
+        const currentFingerprint = createFingerprint();
+        const needsRedetection = !cachedPatterns || 
+                                  !cachedPatternFingerprint ||
+                                  cachedPatternFingerprint !== currentFingerprint;
+        
+        if (needsRedetection) {
+            // Significant change detected or no cache - do full update
+            const highFreq = getHighFrequencyParameters();
+            
+            // Check if change is significant enough (10+ new parameters)
+            if (cachedPatternFingerprint) {
+                const oldAddresses = new Set(cachedPatternFingerprint.split('|'));
+                const newAddresses = new Set(currentFingerprint.split('|'));
+                const addedCount = [...newAddresses].filter(addr => !oldAddresses.has(addr)).length;
+                
+                if (addedCount < PATTERN_CACHE_INVALIDATION_THRESHOLD) {
+                    // Not enough change, skip re-detection
+                    return;
+                }
+                
+                debugLog(`Detected ${addedCount} new parameters - re-analyzing patterns`, 'info');
+            }
+            
+            // Detect and cache patterns
+            cachedPatterns = detectParameterPatterns(highFreq);
+            cachedPatternFingerprint = currentFingerprint;
+            
+            // Render with cached patterns
+            renderHighFrequencySuggestions();
+        }
+        // If no significant change, skip rendering to save CPU
+    };
+    
+    // Start with learning phase interval
+    suggestionUpdateTimer = setInterval(adaptiveUpdate, LEARNING_UPDATE_INTERVAL);
+    
+    // Do immediate initial update
+    adaptiveUpdate();
 }
 
 function stopSuggestionUpdater() {
@@ -2701,9 +2924,37 @@ function stopSuggestionUpdater() {
         suggestionUpdateTimer = null;
     }
     
+    // Clear learning phase state
+    learningPhaseStartTime = null;
+    isInLearningPhase = false;
+    
+    // Clear caches for GC
+    cachedPatterns = null;
+    cachedPatternFingerprint = null;
+    lastTrafficAnalysis = null;
+    currentTrafficStatus = 'unknown';
+    
     // Clear frequency tracking data
     oscParameterFrequency.clear();
     oscParameterLastUpdate.clear();
+    
+    // Clear float throttling maps for GC
+    lastFloatLogTimes.clear();
+    lastFloatValues.clear();
+    
+    // Clear any pending float timeouts
+    for (const timeout of pendingFloatTimeouts.values()) {
+        clearTimeout(timeout);
+    }
+    pendingFloatTimeouts.clear();
+    
+    // Reset traffic status UI
+    const statusContainer = document.getElementById('osc-traffic-status');
+    if (statusContainer) {
+        statusContainer.innerHTML = '<span style="color: #6c757d;">Unknown</span>';
+    }
+    
+    debugLog('Stopped suggestion updater and cleared all tracking data', 'info');
 }
 
 // Legacy functions kept for compatibility (now empty or redirected)
