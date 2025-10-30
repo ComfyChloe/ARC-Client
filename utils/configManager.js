@@ -34,6 +34,33 @@ class ConfigManager {
         trackerNames: {},
         trackerStates: {}
       },
+      // OSCLeash configuration
+      oscleash: {
+        IP: "127.0.0.1",
+        ListeningPort: 9001,
+        SendingPort: 9000,
+        RunDeadzone: 0.70,
+        WalkDeadzone: 0.15,
+        StrengthMultiplier: 1.2,
+        UpDownCompensation: 1.0,
+        UpDownDeadzone: 0.5,
+        TurningEnabled: false,
+        TurningMultiplier: 0.80,
+        TurningDeadzone: 0.15,
+        TurningGoal: 90,
+        ActiveDelay: 20,
+        InactiveDelay: 500,
+        Logging: false,
+        PhysboneParameters: ["Leash"],
+        DirectionalParameters: {
+          Z_Positive_Param: "Leash_Z+",
+          Z_Negative_Param: "Leash_Z-",
+          X_Positive_Param: "Leash_X+",
+          X_Negative_Param: "Leash_X-",
+          Y_Positive_Param: "Leash_Y+",
+          Y_Negative_Param: "Leash_Y-"
+        }
+      },
       // Version for future migration support
       configVersion: 1
     };
@@ -192,6 +219,51 @@ class ConfigManager {
       ...hyperateConfig
     };
     debug.info('HypeRate config updated in configuration manager');
+    return this.saveConfig();
+  }
+
+  // OSCLeash configuration methods
+  getOSCLeashConfig() {
+    if (!this.config.oscleash) {
+      this.config.oscleash = {
+        IP: "127.0.0.1",
+        ListeningPort: 9001,
+        SendingPort: 9000,
+        RunDeadzone: 0.70,
+        WalkDeadzone: 0.15,
+        StrengthMultiplier: 1.2,
+        UpDownCompensation: 1.0,
+        UpDownDeadzone: 0.5,
+        TurningEnabled: false,
+        TurningMultiplier: 0.80,
+        TurningDeadzone: 0.15,
+        TurningGoal: 90,
+        ActiveDelay: 20,
+        InactiveDelay: 500,
+        Logging: false,
+        PhysboneParameters: ["Leash"],
+        DirectionalParameters: {
+          Z_Positive_Param: "Leash_Z+",
+          Z_Negative_Param: "Leash_Z-",
+          X_Positive_Param: "Leash_X+",
+          X_Negative_Param: "Leash_X-",
+          Y_Positive_Param: "Leash_Y+",
+          Y_Negative_Param: "Leash_Y-"
+        }
+      };
+    }
+    return { ...this.config.oscleash };
+  }
+
+  updateOSCLeashConfig(oscLeashConfig) {
+    if (!this.config.oscleash) {
+      this.config.oscleash = {};
+    }
+    this.config.oscleash = {
+      ...this.config.oscleash,
+      ...oscLeashConfig
+    };
+    debug.info('OSCLeash config updated in configuration manager');
     return this.saveConfig();
   }
 }

@@ -3561,3 +3561,384 @@ function setupTrackerEditModalHandlers() {
 async function editTrackerName(deviceId, currentName) {
     openTrackerEditModal(deviceId, currentName);
 }
+
+// =============================================
+// OSC LEASH FUNCTIONS
+// =============================================
+
+// OSC Leash status tracking
+let oscLeashStatus = {
+    enabled: false,
+    leashCount: 0,
+    activeLeashes: []
+};
+
+// Real-time movement data
+let movementData = {
+    vertical: 0,
+    horizontal: 0,
+    run: 0,
+    turning: 0
+};
+
+// Physbone input data
+let physboneInputs = {
+    stretch: 0,
+    grabbed: false,
+    zPos: 0,
+    zNeg: 0,
+    xPos: 0,
+    xNeg: 0,
+    yPos: 0,
+    yNeg: 0
+};
+
+function showOSCLeashView() {
+    debugLog('showOSCLeashView called');
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        
+        const oscLeashView = document.getElementById('osc-leash-view');
+        if (oscLeashView) {
+            oscLeashView.style.display = 'block';
+            oscLeashView.style.opacity = '0';
+            requestAnimationFrame(() => {
+                oscLeashView.style.opacity = '1';
+            });
+        } else {
+            debugLog('Error: OSC Leash view element not found!', 'error');
+        }
+    }, 300);
+
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+
+    // Reset all tree-child buttons and set OSC Leash as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+
+    const navOSCLeash = document.getElementById('nav-osc-leash');
+    if (navOSCLeash) {
+        navOSCLeash.classList.add('active');
+        navOSCLeash.disabled = true;
+    }
+
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+
+    // Initialize OSC Leash status
+    refreshOSCLeashStatus(true);
+    debugLog('Switched to OSC Leash view');
+}
+
+async function toggleOSCLeash() {
+    try {
+        const toggleBtn = document.getElementById('oscleash-toggle-btn');
+        toggleBtn.disabled = true;
+
+        if (oscLeashStatus.enabled) {
+            // Stop OSC Leash
+            const result = await window.electronAPI.oscleashStop();
+            if (result.success) {
+                debugLog('OSC Leash stopped');
+                oscLeashStatus.enabled = false;
+                updateOSCLeashUI();
+                clearMovementData();
+                clearPhysboneInputs();
+            } else {
+                debugLog(`Failed to stop OSC Leash: ${result.error}`, 'error');
+                alert(`Failed to stop OSC Leash: ${result.error}`);
+            }
+        } else {
+            // Start OSC Leash
+            const result = await window.electronAPI.oscleashStart();
+            if (result.success) {
+                debugLog('OSC Leash started');
+                oscLeashStatus.enabled = true;
+                updateOSCLeashUI();
+                await refreshOSCLeashStatus();
+            } else {
+                debugLog(`Failed to start OSC Leash: ${result.error}`, 'error');
+                alert(`Failed to start OSC Leash: ${result.error}`);
+            }
+        }
+    } catch (error) {
+        debugLog(`Error toggling OSC Leash: ${error.message}`, 'error');
+    } finally {
+        const toggleBtn = document.getElementById('oscleash-toggle-btn');
+        toggleBtn.disabled = false;
+    }
+}
+
+async function refreshOSCLeashStatus(includeConfig = false) {
+    try {
+        const status = await window.electronAPI.oscleashGetStatus();
+        oscLeashStatus = status;
+        updateOSCLeashUI();
+        updateLeashesDisplay();
+
+        if (includeConfig) {
+            await refreshOSCLeashConfig();
+        }
+    } catch (error) {
+        debugLog(`Error refreshing OSC Leash status: ${error.message}`, 'error');
+    }
+}
+
+async function refreshOSCLeashConfig() {
+    try {
+        const config = await window.electronAPI.oscleashGetConfig();
+        updateConfigDisplay(config);
+    } catch (error) {
+        debugLog(`Error refreshing OSC Leash config: ${error.message}`, 'error');
+    }
+}
+
+function updateOSCLeashUI() {
+    const statusIndicator = document.getElementById('oscleash-status');
+    const statusText = document.getElementById('oscleash-status-text');
+    const toggleBtn = document.getElementById('oscleash-toggle-btn');
+
+    if (oscLeashStatus.enabled) {
+        statusIndicator.className = 'status-indicator status-connected';
+        statusText.textContent = 'Enabled and Active';
+        toggleBtn.textContent = 'Disable OSC Leash';
+        toggleBtn.className = 'btn btn-danger';
+    } else {
+        statusIndicator.className = 'status-indicator status-disconnected';
+        statusText.textContent = 'Disabled';
+        toggleBtn.textContent = 'Enable OSC Leash';
+        toggleBtn.className = 'btn btn-primary';
+    }
+}
+
+function updateLeashesDisplay() {
+    const container = document.getElementById('oscleash-leashes-container');
+    
+    if (!oscLeashStatus.enabled) {
+        container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">OSC Leash is disabled. Enable it to see leash status.</div>';
+        return;
+    }
+
+    if (oscLeashStatus.activeLeashes.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+                <div style="color: #666; margin-bottom: 10px;">OSC Leash is enabled but no leashes are currently active.</div>
+                <div style="color: #999; font-size: 12px;">Grab a leash in VRChat to see it appear here.</div>
+            </div>
+        `;
+        return;
+    }
+
+    let leashesHtml = '';
+    oscLeashStatus.activeLeashes.forEach(leash => {
+        const stretchPercent = (leash.stretch * 100).toFixed(1);
+        const stretchColor = leash.stretch > 0.7 ? '#e74c3c' : leash.stretch > 0.15 ? '#f39c12' : '#2ecc71';
+        
+        leashesHtml += `
+            <div class="leash-item" style="border: 1px solid ${leash.grabbed ? '#2ecc71' : '#ddd'}; border-radius: 4px; padding: 10px; margin-bottom: 10px; background: ${leash.grabbed ? '#f8fff8' : 'white'};">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>${leash.name}</strong>
+                        <span style="margin-left: 10px; padding: 2px 6px; border-radius: 3px; font-size: 10px; color: white; background: ${leash.grabbed ? '#2ecc71' : '#95a5a6'};">
+                            ${leash.grabbed ? 'GRABBED' : 'RELEASED'}
+                        </span>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 14px; font-weight: bold; color: ${stretchColor};">
+                            ${stretchPercent}% stretch
+                        </div>
+                        <div style="font-size: 10px; color: #666;">
+                            Walk: ${(0.15 * 100).toFixed(0)}% | Run: ${(0.7 * 100).toFixed(0)}%
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = leashesHtml;
+}
+
+function updateConfigDisplay(config) {
+    const display = document.getElementById('oscleash-config-display');
+    
+    if (!config) {
+        display.textContent = 'Configuration not available';
+        return;
+    }
+
+    const configText = `
+Run Deadzone: ${(config.RunDeadzone * 100).toFixed(0)}%
+Walk Deadzone: ${(config.WalkDeadzone * 100).toFixed(0)}%
+Strength Multiplier: ${config.StrengthMultiplier}
+Up/Down Compensation: ${config.UpDownCompensation}
+Up/Down Deadzone: ${(config.UpDownDeadzone * 100).toFixed(0)}%
+Turning Enabled: ${config.TurningEnabled ? 'Yes' : 'No'}
+Active Delay: ${config.ActiveDelay}ms
+Inactive Delay: ${config.InactiveDelay}ms
+Physbone Parameters: ${config.PhysboneParameters.join(', ')}
+    `.trim();
+
+    display.textContent = configText;
+}
+
+function updateMovementDisplay(vertical, horizontal, run, turning = 0) {
+    movementData = { vertical, horizontal, run, turning };
+
+    const verticalEl = document.getElementById('movement-vertical');
+    const horizontalEl = document.getElementById('movement-horizontal');
+    const runEl = document.getElementById('movement-run');
+    const turningEl = document.getElementById('movement-turning');
+
+    if (verticalEl) {
+        verticalEl.textContent = vertical.toFixed(2);
+        verticalEl.style.color = Math.abs(vertical) > 0.1 ? '#2ecc71' : '#bdc3c7';
+    }
+
+    if (horizontalEl) {
+        horizontalEl.textContent = horizontal.toFixed(2);
+        horizontalEl.style.color = Math.abs(horizontal) > 0.1 ? '#e74c3c' : '#bdc3c7';
+    }
+
+    if (runEl) {
+        if (run === 1) {
+            runEl.innerHTML = '<span style="color: #e74c3c;">RUNNING</span>';
+        } else if (Math.abs(vertical) > 0.1 || Math.abs(horizontal) > 0.1) {
+            runEl.innerHTML = '<span style="color: #f39c12;">WALKING</span>';
+        } else {
+            runEl.innerHTML = '<span style="color: #95a5a6;">IDLE</span>';
+        }
+    }
+
+    if (turningEl) {
+        turningEl.textContent = turning.toFixed(2);
+        turningEl.style.color = Math.abs(turning) > 0.1 ? '#f39c12' : '#bdc3c7';
+    }
+}
+
+function updatePhysboneInputsDisplay(inputs) {
+    physboneInputs = { ...physboneInputs, ...inputs };
+
+    const container = document.getElementById('physbone-inputs');
+    if (!container) return;
+
+    const formatValue = (val) => val.toFixed(3).padStart(6, ' ');
+    const getColor = (val) => Math.abs(val) > 0.1 ? '#2ecc71' : '#666';
+
+    const html = `
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+    <div>
+        <div style="color: #3498db; font-weight: bold; margin-bottom: 5px;">LEASH STATE</div>
+        <div>Stretch: <span style="color: ${getColor(physboneInputs.stretch)};">${formatValue(physboneInputs.stretch)}</span></div>
+        <div>Grabbed: <span style="color: ${physboneInputs.grabbed ? '#2ecc71' : '#e74c3c'};">${physboneInputs.grabbed ? 'TRUE ' : 'FALSE'}</span></div>
+    </div>
+    <div>
+        <div style="color: #e74c3c; font-weight: bold; margin-bottom: 5px;">DIRECTIONAL FORCES</div>
+        <div>Z+ (Fwd): <span style="color: ${getColor(physboneInputs.zPos)};">${formatValue(physboneInputs.zPos)}</span></div>
+        <div>Z- (Back): <span style="color: ${getColor(physboneInputs.zNeg)};">${formatValue(physboneInputs.zNeg)}</span></div>
+        <div>X+ (Right): <span style="color: ${getColor(physboneInputs.xPos)};">${formatValue(physboneInputs.xPos)}</span></div>
+        <div>X- (Left): <span style="color: ${getColor(physboneInputs.xNeg)};">${formatValue(physboneInputs.xNeg)}</span></div>
+        <div>Y+ (Up): <span style="color: ${getColor(physboneInputs.yPos)};">${formatValue(physboneInputs.yPos)}</span></div>
+        <div>Y- (Down): <span style="color: ${getColor(physboneInputs.yNeg)};">${formatValue(physboneInputs.yNeg)}</span></div>
+    </div>
+</div>
+    `;
+
+    container.innerHTML = html;
+}
+
+function clearMovementData() {
+    updateMovementDisplay(0, 0, 0, 0);
+}
+
+function clearPhysboneInputs() {
+    const container = document.getElementById('physbone-inputs');
+    if (container) {
+        container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No physbone data available</div>';
+    }
+}
+
+// Auto-refresh OSC Leash status when viewing the OSC Leash page
+let oscLeashStatusInterval = null;
+
+function startOSCLeashStatusUpdates() {
+    if (oscLeashStatusInterval) {
+        clearInterval(oscLeashStatusInterval);
+    }
+    
+    oscLeashStatusInterval = setInterval(async () => {
+        if (document.getElementById('osc-leash-view').style.display !== 'none') {
+            await refreshOSCLeashStatus();
+        }
+    }, 2000); // Update every 2 seconds when viewing OSC Leash
+}
+
+function stopOSCLeashStatusUpdates() {
+    if (oscLeashStatusInterval) {
+        clearInterval(oscLeashStatusInterval);
+        oscLeashStatusInterval = null;
+    }
+}
+
+// Start status updates when OSC Leash view is shown
+const originalShowOSCLeashView = showOSCLeashView;
+showOSCLeashView = function() {
+    originalShowOSCLeashView();
+    startOSCLeashStatusUpdates();
+};
+
+// Mock data updates for demonstration (remove this in production if real data is available)
+function simulateOSCLeashData() {
+    if (oscLeashStatus.enabled && document.getElementById('osc-leash-view').style.display !== 'none') {
+        // Simulate some movement data
+        const time = Date.now() / 1000;
+        const vertical = Math.sin(time * 0.5) * 0.3;
+        const horizontal = Math.cos(time * 0.3) * 0.2;
+        const run = Math.abs(vertical) > 0.25 ? 1 : 0;
+        
+        updateMovementDisplay(vertical, horizontal, run, 0);
+        
+        // Simulate physbone inputs
+        updatePhysboneInputsDisplay({
+            stretch: Math.abs(vertical) + Math.abs(horizontal),
+            grabbed: Math.abs(vertical) > 0.1 || Math.abs(horizontal) > 0.1,
+            zPos: Math.max(0, vertical),
+            zNeg: Math.max(0, -vertical),
+            xPos: Math.max(0, horizontal),
+            xNeg: Math.max(0, -horizontal),
+            yPos: 0,
+            yNeg: 0
+        });
+    }
+}
+
+// Start simulation (remove this in production)
+setInterval(simulateOSCLeashData, 100);

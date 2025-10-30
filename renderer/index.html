@@ -202,13 +202,108 @@
         <div class="main-content view-transition" id="osc-leash-view" style="display: none;">
             <div class="header">
                 <h1>OSC Leash</h1>
-                <p>Coming soon - Advanced OSC parameter leashing and control system</p>
+                <p>VRChat physbone-based movement control system</p>
             </div>
+
             <div class="card">
-                <h3>Feature Not Available</h3>
-                <p style="color: #666; text-align: center; padding: 20px;">
-                    This feature is planned for development and will be available in the future.
-                </p>
+                <h3>Connection Status</h3>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="oscleash-status"></span>
+                    <span id="oscleash-status-text">Disabled</span>
+                </div>
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-primary" id="oscleash-toggle-btn" onclick="toggleOSCLeash()">Enable OSC Leash</button>
+                </div>
+                <div style="margin-top: 10px; padding: 10px; background-color: #e8f4fd; border-radius: 4px; border-left: 4px solid #3498db;">
+                    <small style="color: #2c3e50;">
+                        <strong>Note:</strong> OSC service must be enabled for OSC Leash to function properly.
+                    </small>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Leash Status</h3>
+                <div id="oscleash-leashes-container">
+                    <div style="text-align: center; padding: 20px; color: #666;">
+                        OSC Leash is disabled. Enable it to see leash status.
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Real-time Movement Data</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">VERTICAL (Forward/Back)</div>
+                        <div style="font-size: 24px; font-weight: bold; color: #3498db;" id="movement-vertical">0.00</div>
+                        <div style="font-size: 10px; color: #999;">Range: -1.0 to 1.0</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">HORIZONTAL (Left/Right)</div>
+                        <div style="font-size: 24px; font-weight: bold; color: #e74c3c;" id="movement-horizontal">0.00</div>
+                        <div style="font-size: 10px; color: #999;">Range: -1.0 to 1.0</div>
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">RUN STATE</div>
+                        <div style="font-size: 20px; font-weight: bold;" id="movement-run">
+                            <span style="color: #95a5a6;">IDLE</span>
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">TURNING</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #f39c12;" id="movement-turning">0.00</div>
+                        <div style="font-size: 10px; color: #999;">Only if enabled</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Physbone Input Monitor</h3>
+                <div id="physbone-inputs" style="font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.4;">
+                    <div style="text-align: center; padding: 20px; color: #666;">
+                        No physbone data available
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Configuration</h3>
+                <div style="margin-bottom: 15px;">
+                    <strong>Current Settings:</strong>
+                    <div id="oscleash-config-display" style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                        Configuration will appear here when OSC Leash is enabled
+                    </div>
+                </div>
+                <div style="padding: 10px; background-color: #fff3cd; border-radius: 4px; border-left: 4px solid #ffc107;">
+                    <strong style="color: #856404;">Static Configuration:</strong>
+                    <p style="color: #856404; margin: 5px 0 0 0; font-size: 0.9em;">
+                        OSC Leash parameters are determined by the VRChat prefab and cannot be modified from this interface. 
+                        The default configuration works with the standard OSCLeash prefab.
+                    </p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>OSC Parameters</h3>
+                <div style="font-family: monospace; font-size: 12px; line-height: 1.4;">
+                    <strong>Sends to VRChat:</strong><br>
+                    <code style="color: #2ecc71;">/input/Vertical</code> - Forward/Backward movement<br>
+                    <code style="color: #e74c3c;">/input/Horizontal</code> - Left/Right movement<br>
+                    <code style="color: #f39c12;">/input/Run</code> - Running state (0 or 1)<br>
+                    <code style="color: #9b59b6;">/input/LookHorizontal</code> - Turning (if enabled)<br><br>
+
+                    <strong>Listens for from VRChat:</strong><br>
+                    <code style="color: #3498db;">/avatar/parameters/Leash_Stretch</code> - Physbone stretch value<br>
+                    <code style="color: #3498db;">/avatar/parameters/Leash_IsGrabbed</code> - Grab detection<br>
+                    <code style="color: #3498db;">/avatar/parameters/Leash_Z+</code> - Forward direction<br>
+                    <code style="color: #3498db;">/avatar/parameters/Leash_Z-</code> - Backward direction<br>
+                    <code style="color: #3498db;">/avatar/parameters/Leash_X+</code> - Right direction<br>
+                    <code style="color: #3498db;">/avatar/parameters/Leash_X-</code> - Left direction<br>
+                    <code style="color: #3498db;">/avatar/parameters/Leash_Y+</code> - Up direction<br>
+                    <code style="color: #3498db;">/avatar/parameters/Leash_Y-</code> - Down direction
+                </div>
             </div>
         </div>
 

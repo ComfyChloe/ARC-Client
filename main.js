@@ -12,6 +12,7 @@ const debug = require('./utils/debugger');
 const OscService = require('./utils/oscService');
 const { OSCQueryService } = require('./utils/oscQueryService');
 const HyperateAddon = require('./Containers/Hyperate');
+const OSCLeashAddon = require('./Containers/OSCLeash');
 // Logger will be loaded after app is ready
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
@@ -25,6 +26,7 @@ let oscEnabled = false;
 let wsManager;
 let serverConfig = configManager.getServerConfig();
 let hyperateAddon;
+let oscLeashAddon;
 // On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
 if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
   serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
@@ -258,6 +260,11 @@ function initOscServer() {
     if (hyperateAddon && hyperateAddon.isEnabled()) {
       hyperateAddon.oscService = oscService;
       debug.info('Updated HypeRate addon with OSC service');
+    }
+    // Update OSCLeash addon with OSC service if it's running
+    if (oscLeashAddon && oscLeashAddon.isEnabled()) {
+      oscLeashAddon.oscService = oscService;
+      debug.info('Updated OSCLeash addon with OSC service');
     }
   });
 
@@ -976,12 +983,71 @@ ipcMain.handle('hyperate-set-autostart', (event, enabled) => {
     return { success: false, error: error.message };
   }
 });
+// OSCLeash addon IPC handlers
+ipcMain.handle('oscleash-get-status', () => {
+  if (oscLeashAddon) {
+    return oscLeashAddon.getStatus();
+  }
+  return { enabled: false, leashCount: 0, activeLeashes: [] };
+});
+ipcMain.handle('oscleash-start', () => {
+  try {
+    if (!oscLeashAddon) {
+      return { success: false, error: 'OSCLeash addon not initialized' };
+    }
+    if (!oscService) {
+      return { success: false, error: 'OSC service not available' };
+    }
+    const result = oscLeashAddon.start(oscService);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to start OSCLeash addon: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('oscleash-stop', () => {
+  try {
+    if (oscLeashAddon) {
+      oscLeashAddon.stop();
+    }
+    return { success: true };
+  } catch (error) {
+    debug.error(`Failed to stop OSCLeash addon: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+ipcMain.handle('oscleash-get-config', () => {
+  try {
+    if (oscLeashAddon) {
+      return oscLeashAddon.getConfig();
+    }
+    return null;
+  } catch (error) {
+    debug.error(`Failed to get OSCLeash config: ${error.message}`);
+    return null;
+  }
+});
+ipcMain.handle('oscleash-update-config', (event, newConfig) => {
+  try {
+    if (!oscLeashAddon) {
+      return { success: false, error: 'OSCLeash addon not initialized' };
+    }
+    const result = oscLeashAddon.updateConfig(newConfig);
+    return { success: result };
+  } catch (error) {
+    debug.error(`Failed to update OSCLeash config: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(() => {
   debug.logAppStartup();
   // Load logger after app is ready
   logger = require('./utils/logger');
   // Initialize HypeRate addon
   hyperateAddon = new HyperateAddon();
+  // Initialize OSCLeash addon
+  oscLeashAddon = new OSCLeashAddon();
   // Get app settings from config
   const appSettings = configManager.getAppSettings();
   

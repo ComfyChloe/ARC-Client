@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hyperateUpdateTrackerState: (deviceId, enabled) => ipcRenderer.invoke('hyperate-update-tracker-state', deviceId, enabled),
   hyperateGetAutostart: () => ipcRenderer.invoke('hyperate-get-autostart'),
   hyperateSetAutostart: (enabled) => ipcRenderer.invoke('hyperate-set-autostart', enabled),
+  // OSCLeash API
+  oscleashGetStatus: () => ipcRenderer.invoke('oscleash-get-status'),
+  oscleashStart: () => ipcRenderer.invoke('oscleash-start'),
+  oscleashStop: () => ipcRenderer.invoke('oscleash-stop'),
+  oscleashGetConfig: () => ipcRenderer.invoke('oscleash-get-config'),
+  oscleashUpdateConfig: (config) => ipcRenderer.invoke('oscleash-update-config', config),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
