@@ -90,7 +90,6 @@ class OSCLeashConfig {
     };
   }
 }
-
 /**
  * Leash Data Structure
  */
@@ -98,24 +97,19 @@ class Leash {
   constructor(paraName, contacts, settings) {
     this.Name = paraName;
     this.settings = settings;
-
     this.Stretch = 0;
-
     this.Z_Positive = 0;
     this.Z_Negative = 0;
     this.X_Positive = 0;
     this.X_Negative = 0;
     this.Y_Positive = 0;
     this.Y_Negative = 0;
-
     // Booleans for thread logic - ALWAYS start in idle state
     this.Grabbed = false;
     this.wasGrabbed = false;
     this.Posed = false;
     this.Active = false;
-    
     debug.info(`Leash ${this.Name} initialized - Grabbed: ${this.Grabbed}, Active: ${this.Active}`);
-
     this.Z_Positive_ParamName = contacts.Z_Positive_Param;
     this.Z_Negative_ParamName = contacts.Z_Negative_Param;
     this.X_Positive_ParamName = contacts.X_Positive_Param;
@@ -123,7 +117,6 @@ class Leash {
     this.Y_Positive_ParamName = contacts.Y_Positive_Param;
     this.Y_Negative_ParamName = contacts.Y_Negative_Param;
   }
-
   resetMovement() {
     this.Z_Positive = 0;
     this.Z_Negative = 0;
@@ -132,15 +125,12 @@ class Leash {
     this.Y_Positive = 0;
     this.Y_Negative = 0;
   }
-
   printDirections() {
     const z = `Z: ${this.Z_Positive.toFixed(2)},${this.Z_Negative.toFixed(2)}`;
     const x = `X: ${this.X_Positive.toFixed(2)},${this.X_Negative.toFixed(2)}`;
     const y = `Y: ${this.Y_Positive.toFixed(2)},${this.Y_Negative.toFixed(2)}`;
-    debug.info(`  ${z} | ${x} | ${y}`);
   }
 }
-
 /**
  * OSC Package Controller - Handles OSC message routing
  */
@@ -153,13 +143,11 @@ class OSCPackageController {
     this.oscService = oscService;
     this.listeners = new Map();
   }
-
   listen() {
     // Register listeners for all leashes
     this.listenLeash(this.leashes);
     this.listenParam(this.leashes[0]);
   }
-
   listenLeash(leashCollection) {
     for (const leash of leashCollection) {
       // Physbone Stretch Value
@@ -167,14 +155,12 @@ class OSCPackageController {
       this.registerListener(stretchAddress, (value) => {
         leash.Stretch = value;
       });
-
       // Physbone Grab Status
       const grabbedAddress = `/avatar/parameters/${leash.Name}_IsGrabbed`;
       debug.info(`Registering OSC listener for grab detection: ${grabbedAddress}`);
       this.registerListener(grabbedAddress, (value) => {
         this.updateGrabbed(leash, value);
       });
-
       // Optional: Physbone Pose Status
       // const posedAddress = `/avatar/parameters/${leash.Name}_IsPosed`;
       // this.registerListener(posedAddress, (value) => {
@@ -182,7 +168,6 @@ class OSCPackageController {
       // });
     }
   }
-
   listenParam(leash) {
     // Z axis
     this.registerListener(`/avatar/parameters/${leash.Z_Positive_ParamName}`, (value) => {
@@ -191,7 +176,6 @@ class OSCPackageController {
     this.registerListener(`/avatar/parameters/${leash.Z_Negative_ParamName}`, (value) => {
       for (const l of this.leashes) l.Z_Negative = value;
     });
-
     // X axis
     this.registerListener(`/avatar/parameters/${leash.X_Positive_ParamName}`, (value) => {
       for (const l of this.leashes) l.X_Positive = value;
@@ -199,7 +183,6 @@ class OSCPackageController {
     this.registerListener(`/avatar/parameters/${leash.X_Negative_ParamName}`, (value) => {
       for (const l of this.leashes) l.X_Negative = value;
     });
-
     // Y axis
     this.registerListener(`/avatar/parameters/${leash.Y_Positive_ParamName}`, (value) => {
       for (const l of this.leashes) l.Y_Positive = value;
@@ -208,39 +191,34 @@ class OSCPackageController {
       for (const l of this.leashes) l.Y_Negative = value;
     });
   }
-
   registerListener(address, callback) {
     if (this.oscService && this.oscService.registerOSCLeashListener) {
       this.oscService.registerOSCLeashListener(address, callback);
       this.listeners.set(address, callback);
     }
   }
-
   updateGrabbed(currLeash, value) {
     const wasGrabbed = currLeash.Grabbed;
     // Ensure we properly interpret the boolean value from OSC
     const isGrabbed = Boolean(value);
     currLeash.Grabbed = isGrabbed;
-
     if (currLeash.Grabbed && !wasGrabbed) {
       // Leash was just grabbed - start monitoring
-      debug.info(`${currLeash.Name} grabbed - starting active monitoring`);
+      // debug.info(`${currLeash.Name} grabbed - starting active monitoring`);
       currLeash.wasGrabbed = true;
-      
       let threadInProgress = false;
       for (const leash of this.leashes) {
         if (leash.Name !== currLeash.Name && leash.Active) {
           threadInProgress = true;
         }
       }
-
       if (!threadInProgress && this.onLeashActivate) {
         currLeash.Active = true;
         this.onLeashActivate(currLeash);
       }
     } else if (!currLeash.Grabbed && wasGrabbed) {
       // Leash was just released - stop monitoring
-      debug.info(`${currLeash.Name} released - stopping active monitoring`);
+      // debug.info(`${currLeash.Name} released - stopping active monitoring`);
       currLeash.wasGrabbed = false;
       
       if (this.onLeashDeactivate) {
@@ -248,7 +226,6 @@ class OSCPackageController {
       }
     }
   }
-
   removeAllListeners() {
     if (this.oscService && this.oscService.unregisterOSCLeashListener) {
       for (const [address, callback] of this.listeners) {
@@ -258,7 +235,6 @@ class OSCPackageController {
     this.listeners.clear();
   }
 }
-
 /**
  * OSC Leash Program - Main processing logic
  */
@@ -268,21 +244,18 @@ class OSCLeashProgram {
     this.running = false;
     this.activeIntervals = new Map(); // Track active polling intervals
   }
-
   resetProgram() {
     this.running = false;
     // Clear all active intervals
     for (const [leashName, intervalId] of this.activeIntervals) {
       clearInterval(intervalId);
-      debug.info(`Stopped monitoring thread for ${leashName}`);
+      // debug.info(`Stopped monitoring thread for ${leashName}`);
     }
     this.activeIntervals.clear();
   }
-
   updateProgram(runBool) {
     this.running = runBool;
   }
-
   // Start active polling when leash is grabbed
   startLeashMonitoring(leash) {
     if (this.activeIntervals.has(leash.Name)) {
@@ -293,7 +266,7 @@ class OSCLeashProgram {
       debug.warn(`Attempted to start monitoring ${leash.Name} but it's not grabbed! Ignoring.`);
       return;
     }
-    debug.info(`Starting active monitoring thread for ${leash.Name} (Grabbed: ${leash.Grabbed})`);
+    // debug.info(`Starting active monitoring thread for ${leash.Name} (Grabbed: ${leash.Grabbed})`);
     const intervalId = setInterval(() => {
       this.processLeashMovement(leash);
     }, leash.settings.ActiveDelay);
@@ -305,7 +278,7 @@ class OSCLeashProgram {
     if (intervalId) {
       clearInterval(intervalId);
       this.activeIntervals.delete(leash.Name);
-      debug.info(`Stopped monitoring thread for ${leash.Name}`);
+      // debug.info(`Stopped monitoring thread for ${leash.Name}`);
       // Send stop signals
       this.leashOutput(0.0, 0.0, 0, leash.settings);
       // Reset leash state
@@ -328,7 +301,6 @@ class OSCLeashProgram {
     }
     if (!leash.settings.Logging) {
       // In browser context, we'd clear console, but in Node we just log status
-      debug.info(`OSCLeash is Running - ${leash.Name}`);
     } else {
       leash.printDirections();
     }
@@ -407,8 +379,6 @@ class OSCLeashProgram {
     this.oscService.sendMessage('/input/Vertical', vert, 'f');
     this.oscService.sendMessage('/input/Horizontal', hori, 'f');
     this.oscService.sendMessage('/input/Run', runType, 'i');
-    
-    debug.info(`  Vert: ${vert.toFixed(2)} | Hori: ${hori.toFixed(2)} | Run: ${runType}`);
   }
   clamp(n) {
     return Math.max(-1.0, Math.min(n, 1.0));

@@ -3783,15 +3783,15 @@ function updateLeashesDisplay() {
     const container = document.getElementById('oscleash-leashes-container');
     
     if (!oscLeashStatus.enabled) {
-        container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">OSC Leash is disabled. Enable it to see leash status.</div>';
+        container.innerHTML = '<div class="leash-disabled-message">OSC Leash is disabled. Enable it to see leash status.</div>';
         return;
     }
 
     if (oscLeashStatus.activeLeashes.length === 0) {
         container.innerHTML = `
-            <div style="text-align: center; padding: 20px;">
-                <div style="color: #666; margin-bottom: 10px;">OSC Leash is enabled but no leashes are currently active.</div>
-                <div style="color: #999; font-size: 12px;">Grab a leash in VRChat to see it appear here.</div>
+            <div class="leash-empty-message">
+                <div class="empty-primary">OSC Leash is enabled but no leashes are currently active.</div>
+                <div class="empty-secondary">Grab a leash in VRChat to see it appear here.</div>
             </div>
         `;
         return;
@@ -3803,19 +3803,19 @@ function updateLeashesDisplay() {
         const stretchColor = leash.stretch > 0.7 ? '#e74c3c' : leash.stretch > 0.15 ? '#f39c12' : '#2ecc71';
         
         leashesHtml += `
-            <div class="leash-item" style="border: 1px solid ${leash.grabbed ? '#2ecc71' : '#ddd'}; border-radius: 4px; padding: 10px; margin-bottom: 10px; background: ${leash.grabbed ? '#f8fff8' : 'white'};">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <strong>${leash.name}</strong>
-                        <span style="margin-left: 10px; padding: 2px 6px; border-radius: 3px; font-size: 10px; color: white; background: ${leash.grabbed ? '#2ecc71' : '#95a5a6'};">
+            <div class="leash-item ${leash.grabbed ? 'grabbed' : 'released'}">
+                <div class="leash-item-content">
+                    <div class="leash-info">
+                        <strong class="leash-name">${leash.name}</strong>
+                        <span class="leash-status ${leash.grabbed ? 'grabbed' : 'released'}">
                             ${leash.grabbed ? 'GRABBED' : 'RELEASED'}
                         </span>
                     </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 14px; font-weight: bold; color: ${stretchColor};">
+                    <div class="leash-metrics">
+                        <div class="stretch-value" style="color: ${stretchColor};">
                             ${stretchPercent}% stretch
                         </div>
-                        <div style="font-size: 10px; color: #666;">
+                        <div class="stretch-thresholds">
                             Walk: ${(0.15 * 100).toFixed(0)}% | Run: ${(0.7 * 100).toFixed(0)}%
                         </div>
                     </div>
