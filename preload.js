@@ -89,6 +89,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onAppSettings: (callback) => {
     ipcRenderer.on('app-settings', (event, data) => callback(data));
   },
+  onOSCLeashMovement: (callback) => {
+    ipcRenderer.on('oscleash-movement-data', (event, data) => callback(data));
+  },
+  onHyperateUpdate: (callback) => {
+    ipcRenderer.on('hyperate-update', (event, data) => callback(data));
+  },
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);
   }

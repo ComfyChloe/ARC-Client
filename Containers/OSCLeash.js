@@ -431,15 +431,43 @@ class OSCLeashProgram {
       TurningSpeed = this.clamp(TurningSpeed);
     }
     // Process movement based on stretch
+    let runType = 0;
     if (leash.Stretch > leash.settings.RunDeadzone) {
       // Running
+      runType = 1;
       this.leashOutput(VerticalOutput, HorizontalOutput, TurningSpeed, 1, leash.settings);
     } else if (leash.Stretch > leash.settings.WalkDeadzone) {
       // Walking
+      runType = 0;
       this.leashOutput(VerticalOutput, HorizontalOutput, TurningSpeed, 0, leash.settings);
     } else {
       // Not stretched enough to move
       this.leashOutput(0.0, 0.0, 0.0, 0, leash.settings);
+    }
+
+    // Send real-time movement data to frontend
+    this.notifyMovementUpdate(leash, VerticalOutput, HorizontalOutput, TurningSpeed, runType);
+  }
+
+  notifyMovementUpdate(leash, vertical, horizontal, turning, run) {
+    // Send movement data to renderer process for real-time display
+    if (global.mainWindow && global.mainWindow.webContents) {
+      global.mainWindow.webContents.send('oscleash-movement-data', {
+        vertical: vertical,
+        horizontal: horizontal,
+        turning: turning,
+        run: run,
+        physboneData: {
+          stretch: leash.Stretch,
+          grabbed: leash.Grabbed,
+          zPos: leash.Z_Positive,
+          zNeg: leash.Z_Negative,
+          xPos: leash.X_Positive,
+          xNeg: leash.X_Negative,
+          yPos: leash.Y_Positive,
+          yNeg: leash.Y_Negative
+        }
+      });
     }
   }
   // Legacy method for compatibility - now just starts monitoring
@@ -644,15 +672,59 @@ class OSCLeashAddon {
     const activeLeashes = this.leashes.filter(l => l.Grabbed).map(l => ({
       name: l.Name,
       stretch: l.Stretch,
-      grabbed: l.Grabbed
+      grabbed: l.Grabbed,
+      // Include all movement data for display
+      zPos: l.Z_Positive,
+      zNeg: l.Z_Negative,
+      xPos: l.X_Positive,
+      xNeg: l.X_Negative,
+      yPos: l.Y_Positive,
+      yNeg: l.Y_Negative
     }));
+
+    // Calculate current movement output if any leash is active
+    let movementData = { vertical: 0, horizontal: 0, run: 0, turning: 0 };
+    
+    if (activeLeashes.length > 0 && this.program) {
+      const activeLeash = this.leashes.find(l => l.Grabbed && l.Active);
+      if (activeLeash) {
+        // Calculate movement based on current leash state (similar to processLeashMovement)
+        const outputMultiplier = activeLeash.Stretch * this.settings.StrengthMultiplier;
+        const vertical = this.clamp((activeLeash.Z_Positive - activeLeash.Z_Negative) * outputMultiplier);
+        const horizontal = this.clamp((activeLeash.X_Positive - activeLeash.X_Negative) * outputMultiplier);
+        
+        // Apply up/down deadzone
+        const Y_Combined = activeLeash.Y_Positive + activeLeash.Y_Negative;
+        if (Y_Combined >= this.settings.UpDownDeadzone) {
+          movementData.vertical = 0;
+          movementData.horizontal = 0;
+        } else {
+          movementData.vertical = vertical;
+          movementData.horizontal = horizontal;
+        }
+        
+        // Determine run state
+        if (activeLeash.Stretch > this.settings.RunDeadzone) {
+          movementData.run = 1; // Running
+        } else if (activeLeash.Stretch > this.settings.WalkDeadzone) {
+          movementData.run = 0; // Walking
+        } else {
+          movementData.run = 0; // Not moving
+        }
+      }
+    }
 
     return {
       enabled: this.enabled,
       leashCount: this.leashes.length,
       activeLeashes: activeLeashes,
+      movementData: movementData,
       config: this.settings.toJSON()
     };
+  }
+
+  clamp(n) {
+    return Math.max(-1.0, Math.min(n, 1.0));
   }
 }
 

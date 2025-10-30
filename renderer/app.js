@@ -3439,6 +3439,18 @@ window.electronAPI.onHyperateUpdate?.((data) => {
         hyperateStatus.lastHeartRate = data.heartRate;
     }
 });
+
+// Listen for OSCLeash movement data updates from main process
+window.electronAPI.onOSCLeashMovement?.((data) => {
+    // Only update displays if OSCLeash view is visible
+    if (document.getElementById('osc-leash-view').style.display !== 'none') {
+        // Update movement display with real-time data
+        updateMovementDisplay(data.vertical, data.horizontal, data.run, data.turning);
+        
+        // Update physbone inputs display with real-time data
+        updatePhysboneInputsDisplay(data.physboneData);
+    }
+});
 // Enhanced showHyperateView function to include auto-refresh
 const originalShowHyperateView = showHyperateView;
 showHyperateView = function() {
@@ -3706,6 +3718,32 @@ async function refreshOSCLeashStatus(includeConfig = false) {
         oscLeashStatus = status;
         updateOSCLeashUI();
         updateLeashesDisplay();
+        // Update movement displays with real OSC data
+        if (status.enabled && status.activeLeashes.length > 0) {
+            // Update movement display with real calculated movement
+            updateMovementDisplay(
+                status.movementData.vertical,
+                status.movementData.horizontal,
+                status.movementData.run,
+                status.movementData.turning
+            );
+            // Update physbone inputs display with real leash data
+            const activeLeash = status.activeLeashes[0]; // Use first active leash
+            updatePhysboneInputsDisplay({
+                stretch: activeLeash.stretch,
+                grabbed: activeLeash.grabbed,
+                zPos: activeLeash.zPos,
+                zNeg: activeLeash.zNeg,
+                xPos: activeLeash.xPos,
+                xNeg: activeLeash.xNeg,
+                yPos: activeLeash.yPos,
+                yNeg: activeLeash.yNeg
+            });
+        } else {
+            // Clear displays when no active leashes
+            clearMovementData();
+            clearPhysboneInputs();
+        }
 
         if (includeConfig) {
             await refreshOSCLeashConfig();
@@ -3877,40 +3915,33 @@ function updatePhysboneInputsDisplay(inputs) {
 
     container.innerHTML = html;
 }
-
 function clearMovementData() {
     updateMovementDisplay(0, 0, 0, 0);
 }
-
 function clearPhysboneInputs() {
     const container = document.getElementById('physbone-inputs');
     if (container) {
         container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No physbone data available</div>';
     }
 }
-
 // Auto-refresh OSC Leash status when viewing the OSC Leash page
 let oscLeashStatusInterval = null;
-
 function startOSCLeashStatusUpdates() {
     if (oscLeashStatusInterval) {
         clearInterval(oscLeashStatusInterval);
     }
-    
     oscLeashStatusInterval = setInterval(async () => {
         if (document.getElementById('osc-leash-view').style.display !== 'none') {
             await refreshOSCLeashStatus();
         }
-    }, 2000); // Update every 2 seconds when viewing OSC Leash
+    }, 400); // Update every 400ms for responsive movement display
 }
-
 function stopOSCLeashStatusUpdates() {
     if (oscLeashStatusInterval) {
         clearInterval(oscLeashStatusInterval);
         oscLeashStatusInterval = null;
     }
 }
-
 // Start status updates when OSC Leash view is shown
 const originalShowOSCLeashView = showOSCLeashView;
 showOSCLeashView = function() {
