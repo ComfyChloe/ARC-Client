@@ -2023,6 +2023,9 @@ function renderOscQueryUnsubscriptions(unsubscriptions) {
     const pathColor = isDarkTheme ? '#e0e0e0' : '#495057';
     const emptyTextColor = isDarkTheme ? '#a0a0a0' : '#666';
     const headerColor = isDarkTheme ? '#b0b0b0' : '#666';
+    // Check if list is currently collapsed before re-rendering
+    const itemsContainer = document.getElementById('unsubscription-items-container');
+    const wasCollapsed = itemsContainer && itemsContainer.style.display === 'none';
 
     if (unsubscriptions.length === 0) {
         container.innerHTML = `
@@ -2056,6 +2059,19 @@ function renderOscQueryUnsubscriptions(unsubscriptions) {
             ${unsubsHtml}
         </div>
     `;
+    
+    // Restore collapsed state if it was collapsed before
+    if (wasCollapsed) {
+        const newItemsContainer = document.getElementById('unsubscription-items-container');
+        const newToggleBtn = document.getElementById('toggle-unsub-list-btn');
+        const newArrow = document.getElementById('toggle-unsub-arrow');
+        
+        if (newItemsContainer && newToggleBtn && newArrow) {
+            newItemsContainer.style.display = 'none';
+            newArrow.textContent = '▶';
+            newToggleBtn.innerHTML = '<span id="toggle-unsub-arrow">▶</span> Expand';
+        }
+    }
 }
 
 function toggleUnsubscriptionList() {
