@@ -109,7 +109,7 @@ class Leash {
     this.wasGrabbed = false;
     this.Posed = false;
     this.Active = false;
-    debug.info(`Leash ${this.Name} initialized - Grabbed: ${this.Grabbed}, Active: ${this.Active}`);
+    //debug.info(`Leash ${this.Name} initialized - Grabbed: ${this.Grabbed}, Active: ${this.Active}`);
     this.Z_Positive_ParamName = contacts.Z_Positive_Param;
     this.Z_Negative_ParamName = contacts.Z_Negative_Param;
     this.X_Positive_ParamName = contacts.X_Positive_Param;
@@ -135,12 +135,13 @@ class Leash {
  * OSC Package Controller - Handles OSC message routing
  */
 class OSCPackageController {
-  constructor(leashCollection, oscService) {
+  constructor(leashCollection, oscService, addonInstance = null) {
     if (!leashCollection || leashCollection.length === 0) {
       throw new Error("Leash collection empty within Package manager.");
     }
     this.leashes = leashCollection;
     this.oscService = oscService;
+    this.addonInstance = addonInstance;
     this.listeners = new Map();
   }
   listen() {
@@ -202,6 +203,10 @@ class OSCPackageController {
     // Ensure we properly interpret the boolean value from OSC
     const isGrabbed = Boolean(value);
     currLeash.Grabbed = isGrabbed;
+    // Track that this leash has been discovered
+    if (this.addonInstance && this.addonInstance.discoveredLeashes) {
+      this.addonInstance.discoveredLeashes.add(currLeash.Name);
+    }
     if (currLeash.Grabbed && !wasGrabbed) {
       // Leash was just grabbed - start monitoring
       // debug.info(`${currLeash.Name} grabbed - starting active monitoring`);
@@ -397,6 +402,7 @@ class OSCLeashAddon {
     this.config = this.loadConfig();
     this.settings = new OSCLeashConfig(this.config);
     this.leashes = [];
+    this.discoveredLeashes = new Set(); // Track which leashes have been detected
     this.packageController = null;
     this.program = null;
     
@@ -462,7 +468,7 @@ class OSCLeashAddon {
       this.program = new OSCLeashProgram(this.oscService);
 
       // Create package controller
-      this.packageController = new OSCPackageController(this.leashes, this.oscService);
+      this.packageController = new OSCPackageController(this.leashes, this.oscService, this);
       this.packageController.onLeashActivate = (leash) => {
         this.program.leashRun(leash);
       };
@@ -517,6 +523,7 @@ class OSCLeashAddon {
 
     this.program = null;
     this.leashes = [];
+    this.discoveredLeashes.clear(); // Clear discovered leashes when stopping
 
     debug.info('OSCLeash addon stopped');
   }
@@ -553,6 +560,22 @@ class OSCLeashAddon {
   }
 
   getStatus() {
+    // Return all discovered leashes, not just grabbed ones
+    const discoveredLeashes = this.leashes.filter(l => 
+      this.discoveredLeashes.has(l.Name)
+    ).map(l => ({
+      name: l.Name,
+      stretch: l.Stretch,
+      grabbed: l.Grabbed,
+      // Include all movement data for display
+      zPos: l.Z_Positive,
+      zNeg: l.Z_Negative,
+      xPos: l.X_Positive,
+      xNeg: l.X_Negative,
+      yPos: l.Y_Positive,
+      yNeg: l.Y_Negative
+    }));
+    // Keep activeLeashes for backward compatibility
     const activeLeashes = this.leashes.filter(l => l.Grabbed).map(l => ({
       name: l.Name,
       stretch: l.Stretch,
@@ -602,6 +625,7 @@ class OSCLeashAddon {
       enabled: this.enabled,
       leashCount: this.leashes.length,
       activeLeashes: activeLeashes,
+      discoveredLeashes: discoveredLeashes,
       movementData: movementData,
       config: this.settings.toJSON()
     };

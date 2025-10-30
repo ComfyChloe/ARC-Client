@@ -3787,18 +3787,20 @@ function updateLeashesDisplay() {
         return;
     }
 
-    if (oscLeashStatus.activeLeashes.length === 0) {
+    // Use discoveredLeashes if available, fallback to activeLeashes for compatibility
+    const leashesToDisplay = oscLeashStatus.discoveredLeashes || oscLeashStatus.activeLeashes || [];
+    if (leashesToDisplay.length === 0) {
         container.innerHTML = `
             <div class="leash-empty-message">
-                <div class="empty-primary">OSC Leash is enabled but no leashes are currently active.</div>
-                <div class="empty-secondary">Grab a leash in VRChat to see it appear here.</div>
+                <div class="empty-primary">OSC Leash is enabled but no leashes have been detected yet.</div>
+                <div class="empty-secondary">Grab a leash in VRChat to detect and see it appear here.</div>
             </div>
         `;
         return;
     }
 
     let leashesHtml = '';
-    oscLeashStatus.activeLeashes.forEach(leash => {
+    leashesToDisplay.forEach(leash => {
         const stretchPercent = (leash.stretch * 100).toFixed(1);
         const stretchColor = leash.stretch > 0.7 ? '#e74c3c' : leash.stretch > 0.15 ? '#f39c12' : '#2ecc71';
         
