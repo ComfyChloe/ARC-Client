@@ -392,17 +392,49 @@
             <div class="card">
                 <h3>OSC-Query Service</h3>
                 <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
-                    Automatic service discovery for VRChat using OSC-Query protocol.
+                    Automatic service discovery for VRChat using OSC-Query protocol. <strong>By default, all OSC data is received (/*)</strong>.
                 </p>
                 <p style="margin-bottom: 10px; color: #666; font-size: 0.9em;">
-                    OSC-Query enables VRChat to automatically discover this client on your network,
-                    eliminating manual configuration. The service starts automatically when OSC is enabled.
+                    OSC-Query enables VRChat to automatically discover this client on your network.
+                    The service starts automatically when OSC is enabled.
                 </p>
                 <p style="margin-bottom: 15px; color: #28a745; font-size: 0.85em; font-weight: 500;">
-                    ✓ OSC-Query service is active and discoverable by VRChat
+                    ✓ OSC-Query service is active and listening to all incoming OSC data
                 </p>
-                <div id="oscquery-subscriptions" style="margin-top: 15px;">
-                    <!-- OSC-Query status will be shown here -->
+                
+                <!-- Unsubscription Management -->
+                <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #3498db;">
+                    <h4 style="margin-top: 0; color: #2c3e50;">Path Unsubscription (Ignore Specific Paths)</h4>
+                    <p style="color: #666; font-size: 0.85em; margin-bottom: 10px;">
+                        Add OSC paths to ignore if they're causing performance issues or you don't need them.
+                        Examples: <code>/avatar/parameters/MyParam</code> or use wildcards like <code>/avatar/parameters/Voice*</code>
+                    </p>
+                    
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <input type="text" id="oscquery-unsubscribe-path" placeholder="/avatar/parameters/example or /path/*" 
+                               style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        <button class="btn btn-warning" onclick="addOscQueryUnsubscription()" style="white-space: nowrap;">
+                            Add to Ignore List
+                        </button>
+                    </div>
+                    
+                    <div id="oscquery-unsubscriptions-list" style="margin-top: 15px;">
+                        <!-- Unsubscription list will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- Suggested Unsubscriptions based on frequent parameters -->
+                <div style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107;">
+                    <h4 style="margin-top: 0; color: #856404;">Suggested Unsubscriptions (High-Frequency Parameters)</h4>
+                    <p style="color: #856404; font-size: 0.85em; margin-bottom: 10px;">
+                        These parameters are being sent very frequently and may impact performance.
+                        Click "Ignore" to stop receiving them.
+                    </p>
+                    <div id="oscquery-suggestions" style="margin-top: 10px;">
+                        <p style="color: #666; font-size: 0.9em; font-style: italic;">
+                            No high-frequency parameters detected yet. Enable OSC and wait for data...
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>

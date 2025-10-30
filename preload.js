@@ -27,11 +27,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Password storage API
   getSavedPassword: () => ipcRenderer.invoke('get-saved-password'),
   setSavedPassword: (password) => ipcRenderer.invoke('set-saved-password', password),
-  // OSC Query subscription API
-  getOscQuerySubscriptions: () => ipcRenderer.invoke('get-oscquery-subscriptions'),
-  setOscQuerySubscriptions: (subscriptions) => ipcRenderer.invoke('set-oscquery-subscriptions', subscriptions),
-  addOscQuerySubscription: (path) => ipcRenderer.invoke('add-oscquery-subscription', path),
-  removeOscQuerySubscription: (path) => ipcRenderer.invoke('remove-oscquery-subscription', path),
+  // OSC Query unsubscription API
+  getOscQueryUnsubscriptions: () => ipcRenderer.invoke('get-oscquery-unsubscriptions'),
+  setOscQueryUnsubscriptions: (unsubscriptions) => ipcRenderer.invoke('set-oscquery-unsubscriptions', unsubscriptions),
+  addOscQueryUnsubscription: (path) => ipcRenderer.invoke('add-oscquery-unsubscription', path),
+  removeOscQueryUnsubscription: (path) => ipcRenderer.invoke('remove-oscquery-unsubscription', path),
   // HypeRate API
   hyperateGetStatus: () => ipcRenderer.invoke('hyperate-get-status'),
   hyperateStart: () => ipcRenderer.invoke('hyperate-start'),

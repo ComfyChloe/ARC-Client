@@ -57,7 +57,7 @@ class OSCQueryService extends EventEmitter {
         this.bonjourService = null;
         this.isRunning = false;
         this.appName = null; // randomly generated on each start
-        this.subscriptions = new Set();
+        this.unsubscriptions = new Set(); // Paths to ignore (unsubscribe from)
         this._discoveryTimer = null;
         // Root node for OSC parameter tree
         this.rootNode = {
@@ -219,17 +219,20 @@ class OSCQueryService extends EventEmitter {
         res.end();
     }
     /**
-     * Handle received OSC messages and check against subscriptions
+     * Handle received OSC messages and check against unsubscriptions
+     * By default, all messages are forwarded unless they match an unsubscription pattern
      * @private
      */
     _handleOscMessage(oscMsg) {
         const address = oscMsg.address;
-        // Check if this message matches any subscription
-        const isSubscribed = this._matchesSubscription(address);
-        if (!isSubscribed) {
-            // Silently ignore messages that don't match subscriptions
+        
+        // Check if this message matches any unsubscription (if so, ignore it)
+        const isUnsubscribed = this._matchesUnsubscription(address);
+        if (isUnsubscribed) {
+            // Silently ignore messages that match unsubscription patterns
             return;
         }
+        
         // Parse OSC value from args
         let value = null;
         let type = 'f'; // default type
@@ -238,6 +241,7 @@ class OSCQueryService extends EventEmitter {
             value = arg.value;
             type = arg.type || 'f';
         }
+        
         // Emit the OSC message for forwarding
         this.emit('osc-message', {
             address: address,
@@ -246,20 +250,23 @@ class OSCQueryService extends EventEmitter {
             timestamp: Date.now()
         });
     }
+    
     /**
-     * Check if an OSC address matches any subscription pattern
+     * Check if an OSC address matches any unsubscription pattern
      * @private
      */
-    _matchesSubscription(address) {
-        if (this.subscriptions.size === 0) {
-            return false;
+    _matchesUnsubscription(address) {
+        if (this.unsubscriptions.size === 0) {
+            return false; // No unsubscriptions, allow all
         }
-        for (const pattern of this.subscriptions) {
+        
+        for (const pattern of this.unsubscriptions) {
             if (this._matchPattern(address, pattern)) {
-                return true;
+                return true; // Match found, this message should be ignored
             }
         }
-        return false;
+        
+        return false; // No match, allow this message
     }
     /**
      * Match an OSC address against a subscription pattern
@@ -520,45 +527,49 @@ class OSCQueryService extends EventEmitter {
         }
     }
     /**
-     * Add a subscription path
+     * Add an unsubscription path (messages matching this will be ignored)
      */
-    addSubscription(path) {
-        this.subscriptions.add(path);
-        console.log(`[OSCQuery] Added subscription: ${path}`);
-        this.emit('subscription-added', path);
+    addUnsubscription(path) {
+        this.unsubscriptions.add(path);
+        console.log(`[OSCQuery] Added unsubscription: ${path}`);
+        this.emit('unsubscription-added', path);
     }
+    
     /**
-     * Remove a subscription path
+     * Remove an unsubscription path (messages will be allowed again)
      */
-    removeSubscription(path) {
-        this.subscriptions.delete(path);
-        console.log(`[OSCQuery] Removed subscription: ${path}`);
-        this.emit('subscription-removed', path);
+    removeUnsubscription(path) {
+        this.unsubscriptions.delete(path);
+        console.log(`[OSCQuery] Removed unsubscription: ${path}`);
+        this.emit('unsubscription-removed', path);
     }
+    
     /**
-     * Set subscription paths (replaces all existing subscriptions)
+     * Set unsubscription paths (replaces all existing unsubscriptions)
      */
-    setSubscriptions(paths) {
-        this.subscriptions.clear();
+    setUnsubscriptions(paths) {
+        this.unsubscriptions.clear();
         if (Array.isArray(paths)) {
-            paths.forEach(path => this.subscriptions.add(path));
-            console.log(`[OSCQuery] Set ${paths.length} subscription(s):`, paths);
-            this.emit('subscriptions-updated', paths);
+            paths.forEach(path => this.unsubscriptions.add(path));
+            console.log(`[OSCQuery] Set ${paths.length} unsubscription(s):`, paths);
+            this.emit('unsubscriptions-updated', paths);
         }
     }
+    
     /**
-     * Get all current subscriptions
+     * Get all current unsubscriptions
      */
-    getSubscriptions() {
-        return Array.from(this.subscriptions);
+    getUnsubscriptions() {
+        return Array.from(this.unsubscriptions);
     }
+    
     /**
-     * Clear all subscriptions
+     * Clear all unsubscriptions (allow all messages)
      */
-    clearSubscriptions() {
-        this.subscriptions.clear();
-        console.log('[OSCQuery] Cleared all subscriptions');
-        this.emit('subscriptions-cleared');
+    clearUnsubscriptions() {
+        this.unsubscriptions.clear();
+        console.log('[OSCQuery] Cleared all unsubscriptions - now listening to all OSC messages');
+        this.emit('unsubscriptions-cleared');
     }
     /**
      * Get service status
@@ -569,7 +580,7 @@ class OSCQueryService extends EventEmitter {
             httpPort: this.httpPort,
             oscPort: this.oscPort,
             serviceName: this.appName,
-            subscriptions: this.getSubscriptions()
+            unsubscriptions: this.getUnsubscriptions()
         };
     }
 }

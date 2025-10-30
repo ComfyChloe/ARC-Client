@@ -372,10 +372,12 @@ async function initOscQueryService() {
     }
     // Initialize with legacy port (not actually used - OSC Query auto-assigns ports)
     await oscQueryService.initialize(serverConfig.legacyOscPort);
-    // Load and set subscriptions from config
-    const subscriptions = serverConfig.oscQuerySubscriptions || ['/*'];
-    oscQueryService.setSubscriptions(subscriptions);
-    debug.info(`OSC Query subscriptions loaded: ${subscriptions.join(', ')}`);
+    
+    // Load and set unsubscriptions from config
+    const unsubscriptions = serverConfig.oscQueryUnsubscriptions || [];
+    oscQueryService.setUnsubscriptions(unsubscriptions);
+    debug.info(`OSC Query unsubscriptions loaded: ${unsubscriptions.length === 0 ? 'None (listening to all)' : unsubscriptions.join(', ')}`);
+    
     // Start the service
     await oscQueryService.start();
   } catch (error) {
@@ -739,78 +741,93 @@ ipcMain.handle('disable-osc', async () => {
   }
 });
 // OSC Query subscription management IPC handlers
-ipcMain.handle('get-oscquery-subscriptions', () => {
+// OSC Query unsubscription management
+ipcMain.handle('get-oscquery-unsubscriptions', () => {
   try {
     if (oscQueryService) {
       return { 
         success: true, 
-        subscriptions: oscQueryService.getSubscriptions() 
+        unsubscriptions: oscQueryService.getUnsubscriptions() 
       };
     }
     // Return from config if service isn't running
     return { 
       success: true, 
-      subscriptions: serverConfig.oscQuerySubscriptions || ['/*'] 
+      unsubscriptions: serverConfig.oscQueryUnsubscriptions || [] 
     };
   } catch (error) {
-    debug.error(`Failed to get OSC Query subscriptions: ${error.message}`);
+    debug.error(`Failed to get OSC Query unsubscriptions: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
-ipcMain.handle('set-oscquery-subscriptions', (event, subscriptions) => {
+
+ipcMain.handle('set-oscquery-unsubscriptions', (event, unsubscriptions) => {
   try {
-    if (!Array.isArray(subscriptions)) {
-      throw new Error('Subscriptions must be an array');
+    if (!Array.isArray(unsubscriptions)) {
+      throw new Error('Unsubscriptions must be an array');
     }
+    
     // Update config
-    serverConfig.oscQuerySubscriptions = subscriptions;
-    const result = configManager.updateConfig({ oscQuerySubscriptions: subscriptions });
+    serverConfig.oscQueryUnsubscriptions = unsubscriptions;
+    const result = configManager.updateConfig({ oscQueryUnsubscriptions: unsubscriptions });
+    
     if (!result) {
-      throw new Error('Failed to save subscriptions to config');
+      throw new Error('Failed to save unsubscriptions to config');
     }
+    
     // Update active service if running
     if (oscQueryService && oscQueryService.isRunning) {
-      oscQueryService.setSubscriptions(subscriptions);
-      debug.info(`OSC Query subscriptions updated: ${subscriptions.join(', ')}`);
+      oscQueryService.setUnsubscriptions(unsubscriptions);
+      debug.info(`OSC Query unsubscriptions updated: ${unsubscriptions.length === 0 ? 'None (listening to all)' : unsubscriptions.join(', ')}`);
     }
-    return { success: true, subscriptions };
+    
+    return { success: true, unsubscriptions };
   } catch (error) {
-    debug.error(`Failed to set OSC Query subscriptions: ${error.message}`);
+    debug.error(`Failed to set OSC Query unsubscriptions: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
-ipcMain.handle('add-oscquery-subscription', (event, path) => {
+
+ipcMain.handle('add-oscquery-unsubscription', (event, path) => {
   try {
-    const currentSubs = serverConfig.oscQuerySubscriptions || ['/*'];
-    if (currentSubs.includes(path)) {
-      return { success: true, message: 'Subscription already exists', subscriptions: currentSubs };
+    const currentUnsubs = serverConfig.oscQueryUnsubscriptions || [];
+    
+    if (currentUnsubs.includes(path)) {
+      return { success: true, message: 'Unsubscription already exists', unsubscriptions: currentUnsubs };
     }
-    const newSubs = [...currentSubs, path];
-    serverConfig.oscQuerySubscriptions = newSubs;
-    configManager.updateConfig({ oscQuerySubscriptions: newSubs });
+    
+    const newUnsubs = [...currentUnsubs, path];
+    serverConfig.oscQueryUnsubscriptions = newUnsubs;
+    configManager.updateConfig({ oscQueryUnsubscriptions: newUnsubs });
+    
     if (oscQueryService && oscQueryService.isRunning) {
-      oscQueryService.addSubscription(path);
+      oscQueryService.addUnsubscription(path);
     }
-    debug.info(`Added OSC Query subscription: ${path}`);
-    return { success: true, subscriptions: newSubs };
+    
+    debug.info(`Added OSC Query unsubscription: ${path}`);
+    return { success: true, unsubscriptions: newUnsubs };
   } catch (error) {
-    debug.error(`Failed to add OSC Query subscription: ${error.message}`);
+    debug.error(`Failed to add OSC Query unsubscription: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
-ipcMain.handle('remove-oscquery-subscription', (event, path) => {
+
+ipcMain.handle('remove-oscquery-unsubscription', (event, path) => {
   try {
-    const currentSubs = serverConfig.oscQuerySubscriptions || [];
-    const newSubs = currentSubs.filter(sub => sub !== path);
-    serverConfig.oscQuerySubscriptions = newSubs;
-    configManager.updateConfig({ oscQuerySubscriptions: newSubs });
+    const currentUnsubs = serverConfig.oscQueryUnsubscriptions || [];
+    const newUnsubs = currentUnsubs.filter(sub => sub !== path);
+    
+    serverConfig.oscQueryUnsubscriptions = newUnsubs;
+    configManager.updateConfig({ oscQueryUnsubscriptions: newUnsubs });
+    
     if (oscQueryService && oscQueryService.isRunning) {
-      oscQueryService.removeSubscription(path);
+      oscQueryService.removeUnsubscription(path);
     }
-    debug.info(`Removed OSC Query subscription: ${path}`);
-    return { success: true, subscriptions: newSubs };
+    
+    debug.info(`Removed OSC Query unsubscription: ${path}`);
+    return { success: true, unsubscriptions: newUnsubs };
   } catch (error) {
-    debug.error(`Failed to remove OSC Query subscription: ${error.message}`);
+    debug.error(`Failed to remove OSC Query unsubscription: ${error.message}`);
     return { success: false, error: error.message };
   }
 });

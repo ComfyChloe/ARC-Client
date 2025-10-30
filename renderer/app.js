@@ -21,6 +21,13 @@ let oscReceivedDisplayEnabled = true; // Controls if OSC received logs are displ
 const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
 const MAX_LOG_ENTRIES = 10000; // Maximum log entries to keep in DOM
+// OSC parameter frequency tracking for unsubscription suggestions
+let oscParameterFrequency = new Map(); // Track message count per address
+let oscParameterLastUpdate = new Map(); // Track last update time per address
+const FREQUENCY_TRACKING_WINDOW = 10000; // 10 second window
+const HIGH_FREQUENCY_THRESHOLD = 20; // Messages per tracking window to be considered "high frequency"
+const SUGGESTION_UPDATE_INTERVAL = 5000; // Update suggestions every 5 seconds
+let suggestionUpdateTimer = null;
 // Float rate limiting (similar to server implementation)
 const FLOAT_THROTTLE_INTERVAL = 750; // ms
 let lastFloatLogTimes = new Map(); // Track last log time per address
@@ -34,6 +41,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadTheme();
     setupEventListeners();
     setupExtrasDropdown();
+    
+    // Load OSC Query unsubscriptions on app start (visible whether OSC is enabled or not)
+    await loadOscQueryUnsubscriptions();
+    
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
@@ -163,6 +174,9 @@ async function loadConfig() {
 }
 function setupEventListeners() {
     window.electronAPI.onOscReceived((data) => {
+        // Track parameter frequency for suggestions
+        trackOscParameter(data.address);
+        
         oscReceivedLog(data.address, data.value, data.connectionId);
     });
     window.electronAPI.onOscForwarded((data) => {
@@ -187,11 +201,13 @@ function setupEventListeners() {
         window.electronAPI.onOscQueryStatus((data) => {
             if (data.status === 'started') {
                 debugLog(`OSC-Query service started on HTTP port ${data.httpPort}`, 'success');
-                loadOscQuerySubscriptions();
+                loadOscQueryUnsubscriptions();
+                setupSuggestionUpdater();
             } else if (data.status === 'error') {
                 debugLog(`OSC-Query service error: ${data.error}`, 'error');
             } else if (data.status === 'stopped') {
                 debugLog('OSC-Query service stopped');
+                stopSuggestionUpdater();
             }
         });
     }
@@ -1982,61 +1998,282 @@ function createConnectionElement(connection, index, typeLabel) {
     `;
     return connectionDiv;
 }
-// OSC-Query Subscription Management
-// Note: OSC-Query subscriptions allow VRChat to send only the parameters you're interested in
-// This reduces network traffic and improves performance
+// OSC-Query Unsubscription Management
+// Note: By default, OSC-Query receives ALL OSC data (/*).
+// Unsubscriptions allow you to ignore specific paths that you don't need.
 
-async function loadOscQuerySubscriptions() {
+async function loadOscQueryUnsubscriptions() {
     try {
-        // OSC-Query is now active and running
-        debugLog('OSC-Query service is active - VRChat can discover this client automatically', 'info');
-        renderOscQuerySubscriptions([]);
+        const result = await window.electronAPI.getOscQueryUnsubscriptions();
+        if (result && result.success) {
+            renderOscQueryUnsubscriptions(result.unsubscriptions || []);
+            debugLog(`OSC-Query unsubscriptions loaded: ${result.unsubscriptions.length === 0 ? 'None (listening to all)' : result.unsubscriptions.length}`, 'info');
+        }
     } catch (error) {
-        debugLog(`Error loading OSC-Query subscriptions: ${error.message}`, 'error');
+        debugLog(`Error loading OSC-Query unsubscriptions: ${error.message}`, 'error');
     }
 }
 
-function renderOscQuerySubscriptions(subscriptions) {
-    const container = document.getElementById('oscquery-subscriptions');
+function renderOscQueryUnsubscriptions(unsubscriptions) {
+    const container = document.getElementById('oscquery-unsubscriptions-list');
     if (!container) return;
 
-    if (subscriptions.length === 0) {
-        const isDarkTheme = document.body.classList.contains('dark-theme');
-        const textColor = isDarkTheme ? '#b0b0b0' : '#666';
-        const successColor = isDarkTheme ? '#4CAF50' : '#28a745';
+    const isDarkTheme = document.body.classList.contains('dark-theme');
+    const itemBgColor = isDarkTheme ? '#2c2c2c' : '#fff';
+    const pathColor = isDarkTheme ? '#e0e0e0' : '#495057';
+    const emptyTextColor = isDarkTheme ? '#a0a0a0' : '#666';
+    const headerColor = isDarkTheme ? '#b0b0b0' : '#666';
+
+    if (unsubscriptions.length === 0) {
         container.innerHTML = `
-            <p style="color: ${successColor}; font-style: italic; font-weight: 500;">
-                ✓ OSC-Query service is running - VRChat can now discover this client automatically
-            </p>
-            <p style="color: ${textColor}; font-size: 0.9em; margin-top: 10px;">
-                The OSC-Query protocol enables automatic discovery and reduces network traffic.
-                VRChat will detect this client when both are running on the same network.
+            <p style="color: ${emptyTextColor}; font-size: 0.9em; font-style: italic; text-align: center; padding: 10px;">
+                No paths are being ignored. All OSC data is being received.
             </p>
         `;
         return;
     }
 
-    const subscriptionsHtml = subscriptions.map(sub => `
+    const unsubsHtml = unsubscriptions.map(path => `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
-                    background-color: #f8f9fa; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #28a745;">
-            <span style="font-family: monospace; color: #495057;">${sub}</span>
-            <button class="btn btn-danger" onclick="removeOscQuerySubscription('${sub}')" 
-                    style="padding: 2px 8px; font-size: 12px;">Remove</button>
+                    background-color: ${itemBgColor}; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #dc3545;">
+            <span style="font-family: monospace; color: ${pathColor};">${path}</span>
+            <button class="btn btn-success" onclick="removeOscQueryUnsubscription('${path}')" 
+                    style="padding: 2px 8px; font-size: 12px;">Remove (Listen Again)</button>
         </div>
     `).join('');
 
-    container.innerHTML = subscriptionsHtml;
+    container.innerHTML = `
+        <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: ${headerColor}; font-size: 0.85em;">
+                <strong>Ignoring ${unsubscriptions.length} path(s):</strong>
+            </span>
+            <button class="btn btn-secondary" onclick="toggleUnsubscriptionList()" 
+                    style="padding: 2px 8px; font-size: 11px;" id="toggle-unsub-list-btn">
+                <span id="toggle-unsub-arrow">▼</span> Collapse
+            </button>
+        </div>
+        <div id="unsubscription-items-container">
+            ${unsubsHtml}
+        </div>
+    `;
 }
 
-// Note: Subscription management functions remain for future enhancement
-// OSC-Query automatic discovery is now active without requiring manual subscriptions
+function toggleUnsubscriptionList() {
+    const itemsContainer = document.getElementById('unsubscription-items-container');
+    const toggleBtn = document.getElementById('toggle-unsub-list-btn');
+    const arrow = document.getElementById('toggle-unsub-arrow');
+    
+    if (!itemsContainer || !toggleBtn || !arrow) return;
+    
+    if (itemsContainer.style.display === 'none') {
+        itemsContainer.style.display = 'block';
+        arrow.textContent = '▼';
+        toggleBtn.innerHTML = '<span id="toggle-unsub-arrow">▼</span> Collapse';
+    } else {
+        itemsContainer.style.display = 'none';
+        arrow.textContent = '▶';
+        toggleBtn.innerHTML = '<span id="toggle-unsub-arrow">▶</span> Expand';
+    }
+}
+
+async function addOscQueryUnsubscription() {
+    const input = document.getElementById('oscquery-unsubscribe-path');
+    if (!input) return;
+    
+    const path = input.value.trim();
+    if (!path) {
+        debugLog('Please enter a valid OSC path', 'error');
+        return;
+    }
+    
+    // Validate OSC path format
+    if (!path.startsWith('/')) {
+        debugLog('OSC path must start with /', 'error');
+        return;
+    }
+    
+    try {
+        const result = await window.electronAPI.addOscQueryUnsubscription(path);
+        if (result && result.success) {
+            debugLog(`Added unsubscription: ${path}`, 'info');
+            renderOscQueryUnsubscriptions(result.unsubscriptions || []);
+            input.value = ''; // Clear input
+        } else {
+            debugLog(`Failed to add unsubscription: ${result.error || result.message}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error adding unsubscription: ${error.message}`, 'error');
+    }
+}
+
+async function removeOscQueryUnsubscription(path) {
+    try {
+        const result = await window.electronAPI.removeOscQueryUnsubscription(path);
+        if (result && result.success) {
+            debugLog(`Removed unsubscription: ${path} - now listening to this path again`, 'info');
+            renderOscQueryUnsubscriptions(result.unsubscriptions || []);
+        } else {
+            debugLog(`Failed to remove unsubscription: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error removing unsubscription: ${error.message}`, 'error');
+    }
+}
+
+// OSC Parameter Frequency Tracking for Suggestions
+function trackOscParameter(address) {
+    const now = Date.now();
+    
+    // Update frequency count
+    const currentCount = oscParameterFrequency.get(address) || 0;
+    oscParameterFrequency.set(address, currentCount + 1);
+    oscParameterLastUpdate.set(address, now);
+    
+    // Clean up old entries (outside tracking window)
+    for (const [addr, lastUpdate] of oscParameterLastUpdate.entries()) {
+        if (now - lastUpdate > FREQUENCY_TRACKING_WINDOW * 2) {
+            oscParameterFrequency.delete(addr);
+            oscParameterLastUpdate.delete(addr);
+        }
+    }
+}
+
+function getHighFrequencyParameters() {
+    const now = Date.now();
+    const highFreq = [];
+    
+    for (const [address, count] of oscParameterFrequency.entries()) {
+        const lastUpdate = oscParameterLastUpdate.get(address) || 0;
+        
+        // Only consider parameters updated recently
+        if (now - lastUpdate < FREQUENCY_TRACKING_WINDOW) {
+            // Calculate messages per second
+            const messagesPerSecond = count / (FREQUENCY_TRACKING_WINDOW / 1000);
+            
+            if (count >= HIGH_FREQUENCY_THRESHOLD) {
+                highFreq.push({
+                    address,
+                    count,
+                    messagesPerSecond: messagesPerSecond.toFixed(1)
+                });
+            }
+        }
+    }
+    
+    // Sort by count (highest first)
+    highFreq.sort((a, b) => b.count - a.count);
+    
+    return highFreq.slice(0, 10); // Top 10
+}
+
+function renderHighFrequencySuggestions() {
+    const container = document.getElementById('oscquery-suggestions');
+    if (!container) return;
+    
+    const highFreq = getHighFrequencyParameters();
+    const isDarkTheme = document.body.classList.contains('dark-theme');
+    
+    // Theme-aware colors
+    const itemBgColor = isDarkTheme ? '#2c2c2c' : '#fff';
+    const addressColor = isDarkTheme ? '#e0e0e0' : '#212529';
+    const statsColor = isDarkTheme ? '#a0a0a0' : '#6c757d';
+    const headerColor = isDarkTheme ? '#d4a017' : '#856404';
+    
+    if (highFreq.length === 0) {
+        const emptyTextColor = isDarkTheme ? '#a0a0a0' : '#666';
+        container.innerHTML = `
+            <p style="color: ${emptyTextColor}; font-size: 0.9em; font-style: italic;">
+                No high-frequency parameters detected yet. Enable OSC and wait for data...
+            </p>
+        `;
+        return;
+    }
+    
+    const suggestionsHtml = highFreq.map(param => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
+                    background-color: ${itemBgColor}; border-radius: 4px; margin-bottom: 5px; border: 1px solid #ffc107;">
+            <div style="flex: 1;">
+                <div style="font-family: monospace; color: ${addressColor}; margin-bottom: 2px;">${param.address}</div>
+                <div style="font-size: 0.75em; color: ${statsColor};">
+                    ${param.count} messages (~${param.messagesPerSecond} msg/sec)
+                </div>
+            </div>
+            <button class="btn btn-warning" onclick="quickIgnoreParameter('${param.address}')" 
+                    style="padding: 4px 12px; font-size: 12px; white-space: nowrap;">
+                Ignore This
+            </button>
+        </div>
+    `).join('');
+    
+    container.innerHTML = `
+        <div style="margin-bottom: 10px; color: ${headerColor}; font-size: 0.85em;">
+            <strong>Top ${highFreq.length} high-frequency parameter(s):</strong>
+        </div>
+        ${suggestionsHtml}
+    `;
+}
+
+async function quickIgnoreParameter(address) {
+    try {
+        const result = await window.electronAPI.addOscQueryUnsubscription(address);
+        if (result && result.success) {
+            debugLog(`Added ${address} to ignore list`, 'info');
+            renderOscQueryUnsubscriptions(result.unsubscriptions || []);
+            
+            // Remove from frequency tracking
+            oscParameterFrequency.delete(address);
+            oscParameterLastUpdate.delete(address);
+            
+            // Update suggestions immediately
+            renderHighFrequencySuggestions();
+        }
+    } catch (error) {
+        debugLog(`Error ignoring parameter: ${error.message}`, 'error');
+    }
+}
+
+function setupSuggestionUpdater() {
+    // Clear any existing timer
+    if (suggestionUpdateTimer) {
+        clearInterval(suggestionUpdateTimer);
+    }
+    
+    // Update suggestions periodically
+    suggestionUpdateTimer = setInterval(() => {
+        renderHighFrequencySuggestions();
+    }, SUGGESTION_UPDATE_INTERVAL);
+}
+
+function stopSuggestionUpdater() {
+    // Clear the timer
+    if (suggestionUpdateTimer) {
+        clearInterval(suggestionUpdateTimer);
+        suggestionUpdateTimer = null;
+    }
+    
+    // Clear frequency tracking data
+    oscParameterFrequency.clear();
+    oscParameterLastUpdate.clear();
+}
+
+// Legacy functions kept for compatibility (now empty or redirected)
+async function loadOscQuerySubscriptions() {
+    // Redirected to unsubscriptions
+    await loadOscQueryUnsubscriptions();
+}
+
+function renderOscQuerySubscriptions(subscriptions) {
+    // Deprecated - now uses unsubscriptions
+}
 
 async function addOscQuerySubscription() {
-    debugLog('OSC-Query automatic discovery is active - manual subscriptions not required', 'info');
+    // Deprecated
+    debugLog('Function deprecated - use unsubscription management instead', 'info');
 }
 
 async function removeOscQuerySubscription(pattern) {
-    debugLog('OSC-Query automatic discovery is active - manual subscriptions not required', 'info');
+    // Deprecated
+    debugLog('Function deprecated - use unsubscription management instead', 'info');
 }
 
 function updateOscReceivedDisplayStatus() {

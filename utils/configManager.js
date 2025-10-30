@@ -19,7 +19,7 @@ class ConfigManager {
         lastUsername: '',
         savedPassword: ''
       },
-      oscQuerySubscriptions: ['/*'],
+      oscQueryUnsubscriptions: [],
       windowState: {
         width: 1200,
         height: 800,
@@ -91,7 +91,7 @@ class ConfigManager {
       targetOscAddress: this.config.targetOscAddress,
       additionalOscConnections: this.config.additionalOscConnections || [],
       websocketServerUrl: this.config.websocketServerUrl,
-      oscQuerySubscriptions: this.config.oscQuerySubscriptions || ['/*'],
+      oscQueryUnsubscriptions: this.config.oscQueryUnsubscriptions || [],
       appSettings: this.config.appSettings || {}
     };
   }
