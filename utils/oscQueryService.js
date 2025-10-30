@@ -51,12 +51,15 @@ class OSCQueryService extends EventEmitter {
         super();
         this.httpPort = null;
         this.oscPort = null;
+        this.assignedHttpPort = null; // Persistent HTTP port (assigned once, reused on restart)
+        this.assignedOscPort = null;  // Persistent OSC port (assigned once, reused on restart)
         this.httpServer = null;
         this.oscUdpPort = null; // OSC UDP listener
         this.bonjour = null;
         this.bonjourService = null;
         this.isRunning = false;
-        this.appName = null; // randomly generated on each start
+        this.appName = null; // Will be generated once and reused
+        this.assignedAppName = null; // Persistent service name (assigned once, reused on restart)
         this.unsubscriptions = new Set(); // Paths to ignore (unsubscribe from)
         this._discoveryTimer = null;
         // Root node for OSC parameter tree
@@ -72,15 +75,31 @@ class OSCQueryService extends EventEmitter {
      * @param {number} httpPort - Optional HTTP port (auto-detected if not provided)
      */
     async initialize(legacyPort = null, httpPort = null) {
-        // Always auto-assign both OSC and HTTP ports (ignore legacy port)
-        this.oscPort = await this._findAvailablePort(22000, 50000);
+        // Reuse previously assigned ports if they exist (for persistent VRChat connection)
+        // Otherwise, assign new random ports on first initialization
+        if (this.assignedOscPort === null) {
+            this.assignedOscPort = await this._findAvailablePort(22000, 50000);
+            console.log(`[OSCQuery] First initialization - assigned new OSC Port: ${this.assignedOscPort}`);
+        } else {
+            console.log(`[OSCQuery] Reusing previously assigned OSC Port: ${this.assignedOscPort}`);
+        }
+        this.oscPort = this.assignedOscPort;
+        
         // Find available HTTP port if not specified
         if (!httpPort) {
-            this.httpPort = await this._findAvailablePort(22000, 50000);
+            if (this.assignedHttpPort === null) {
+                this.assignedHttpPort = await this._findAvailablePort(22000, 50000);
+                console.log(`[OSCQuery] First initialization - assigned new HTTP Port: ${this.assignedHttpPort}`);
+            } else {
+                console.log(`[OSCQuery] Reusing previously assigned HTTP Port: ${this.assignedHttpPort}`);
+            }
+            this.httpPort = this.assignedHttpPort;
         } else {
             this.httpPort = httpPort;
+            this.assignedHttpPort = httpPort; // Store explicitly provided port
         }
-        console.log(`[OSCQuery] Initializing with auto-assigned OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}`);
+        
+        console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}`);
 
         // Setup OSC Query endpoints
         this._setupEndpoints();
@@ -328,10 +347,16 @@ class OSCQueryService extends EventEmitter {
             return;
         }
         try {
-            // Generate NEW unique service name on each start to force VRChat to see as new service
-            const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
-            this.appName = `ARC-OSC-Client-${randomSuffix}`;
-            console.log(`[OSCQuery] Generated new service name: ${this.appName}`);
+            // Generate service name ONCE and reuse it to maintain VRChat connection
+            if (!this.assignedAppName) {
+                const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+                this.assignedAppName = `ARC-OSC-Client-${randomSuffix}`;
+                console.log(`[OSCQuery] First start - generated new service name: ${this.assignedAppName}`);
+            } else {
+                console.log(`[OSCQuery] Reusing persistent service name: ${this.assignedAppName}`);
+            }
+            this.appName = this.assignedAppName;
+            
             // Close any existing OSC UDP port before creating a new one
             if (this.oscUdpPort) {
                 try {
@@ -582,6 +607,57 @@ class OSCQueryService extends EventEmitter {
             serviceName: this.appName,
             unsubscriptions: this.getUnsubscriptions()
         };
+    }
+    
+    /**
+     * Reset port assignments (will assign new random ports on next initialize)
+     * Useful for troubleshooting or forcing VRChat to rediscover the service
+     */
+    resetPorts() {
+        if (this.isRunning) {
+            console.warn('[OSCQuery] Cannot reset ports while service is running. Stop the service first.');
+            return false;
+        }
+        console.log('[OSCQuery] Resetting port assignments - new ports will be assigned on next initialize');
+        this.assignedHttpPort = null;
+        this.assignedOscPort = null;
+        this.httpPort = null;
+        this.oscPort = null;
+        return true;
+    }
+    
+    /**
+     * Reset service name (will generate new name on next start)
+     * Useful for forcing VRChat to see this as a new service
+     */
+    resetServiceName() {
+        if (this.isRunning) {
+            console.warn('[OSCQuery] Cannot reset service name while service is running. Stop the service first.');
+            return false;
+        }
+        console.log('[OSCQuery] Resetting service name - new name will be generated on next start');
+        this.assignedAppName = null;
+        this.appName = null;
+        return true;
+    }
+    
+    /**
+     * Reset everything (ports and service name)
+     * Forces complete re-initialization on next start
+     */
+    resetAll() {
+        if (this.isRunning) {
+            console.warn('[OSCQuery] Cannot reset while service is running. Stop the service first.');
+            return false;
+        }
+        console.log('[OSCQuery] Resetting all persistent state - service will fully re-initialize on next start');
+        this.assignedHttpPort = null;
+        this.assignedOscPort = null;
+        this.assignedAppName = null;
+        this.httpPort = null;
+        this.oscPort = null;
+        this.appName = null;
+        return true;
     }
 }
 module.exports = { OSCQueryService, OSCQAccess, OSCTypeSimple };
