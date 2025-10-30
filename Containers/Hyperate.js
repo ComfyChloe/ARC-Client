@@ -59,9 +59,13 @@ class HyperateAddon {
   }
   saveConfig() {
     try {
+      // Get all unique tracker IDs from both active trackers and saved config
+      const savedTrackers = this.config.trackers || [];
+      const activeTrackers = Array.from(this.trackers.keys());
+      const allTrackers = [...new Set([...savedTrackers, ...activeTrackers])];
       const config = {
         primaryTracker: this.primaryTracker,
-        trackers: Array.from(this.trackers.keys()),
+        trackers: allTrackers,
         trackerNames: this.trackerNames,
         trackerStates: this.trackerStates
       };
@@ -195,9 +199,12 @@ class HyperateAddon {
   loadSavedTrackers() {
     // Load trackers from saved config
     if (this.config.trackers && Array.isArray(this.config.trackers)) {
+      debug.info(`Loading ${this.config.trackers.length} saved tracker(s): ${this.config.trackers.join(', ')}`);
       this.config.trackers.forEach(deviceId => {
         this.joinChannel(deviceId);
       });
+    } else {
+      debug.info('No saved trackers found in config');
     }
   }
   joinChannel(deviceId) {
