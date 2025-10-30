@@ -63,7 +63,10 @@ class OSCQueryService extends EventEmitter {
         this.appName = null; // Will be generated once and reused
         this.assignedAppName = null; // Persistent service name (assigned once, reused on restart)
         this.unsubscriptions = new Set(); // Paths to ignore (unsubscribe from)
+        this.hardcodedUnsubscriptions = new Set(); // Hardcoded paths that cannot be removed
         this._discoveryTimer = null;
+        // Hardcode heartrate parameter to never be forwarded to ARC
+        this.hardcodedUnsubscriptions.add('/avatar/parameters/ARCOSC/Heartrate/*');
         // Root node for OSC parameter tree
         this.rootNode = {
             description: "ARC OSC Client - VRChat Integration",
@@ -277,8 +280,15 @@ class OSCQueryService extends EventEmitter {
      * @private
      */
     _matchesUnsubscription(address) {
+        // Check hardcoded unsubscriptions first (cannot be removed by users)
+        for (const pattern of this.hardcodedUnsubscriptions) {
+            if (this._matchPattern(address, pattern)) {
+                return true; // Hardcoded match found, always ignore
+            }
+        }
+        // Check user-defined unsubscriptions
         if (this.unsubscriptions.size === 0) {
-            return false; // No unsubscriptions, allow all
+            return false; // No unsubscriptions, allow
         }
         
         for (const pattern of this.unsubscriptions) {
@@ -628,38 +638,63 @@ class OSCQueryService extends EventEmitter {
     
     /**
      * Remove an unsubscription path (messages will be allowed again)
+     * Note: Hardcoded unsubscriptions cannot be removed
      */
     removeUnsubscription(path) {
+        if (this.hardcodedUnsubscriptions.has(path)) {
+            console.warn(`[OSCQuery] Cannot remove hardcoded unsubscription: ${path}`);
+            return false;
+        }
         this.unsubscriptions.delete(path);
         console.log(`[OSCQuery] Removed unsubscription: ${path}`);
         this.emit('unsubscription-removed', path);
+        return true;
     }
     
     /**
      * Set unsubscription paths (replaces all existing unsubscriptions)
+     * Note: Hardcoded unsubscriptions are always preserved
      */
     setUnsubscriptions(paths) {
         this.unsubscriptions.clear();
         if (Array.isArray(paths)) {
-            paths.forEach(path => this.unsubscriptions.add(path));
-            console.log(`[OSCQuery] Set ${paths.length} unsubscription(s):`, paths);
-            this.emit('unsubscriptions-updated', paths);
+            paths.forEach(path => {
+                // Don't add hardcoded paths to user unsubscriptions (they're already handled separately)
+                if (!this.hardcodedUnsubscriptions.has(path)) {
+                    this.unsubscriptions.add(path);
+                }
+            });
+            console.log(`[OSCQuery] Set ${this.unsubscriptions.size} user unsubscription(s):`, Array.from(this.unsubscriptions));
+            this.emit('unsubscriptions-updated', Array.from(this.unsubscriptions));
         }
     }
     
     /**
-     * Get all current unsubscriptions
+     * Get all current unsubscriptions (includes hardcoded and user-defined)
      */
     getUnsubscriptions() {
+        const all = new Set([...this.hardcodedUnsubscriptions, ...this.unsubscriptions]);
+        return Array.from(all);
+    }
+    /**
+     * Get only user-defined unsubscriptions (excludes hardcoded ones)
+     */
+    getUserUnsubscriptions() {
         return Array.from(this.unsubscriptions);
     }
     
     /**
-     * Clear all unsubscriptions (allow all messages)
+     * Get only hardcoded unsubscriptions (cannot be removed)
+     */
+    getHardcodedUnsubscriptions() {
+        return Array.from(this.hardcodedUnsubscriptions);
+    }
+    /**
+     * Clear all user-defined unsubscriptions (hardcoded unsubscriptions remain)
      */
     clearUnsubscriptions() {
         this.unsubscriptions.clear();
-        console.log('[OSCQuery] Cleared all unsubscriptions - now listening to all OSC messages');
+        console.log('[OSCQuery] Cleared user-defined unsubscriptions - hardcoded unsubscriptions still active');
         this.emit('unsubscriptions-cleared');
     }
     /**
