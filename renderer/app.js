@@ -3445,7 +3445,7 @@ window.electronAPI.onOSCLeashMovement?.((data) => {
     // Only update displays if OSCLeash view is visible
     if (document.getElementById('osc-leash-view').style.display !== 'none') {
         // Update movement display with real-time data
-        updateMovementDisplay(data.vertical, data.horizontal, data.run, data.turning);
+        updateMovementDisplay(data.vertical, data.horizontal, data.run);
         
         // Update physbone inputs display with real-time data
         updatePhysboneInputsDisplay(data.physboneData);
@@ -3590,7 +3590,7 @@ let movementData = {
     vertical: 0,
     horizontal: 0,
     run: 0,
-    turning: 0
+
 };
 
 // Physbone input data
@@ -3724,8 +3724,7 @@ async function refreshOSCLeashStatus(includeConfig = false) {
             updateMovementDisplay(
                 status.movementData.vertical,
                 status.movementData.horizontal,
-                status.movementData.run,
-                status.movementData.turning
+                status.movementData.run
             );
             // Update physbone inputs display with real leash data
             const activeLeash = status.activeLeashes[0]; // Use first active leash
@@ -3842,7 +3841,7 @@ Walk Deadzone: ${(config.WalkDeadzone * 100).toFixed(0)}%
 Strength Multiplier: ${config.StrengthMultiplier}
 Up/Down Compensation: ${config.UpDownCompensation}
 Up/Down Deadzone: ${(config.UpDownDeadzone * 100).toFixed(0)}%
-Turning Enabled: ${config.TurningEnabled ? 'Yes' : 'No'}
+
 Active Delay: ${config.ActiveDelay}ms
 Inactive Delay: ${config.InactiveDelay}ms
 Physbone Parameters: ${config.PhysboneParameters.join(', ')}
@@ -3851,13 +3850,13 @@ Physbone Parameters: ${config.PhysboneParameters.join(', ')}
     display.textContent = configText;
 }
 
-function updateMovementDisplay(vertical, horizontal, run, turning = 0) {
-    movementData = { vertical, horizontal, run, turning };
+function updateMovementDisplay(vertical, horizontal, run) {
+    movementData = { vertical, horizontal, run };
 
     const verticalEl = document.getElementById('movement-vertical');
     const horizontalEl = document.getElementById('movement-horizontal');
     const runEl = document.getElementById('movement-run');
-    const turningEl = document.getElementById('movement-turning');
+
 
     if (verticalEl) {
         verticalEl.textContent = vertical.toFixed(2);
@@ -3879,10 +3878,7 @@ function updateMovementDisplay(vertical, horizontal, run, turning = 0) {
         }
     }
 
-    if (turningEl) {
-        turningEl.textContent = turning.toFixed(2);
-        turningEl.style.color = Math.abs(turning) > 0.1 ? '#f39c12' : '#bdc3c7';
-    }
+
 }
 
 function updatePhysboneInputsDisplay(inputs) {
@@ -3916,7 +3912,7 @@ function updatePhysboneInputsDisplay(inputs) {
     container.innerHTML = html;
 }
 function clearMovementData() {
-    updateMovementDisplay(0, 0, 0, 0);
+    updateMovementDisplay(0, 0, 0);
 }
 function clearPhysboneInputs() {
     const container = document.getElementById('physbone-inputs');
@@ -3995,11 +3991,6 @@ function populateConfigForm(config) {
     document.getElementById('config-active-delay').value = config.ActiveDelay;
     document.getElementById('config-inactive-delay').value = config.InactiveDelay;
     document.getElementById('config-logging').checked = config.Logging;
-    // Turning settings
-    document.getElementById('config-turning-enabled').checked = config.TurningEnabled;
-    document.getElementById('config-turning-multiplier').value = config.TurningMultiplier;
-    document.getElementById('config-turning-deadzone').value = config.TurningDeadzone;
-    document.getElementById('config-turning-goal').value = config.TurningGoal;
     // Advanced settings (physbone parameters)
     document.getElementById('config-physbone-params').value = config.PhysboneParameters.join(', ');
     document.getElementById('config-z-positive').value = config.DirectionalParameters.Z_Positive_Param;
@@ -4010,7 +4001,7 @@ function populateConfigForm(config) {
     document.getElementById('config-y-negative').value = config.DirectionalParameters.Y_Negative_Param;
     // Update all slider displays
     updateSliderDisplays();
-    toggleTurningSettings();
+
 }
 // Update slider value displays
 function updateSliderDisplays() {
@@ -4022,9 +4013,7 @@ function updateSliderDisplays() {
         { id: 'config-updown-deadzone', suffix: '%' },
         { id: 'config-active-delay', suffix: 'ms' },
         { id: 'config-inactive-delay', suffix: 'ms' },
-        { id: 'config-turning-multiplier', suffix: '' },
-        { id: 'config-turning-deadzone', suffix: '' },
-        { id: 'config-turning-goal', suffix: '°' }
+
     ];
 
     sliders.forEach(slider => {
@@ -4040,19 +4029,8 @@ function updateSliderDisplays() {
     });
 }
 
-// Toggle turning settings visibility
-function toggleTurningSettings() {
-    const turningEnabled = document.getElementById('config-turning-enabled').checked;
-    const turningSettings = document.getElementById('turning-settings');
-    
-    if (turningEnabled) {
-        turningSettings.style.opacity = '1';
-        turningSettings.style.pointerEvents = 'auto';
-    } else {
-        turningSettings.style.opacity = '0.5';
-        turningSettings.style.pointerEvents = 'none';
-    }
-}
+
+
 
 // Collect configuration from form
 function collectConfigFromForm() {
@@ -4065,10 +4043,6 @@ function collectConfigFromForm() {
         StrengthMultiplier: parseFloat(document.getElementById('config-strength-multiplier').value),
         UpDownCompensation: parseFloat(document.getElementById('config-updown-compensation').value),
         UpDownDeadzone: parseFloat(document.getElementById('config-updown-deadzone').value) / 100,
-        TurningEnabled: document.getElementById('config-turning-enabled').checked,
-        TurningMultiplier: parseFloat(document.getElementById('config-turning-multiplier').value),
-        TurningDeadzone: parseFloat(document.getElementById('config-turning-deadzone').value),
-        TurningGoal: parseFloat(document.getElementById('config-turning-goal').value),
         ActiveDelay: parseInt(document.getElementById('config-active-delay').value),
         InactiveDelay: parseInt(document.getElementById('config-inactive-delay').value),
         Logging: document.getElementById('config-logging').checked,
@@ -4128,10 +4102,7 @@ async function resetOSCLeashConfig() {
         StrengthMultiplier: 1.2,
         UpDownCompensation: 1.0,
         UpDownDeadzone: 0.5,
-        TurningEnabled: false,
-        TurningMultiplier: 0.80,
-        TurningDeadzone: 0.15,
-        TurningGoal: 90,
+
         ActiveDelay: 20,
         InactiveDelay: 500,
         Logging: false,

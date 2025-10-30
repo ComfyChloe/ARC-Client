@@ -253,8 +253,7 @@
                         </div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">TURNING</div>
-                        <div style="font-size: 20px; font-weight: bold; color: #f39c12;" id="movement-turning">0.00</div>
+
                         <div style="font-size: 10px; color: #999;">Only if enabled</div>
                     </div>
                 </div>
@@ -281,7 +280,7 @@
                 <div class="tabs" style="margin-bottom: 10px;">
                     <button class="tab active" id="config-tab-movement" onclick="showConfigTab('movement')">Movement Settings</button>
                     <button class="tab" id="config-tab-timing" onclick="showConfigTab('timing')">Timing & Performance</button>
-                    <button class="tab" id="config-tab-turning" onclick="showConfigTab('turning')">Turning (Optional)</button>
+
                     <button class="tab" id="config-tab-advanced" onclick="showConfigTab('advanced')">Advanced</button>
                 </div>
 
@@ -346,38 +345,7 @@
                     </div>
                 </div>
 
-                <!-- Turning Tab -->
-                <div id="config-content-turning" class="config-tab-content" style="display: none;">
-                    <div class="form-group">
-                        <label style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="config-turning-enabled" onchange="toggleTurningSettings()">
-                            <span>Enable Turning</span>
-                        </label>
-                        <small>Allow leash to control camera rotation</small>
-                    </div>
-                    <div id="turning-settings" style="opacity: 0.5; pointer-events: none;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <div class="form-group">
-                                <label for="config-turning-multiplier">Turning Multiplier</label>
-                                <input type="range" id="config-turning-multiplier" min="0.1" max="2.0" step="0.1" value="0.8">
-                                <span id="config-turning-multiplier-value">0.8</span>
-                                <small>Turning sensitivity</small>
-                            </div>
-                            <div class="form-group">
-                                <label for="config-turning-deadzone">Turning Deadzone</label>
-                                <input type="range" id="config-turning-deadzone" min="0.05" max="0.5" step="0.05" value="0.15">
-                                <span id="config-turning-deadzone-value">0.15</span>
-                                <small>Minimum stretch to enable turning</small>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="config-turning-goal">Turning Goal (degrees)</label>
-                            <input type="range" id="config-turning-goal" min="30" max="180" step="15" value="90">
-                            <span id="config-turning-goal-value">90°</span>
-                            <small>Angle threshold for directional turning</small>
-                        </div>
-                    </div>
-                </div>
+
 
                 <!-- Advanced Tab -->
                 <div id="config-content-advanced" class="config-tab-content" style="display: none;">

@@ -13,10 +13,6 @@ const DefaultConfig = {
   StrengthMultiplier: 1.2,
   UpDownCompensation: 1.0,
   UpDownDeadzone: 0.5,
-  TurningEnabled: false,
-  TurningMultiplier: 0.80,
-  TurningDeadzone: 0.15,
-  TurningGoal: 90,
   ActiveDelay: 20, // milliseconds
   InactiveDelay: 500, // milliseconds
   Logging: false,
@@ -49,10 +45,6 @@ class OSCLeashConfig {
       this.StrengthMultiplier = configJson.StrengthMultiplier ?? DefaultConfig.StrengthMultiplier;
       this.UpDownCompensation = configJson.UpDownCompensation ?? DefaultConfig.UpDownCompensation;
       this.UpDownDeadzone = configJson.UpDownDeadzone ?? DefaultConfig.UpDownDeadzone;
-      this.TurningEnabled = configJson.TurningEnabled ?? DefaultConfig.TurningEnabled;
-      this.TurningMultiplier = configJson.TurningMultiplier ?? DefaultConfig.TurningMultiplier;
-      this.TurningDeadzone = configJson.TurningDeadzone ?? DefaultConfig.TurningDeadzone;
-      this.TurningGoal = (configJson.TurningGoal ?? DefaultConfig.TurningGoal) / 180;
       this.ActiveDelay = configJson.ActiveDelay ?? DefaultConfig.ActiveDelay;
       this.InactiveDelay = configJson.InactiveDelay ?? DefaultConfig.InactiveDelay;
       this.Logging = configJson.Logging ?? DefaultConfig.Logging;
@@ -78,12 +70,6 @@ class OSCLeashConfig {
     debug.info(`  Running Deadzone: ${(this.RunDeadzone * 100).toFixed(0)}% stretch`);
     debug.info(`  Walking Deadzone: ${(this.WalkDeadzone * 100).toFixed(0)}% stretch`);
     debug.info(`  Up/Down Compensation: ${this.UpDownCompensation} & ${(this.UpDownDeadzone * 100).toFixed(0)}% Max Angle`);
-    if (this.TurningEnabled) {
-      debug.info('  Turning is enabled:');
-      debug.info(`    - Multiplier: ${this.TurningMultiplier}`);
-      debug.info(`    - Deadzone: ${this.TurningDeadzone}`);
-      debug.info(`    - Goal: ${(this.TurningGoal * 180).toFixed(0)}°`);
-    }
   }
 
   toJSON() {
@@ -96,10 +82,6 @@ class OSCLeashConfig {
       StrengthMultiplier: this.StrengthMultiplier,
       UpDownCompensation: this.UpDownCompensation,
       UpDownDeadzone: this.UpDownDeadzone,
-      TurningEnabled: this.TurningEnabled,
-      TurningMultiplier: this.TurningMultiplier,
-      TurningDeadzone: this.TurningDeadzone,
-      TurningGoal: this.TurningGoal * 180,
       ActiveDelay: this.ActiveDelay,
       InactiveDelay: this.InactiveDelay,
       Logging: this.Logging,
@@ -126,8 +108,6 @@ class Leash {
     this.Y_Positive = 0;
     this.Y_Negative = 0;
 
-    this.turningSpeed = 0;
-
     // Booleans for thread logic - ALWAYS start in idle state
     this.Grabbed = false;
     this.wasGrabbed = false;
@@ -135,10 +115,6 @@ class Leash {
     this.Active = false;
     
     debug.info(`Leash ${this.Name} initialized - Grabbed: ${this.Grabbed}, Active: ${this.Active}`);
-
-    if (settings.TurningEnabled) {
-      this.LeashDirection = paraName.split("_").pop();
-    }
 
     this.Z_Positive_ParamName = contacts.Z_Positive_Param;
     this.Z_Negative_ParamName = contacts.Z_Negative_Param;
@@ -331,7 +307,7 @@ class OSCLeashProgram {
       this.activeIntervals.delete(leash.Name);
       debug.info(`Stopped monitoring thread for ${leash.Name}`);
       // Send stop signals
-      this.leashOutput(0.0, 0.0, 0.0, 0, leash.settings);
+      this.leashOutput(0.0, 0.0, 0, leash.settings);
       // Reset leash state
       leash.Active = false;
       leash.resetMovement();
@@ -374,88 +350,32 @@ class OSCLeashProgram {
         HorizontalOutput /= Y_Modifier;
       }
     }
-    // Turning Math
-    let TurningSpeed = 0.0;
-    if (leash.settings.TurningEnabled && leash.Stretch > leash.settings.TurningDeadzone) {
-      TurningSpeed = leash.settings.TurningMultiplier;
-      switch (leash.LeashDirection) {
-        case "North":
-          if (leash.Z_Positive < leash.settings.TurningGoal) {
-            TurningSpeed *= HorizontalOutput;
-            if (leash.X_Positive > leash.X_Negative) {
-              TurningSpeed += leash.Z_Negative; // Right
-            } else {
-              TurningSpeed -= leash.Z_Negative; // Left
-            }
-          } else {
-            TurningSpeed = 0.0;
-          }
-          break;
-        case "South":
-          if (leash.Z_Negative < leash.settings.TurningGoal) {
-            TurningSpeed *= -HorizontalOutput;
-            if (leash.X_Positive > leash.X_Negative) {
-              TurningSpeed -= leash.Z_Positive; // Left
-            } else {
-              TurningSpeed += leash.Z_Positive; // Right
-            }
-          } else {
-            TurningSpeed = 0.0;
-          }
-          break;
-        case "East":
-          if (leash.X_Positive < leash.settings.TurningGoal) {
-            TurningSpeed *= VerticalOutput;
-            if (leash.Z_Positive > leash.Z_Negative) {
-              TurningSpeed += leash.X_Negative; // Right
-            } else {
-              TurningSpeed -= leash.X_Negative; // Left
-            }
-          } else {
-            TurningSpeed = 0.0;
-          }
-          break;
-        case "West":
-          if (leash.X_Negative < leash.settings.TurningGoal) {
-            TurningSpeed *= -VerticalOutput;
-            if (leash.Z_Positive > leash.Z_Negative) {
-              TurningSpeed -= leash.X_Positive; // Left
-            } else {
-              TurningSpeed += leash.X_Positive; // Right
-            }
-          } else {
-            TurningSpeed = 0.0;
-          }
-          break;
-      }
-      TurningSpeed = this.clamp(TurningSpeed);
-    }
+
     // Process movement based on stretch
     let runType = 0;
     if (leash.Stretch > leash.settings.RunDeadzone) {
       // Running
       runType = 1;
-      this.leashOutput(VerticalOutput, HorizontalOutput, TurningSpeed, 1, leash.settings);
+      this.leashOutput(VerticalOutput, HorizontalOutput, 1, leash.settings);
     } else if (leash.Stretch > leash.settings.WalkDeadzone) {
       // Walking
       runType = 0;
-      this.leashOutput(VerticalOutput, HorizontalOutput, TurningSpeed, 0, leash.settings);
+      this.leashOutput(VerticalOutput, HorizontalOutput, 0, leash.settings);
     } else {
       // Not stretched enough to move
-      this.leashOutput(0.0, 0.0, 0.0, 0, leash.settings);
+      this.leashOutput(0.0, 0.0, 0, leash.settings);
     }
 
     // Send real-time movement data to frontend
-    this.notifyMovementUpdate(leash, VerticalOutput, HorizontalOutput, TurningSpeed, runType);
+    this.notifyMovementUpdate(leash, VerticalOutput, HorizontalOutput, 0, runType);
   }
 
-  notifyMovementUpdate(leash, vertical, horizontal, turning, run) {
+  notifyMovementUpdate(leash, vertical, horizontal, run) {
     // Send movement data to renderer process for real-time display
     if (global.mainWindow && global.mainWindow.webContents) {
       global.mainWindow.webContents.send('oscleash-movement-data', {
         vertical: vertical,
         horizontal: horizontal,
-        turning: turning,
         run: run,
         physboneData: {
           stretch: leash.Stretch,
@@ -478,7 +398,7 @@ class OSCLeashProgram {
     // Start monitoring this leash
     this.startLeashMonitoring(leash);
   }
-  leashOutput(vert, hori, turn, runType, settings) {
+  leashOutput(vert, hori, runType, settings) {
     if (!this.oscService) {
       debug.warn('OSCLeash: OSC service not available');
       return;
@@ -486,15 +406,9 @@ class OSCLeashProgram {
     // Send OSC messages to VRChat
     this.oscService.sendMessage('/input/Vertical', vert, 'f');
     this.oscService.sendMessage('/input/Horizontal', hori, 'f');
-    if (settings.TurningEnabled) {
-      this.oscService.sendMessage('/input/LookHorizontal', turn, 'f');
-    }
     this.oscService.sendMessage('/input/Run', runType, 'i');
-    if (!settings.TurningEnabled) {
-      debug.info(`  Vert: ${vert.toFixed(2)} | Hori: ${hori.toFixed(2)} | Run: ${runType}`);
-    } else {
-      debug.info(`  Vert: ${vert.toFixed(2)} | Hori: ${hori.toFixed(2)} | Run: ${runType} | Turn: ${turn.toFixed(2)}`);
-    }
+    
+    debug.info(`  Vert: ${vert.toFixed(2)} | Hori: ${hori.toFixed(2)} | Run: ${runType}`);
   }
   clamp(n) {
     return Math.max(-1.0, Math.min(n, 1.0));
@@ -622,7 +536,7 @@ class OSCLeashAddon {
 
     // Send stop signals
     if (this.program && this.oscService) {
-      this.program.leashOutput(0.0, 0.0, 0.0, 0, this.settings);
+      this.program.leashOutput(0.0, 0.0, 0, this.settings);
     }
 
     // Remove listeners
@@ -683,7 +597,7 @@ class OSCLeashAddon {
     }));
 
     // Calculate current movement output if any leash is active
-    let movementData = { vertical: 0, horizontal: 0, run: 0, turning: 0 };
+    let movementData = { vertical: 0, horizontal: 0, run: 0 };
     
     if (activeLeashes.length > 0 && this.program) {
       const activeLeash = this.leashes.find(l => l.Grabbed && l.Active);
