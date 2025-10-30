@@ -2179,7 +2179,191 @@ function getHighFrequencyParameters() {
     // Sort by count (highest first)
     highFreq.sort((a, b) => b.count - a.count);
     
-    return highFreq.slice(0, 10); // Top 10
+    // Return ALL high-frequency parameters (no limit here)
+    // The limit of 10 is applied only to individual display, not pattern detection
+    return highFreq;
+}
+
+/**
+ * Detect common patterns in parameter addresses and suggest wildcard patterns
+ * For example: /avatar/parameters/VF56_SyncDataBool3, VF56_SyncDataBool7 
+ * => suggests /avatar/parameters/VF56_Sync*
+ * 
+ * Also detects subdirectory patterns:
+ * /avatar/parameters/FT/v2/EyeY, /avatar/parameters/FT/v2/EyeLeftX
+ * => suggests /avatar/parameters/FT/v2/*
+ */
+function detectParameterPatterns(parameters) {
+    const patterns = new Map(); // pattern -> { addresses: [], count: 0, messagesPerSecond: 0 }
+    
+    for (const param of parameters) {
+        const address = param.address;
+        const parts = address.split('/').filter(p => p); // Remove empty strings
+        
+        if (parts.length < 3) continue; // Need at least avatar/parameters/something
+        
+        // Strategy 1: Subdirectory Pattern Detection
+        // If path has subdirectories (more than 3 parts), suggest the parent directory
+        // Example: /avatar/parameters/FT/v2/EyeY -> /avatar/parameters/FT/v2/*
+        if (parts.length >= 4) {
+            // Try different levels of subdirectory grouping
+            for (let depth = 3; depth < parts.length; depth++) {
+                const directoryPath = '/' + parts.slice(0, depth).join('/') + '/*';
+                
+                // Blacklist: Never suggest ignoring these critical directories
+                const isTogglesDirectory = directoryPath.includes('/toggles/') || directoryPath.match(/\/avatar\/parameters\/toggles[\/\*]/);
+                if (isTogglesDirectory) {
+                    continue; // Skip this pattern entirely
+                }
+                
+                // Special case: Face tracking directories should always be marked as safe to ignore
+                const isFaceTracking = directoryPath.includes('/FT/') || directoryPath.match(/\/avatar\/parameters\/FT[\/\*]/);
+                
+                if (!patterns.has(directoryPath)) {
+                    patterns.set(directoryPath, {
+                        addresses: [],
+                        count: 0,
+                        messagesPerSecond: 0,
+                        type: 'subdirectory',
+                        riskLevel: isFaceTracking ? 'safe' : 'safe',
+                        description: isFaceTracking 
+                            ? 'Face tracking data directory. This high-frequency data is NOT needed by most servers and should be ignored to reduce bandwidth.'
+                            : 'Subdirectory grouping pattern. Usually organizational and safe to ignore if all parameters in this directory are similar.'
+                    });
+                }
+                
+                const pattern = patterns.get(directoryPath);
+                if (!pattern.addresses.includes(address)) {
+                    pattern.addresses.push(address);
+                    pattern.count += param.count;
+                    pattern.messagesPerSecond = parseFloat(pattern.messagesPerSecond) + parseFloat(param.messagesPerSecond);
+                }
+            }
+        }
+        
+        const paramName = parts[parts.length - 1]; // Last part (the actual parameter name)
+        const basePath = '/' + parts.slice(0, -1).join('/'); // Everything before the parameter name
+        
+        // Strategy 2: Find common prefix in parameter names (at least 3 chars) ending before a number or common suffix
+        const prefixMatch = paramName.match(/^([A-Za-z_]{3,}[A-Za-z0-9_]*?)(?:\d+|Bool|Float|Int|X|Y|Z|Left|Right|Upper|Lower|[0-9]+)$/);
+        if (prefixMatch) {
+            const prefix = prefixMatch[1];
+            // Only suggest if prefix is meaningful (at least 3 chars)
+            if (prefix.length >= 3) {
+                const patternKey = `${basePath}/${prefix}*`;
+                
+                if (!patterns.has(patternKey)) {
+                    patterns.set(patternKey, {
+                        addresses: [],
+                        count: 0,
+                        messagesPerSecond: 0,
+                        type: 'prefix',
+                        riskLevel: 'caution',
+                        description: 'Prefix-based parameter grouping. Review individual parameters to ensure no critical toggles or functions are included.'
+                    });
+                }
+                
+                const pattern = patterns.get(patternKey);
+                if (!pattern.addresses.includes(address)) {
+                    pattern.addresses.push(address);
+                    pattern.count += param.count;
+                    pattern.messagesPerSecond = parseFloat(pattern.messagesPerSecond) + parseFloat(param.messagesPerSecond);
+                }
+            }
+        }
+        
+        // Strategy 3: Common VRChat patterns like Viseme, Voice, Velocity, Angular, etc.
+        const commonPatterns = [
+            { prefix: 'Viseme', minLength: 6, riskLevel: 'safe', description: 'Voice viseme data used for lipsync animation. Safe to ignore if not using voice features.' },
+            { prefix: 'Voice', minLength: 5, riskLevel: 'safe', description: 'Voice activity parameters. Safe to ignore if not using voice features.' },
+            { prefix: 'Velocity', minLength: 8, riskLevel: 'safe', description: 'Movement velocity tracking. Usually safe to ignore.' },
+            { prefix: 'Angular', minLength: 7, riskLevel: 'safe', description: 'Angular velocity tracking. Usually safe to ignore.' },
+            { prefix: 'FT', minLength: 2, riskLevel: 'safe', description: 'Face tracking data, typically high-frequency. Safe to ignore if not using face tracking features.' },
+            { prefix: 'VF', minLength: 2, riskLevel: 'caution', description: 'VRCFury parameters: MIXED - some are compression helpers (VF56_SyncDataBool*) safe to ignore, others are CRITICAL toggles/functions that MUST be forwarded. Always expand and review the full list before ignoring. Look for obvious names indicating functionality.' },
+            { prefix: 'Sync', minLength: 4, riskLevel: 'caution', description: 'Sync parameters, often used for network synchronization. Review individual parameters to ensure no critical toggles are included.' },
+            { prefix: 'Eye', minLength: 3, riskLevel: 'safe', description: 'Eye tracking or animation parameters. Usually safe to ignore if not using eye tracking.' },
+            { prefix: 'Mouth', minLength: 5, riskLevel: 'safe', description: 'Mouth animation parameters. Usually safe to ignore.' },
+            { prefix: 'Brow', minLength: 4, riskLevel: 'safe', description: 'Eyebrow animation parameters. Usually safe to ignore.' },
+            { prefix: 'Jaw', minLength: 3, riskLevel: 'safe', description: 'Jaw animation parameters. Usually safe to ignore.' }
+        ];
+        
+        for (const { prefix, minLength, riskLevel, description } of commonPatterns) {
+            if (paramName.startsWith(prefix) && paramName.length >= minLength) {
+                const patternKey = `${basePath}/${prefix}*`;
+                
+                if (!patterns.has(patternKey)) {
+                    patterns.set(patternKey, {
+                        addresses: [],
+                        count: 0,
+                        messagesPerSecond: 0,
+                        type: 'common',
+                        riskLevel: riskLevel,
+                        description: description
+                    });
+                }
+                
+                const pattern = patterns.get(patternKey);
+                if (!pattern.addresses.includes(address)) {
+                    pattern.addresses.push(address);
+                    pattern.count += param.count;
+                    pattern.messagesPerSecond = parseFloat(pattern.messagesPerSecond) + parseFloat(param.messagesPerSecond);
+                }
+            }
+        }
+    }
+    
+    // Filter and prioritize patterns
+    const significantPatterns = [];
+    for (const [patternStr, data] of patterns.entries()) {
+        // Only include patterns that match multiple addresses (at least 2)
+        if (data.addresses.length >= 2) {
+            // Calculate efficiency: how many addresses vs pattern specificity
+            const efficiency = data.addresses.length;
+            
+            significantPatterns.push({
+                pattern: patternStr,
+                matchCount: data.addresses.length,
+                addresses: data.addresses,
+                count: data.count,
+                messagesPerSecond: data.messagesPerSecond.toFixed(1),
+                type: data.type,
+                riskLevel: data.riskLevel || 'caution',
+                description: data.description || 'No description available.',
+                efficiency
+            });
+        }
+    }
+    
+    // Sort by efficiency and message count
+    // Prioritize: subdirectory patterns > high message count > match count
+    significantPatterns.sort((a, b) => {
+        // Subdirectory patterns first (they're usually more comprehensive)
+        if (a.type === 'subdirectory' && b.type !== 'subdirectory') return -1;
+        if (b.type === 'subdirectory' && a.type !== 'subdirectory') return 1;
+        
+        // Then by total message count
+        if (b.count !== a.count) return b.count - a.count;
+        
+        // Then by number of matches
+        return b.matchCount - a.matchCount;
+    });
+    
+    // Remove redundant patterns (if a subdirectory pattern covers everything a prefix pattern does)
+    const filteredPatterns = [];
+    const coveredAddresses = new Set();
+    
+    for (const pattern of significantPatterns) {
+        // Check if this pattern's addresses are already fully covered by a previous pattern
+        const newAddresses = pattern.addresses.filter(addr => !coveredAddresses.has(addr));
+        
+        if (newAddresses.length >= 2) {
+            // This pattern still covers useful addresses
+            filteredPatterns.push(pattern);
+            pattern.addresses.forEach(addr => coveredAddresses.add(addr));
+        }
+    }
+    
+    return filteredPatterns.slice(0, 10); // Top 10 most useful patterns
 }
 
 function renderHighFrequencySuggestions() {
@@ -2187,13 +2371,16 @@ function renderHighFrequencySuggestions() {
     if (!container) return;
     
     const highFreq = getHighFrequencyParameters();
+    const patterns = detectParameterPatterns(highFreq);
     const isDarkTheme = document.body.classList.contains('dark-theme');
     
     // Theme-aware colors
     const itemBgColor = isDarkTheme ? '#2c2c2c' : '#fff';
+    const patternBgColor = isDarkTheme ? '#1a4d2e' : '#d4edda';
     const addressColor = isDarkTheme ? '#e0e0e0' : '#212529';
     const statsColor = isDarkTheme ? '#a0a0a0' : '#6c757d';
     const headerColor = isDarkTheme ? '#d4a017' : '#856404';
+    const patternTextColor = isDarkTheme ? '#90ee90' : '#155724';
     
     if (highFreq.length === 0) {
         const emptyTextColor = isDarkTheme ? '#a0a0a0' : '#666';
@@ -2205,27 +2392,196 @@ function renderHighFrequencySuggestions() {
         return;
     }
     
-    const suggestionsHtml = highFreq.map(param => `
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
-                    background-color: ${itemBgColor}; border-radius: 4px; margin-bottom: 5px; border: 1px solid #ffc107;">
-            <div style="flex: 1;">
-                <div style="font-family: monospace; color: ${addressColor}; margin-bottom: 2px;">${param.address}</div>
-                <div style="font-size: 0.75em; color: ${statsColor};">
-                    ${param.count} messages (~${param.messagesPerSecond} msg/sec)
+    // Helper function to check if an address matches any pattern
+    const matchesAnyPattern = (address, patternList) => {
+        for (const pattern of patternList) {
+            const patternStr = pattern.pattern;
+            // Convert wildcard pattern to regex
+            if (patternStr.includes('*')) {
+                const regexPattern = patternStr
+                    .replace(/\//g, '\\/')  // Escape slashes
+                    .replace(/\*/g, '.*');  // Convert * to .*
+                const regex = new RegExp(`^${regexPattern}$`);
+                if (regex.test(address)) {
+                    return true;
+                }
+            } else if (address === patternStr) {
+                return true;
+            }
+        }
+        return false;
+    };
+    
+    // Filter out parameters that match any smart pattern, EXCEPT VF* patterns (allow them in individual list for granular control)
+    const patternsToFilterBy = patterns.filter(p => !p.pattern.includes('/VF*'));
+    const uncoveredParams = highFreq.filter(param => !matchesAnyPattern(param.address, patternsToFilterBy));
+    
+    // If we filtered out too many, get more from the frequency map to fill the top 10
+    const now = Date.now();
+    if (uncoveredParams.length < 10) {
+        const additionalParams = [];
+        for (const [address, count] of oscParameterFrequency.entries()) {
+            const lastUpdate = oscParameterLastUpdate.get(address) || 0;
+            
+            // Only consider parameters updated recently
+            if (now - lastUpdate < FREQUENCY_TRACKING_WINDOW) {
+                // Skip if already in uncoveredParams or matches any pattern (except VF*)
+                if (!matchesAnyPattern(address, patternsToFilterBy) && !uncoveredParams.find(p => p.address === address)) {
+                    const messagesPerSecond = count / (FREQUENCY_TRACKING_WINDOW / 1000);
+                    if (count >= HIGH_FREQUENCY_THRESHOLD * 0.5) { // Lower threshold for additional params
+                        additionalParams.push({
+                            address,
+                            count,
+                            messagesPerSecond: messagesPerSecond.toFixed(1)
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Sort additional params by count
+        additionalParams.sort((a, b) => b.count - a.count);
+        
+        // Add them to uncoveredParams until we have 10
+        uncoveredParams.push(...additionalParams.slice(0, 10 - uncoveredParams.length));
+    }
+    
+    // Render smart pattern suggestions first (if any)
+    let patternSuggestionsHtml = '';
+    if (patterns.length > 0) {
+        const patternItems = patterns.slice(0, 5).map(p => {
+            // Determine badge and styling based on risk level
+            let riskBadge = '';
+            let riskBadgeStyle = '';
+            let borderColor = '#28a745'; // Default green
+            
+            if (p.riskLevel === 'safe') {
+                riskBadge = '[SAFE]';
+                riskBadgeStyle = 'background-color: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: bold; margin-right: 6px;';
+                borderColor = '#28a745';
+            } else if (p.riskLevel === 'caution') {
+                riskBadge = '[CAUTION]';
+                riskBadgeStyle = 'background-color: #ffc107; color: #000; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: bold; margin-right: 6px;';
+                borderColor = '#ffc107';
+            } else if (p.riskLevel === 'critical') {
+                riskBadge = '[CRITICAL]';
+                riskBadgeStyle = 'background-color: #dc3545; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75em; font-weight: bold; margin-right: 6px;';
+                borderColor = '#dc3545';
+            }
+            
+            // Determine type label based on pattern type
+            let typeLabel = '';
+            if (p.type === 'subdirectory') {
+                typeLabel = '<span style="font-size: 0.7em; color: #17a2b8; font-weight: normal;"> (Subdirectory)</span>';
+            } else if (p.type === 'prefix') {
+                typeLabel = '<span style="font-size: 0.7em; color: #6c757d; font-weight: normal;"> (Prefix Pattern)</span>';
+            } else if (p.type === 'common') {
+                typeLabel = '<span style="font-size: 0.7em; color: #ffc107; font-weight: normal;"> (Common VRChat)</span>';
+            }
+            
+            // For VF* patterns, ignore individually instead of as wildcard
+            const isVFPattern = p.pattern.includes('/VF*');
+            const addressesJson = JSON.stringify(p.addresses).replace(/"/g, '&quot;');
+            const onclickHandler = isVFPattern 
+                ? `ignorePatternIndividually(${addressesJson})`
+                : `quickIgnoreParameter('${p.pattern.replace(/'/g, "\\'")}')`;
+            const buttonText = isVFPattern ? 'Ignore All Matched' : 'Ignore Pattern';
+            
+            return `
+            <div style="background-color: ${patternBgColor}; border-radius: 4px; padding: 10px; margin-bottom: 8px; border: 2px solid ${borderColor};" 
+                 title="${p.description}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                    <div style="flex: 1;">
+                        <div style="font-family: monospace; color: ${patternTextColor}; font-weight: bold; margin-bottom: 4px;">
+                            <span style="${riskBadgeStyle}" title="${p.description}">${riskBadge}</span>${p.pattern}${typeLabel}
+                        </div>
+                        <div style="font-size: 0.75em; color: ${statsColor};">
+                            Matches ${p.matchCount} parameter(s) • ${p.count} total messages (~${p.messagesPerSecond} msg/sec)
+                        </div>
+                        <div style="font-size: 0.78em; color: ${statsColor}; margin-top: 4px; font-style: italic;">
+                            ${p.description}
+                        </div>
+                    </div>
+                    <button class="btn btn-success" onclick="${onclickHandler}" 
+                            style="padding: 4px 12px; font-size: 12px; white-space: nowrap; margin-left: 10px;">
+                        ${buttonText}
+                    </button>
                 </div>
+                <details style="margin-top: 6px;">
+                    <summary style="cursor: pointer; font-size: 0.8em; color: ${statsColor}; user-select: none;">
+                        Show matched parameters (${p.matchCount})
+                    </summary>
+                    <div style="margin-top: 6px; padding-left: 10px; font-size: 0.75em; font-family: monospace; color: ${addressColor};">
+                        ${p.addresses.map(addr => `• ${addr}`).join('<br>')}
+                    </div>
+                </details>
             </div>
-            <button class="btn btn-warning" onclick="quickIgnoreParameter('${param.address}')" 
-                    style="padding: 4px 12px; font-size: 12px; white-space: nowrap;">
-                Ignore This
-            </button>
-        </div>
-    `).join('');
+        `;
+        }).join('');
+        
+        patternSuggestionsHtml = `
+            <div style="margin-bottom: 15px;">
+                <div style="color: #28a745; font-size: 0.9em; font-weight: bold; margin-bottom: 8px;">
+                    Smart Pattern Suggestions (Ignore Multiple at Once):
+                </div>
+                <div style="background-color: ${isDarkTheme ? '#1a1a1a' : '#f8f9fa'}; border-radius: 4px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid ${isDarkTheme ? '#444' : '#dee2e6'};">
+                    <div style="font-size: 0.8em; color: ${statsColor}; font-weight: bold; margin-bottom: 4px;">Risk Level Legend:</div>
+                    <div style="font-size: 0.75em; color: ${statsColor}; line-height: 1.6;">
+                        <span style="background-color: #28a745; color: white; padding: 1px 4px; border-radius: 2px; font-weight: bold; margin-right: 4px;">[SAFE]</span> 
+                        Safe to ignore - typically high-frequency data not needed by servers<br>
+                        <span style="background-color: #ffc107; color: #000; padding: 1px 4px; border-radius: 2px; font-weight: bold; margin-right: 4px;">[CAUTION]</span> 
+                        Review carefully - may contain critical toggles or functions<br>
+                        <span style="background-color: #dc3545; color: white; padding: 1px 4px; border-radius: 2px; font-weight: bold; margin-right: 4px;">[CRITICAL]</span> 
+                        Do not ignore - contains essential parameters
+                    </div>
+                </div>
+                ${patternItems}
+            </div>
+        `;
+    }
+    
+    // Render individual high-frequency parameters (excluding those covered by patterns)
+    let individualSuggestionsHtml = '';
+    if (uncoveredParams.length > 0) {
+        // Limit individual display to top 10 (pattern detection uses all params)
+        const visibleParams = uncoveredParams.slice(0, 10);
+        const individualItems = visibleParams.map(param => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
+                        background-color: ${itemBgColor}; border-radius: 4px; margin-bottom: 5px; border: 1px solid #ffc107;">
+                <div style="flex: 1;">
+                    <div style="font-family: monospace; color: ${addressColor}; margin-bottom: 2px;">${param.address}</div>
+                    <div style="font-size: 0.75em; color: ${statsColor};">
+                        ${param.count} messages (~${param.messagesPerSecond} msg/sec)
+                    </div>
+                </div>
+                <button class="btn btn-warning" onclick="quickIgnoreParameter('${param.address.replace(/'/g, "\\'")}')" 
+                        style="padding: 4px 12px; font-size: 12px; white-space: nowrap;">
+                    Ignore This
+                </button>
+            </div>
+        `).join('');
+        
+        // Create array of visible parameter addresses for "Ignore All" functionality
+        const visibleAddresses = visibleParams.map(p => p.address);
+        const addressesJson = JSON.stringify(visibleAddresses).replace(/"/g, '&quot;');
+        
+        individualSuggestionsHtml = `
+            <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: ${headerColor}; font-size: 0.85em;">
+                    <strong>Individual High-Frequency Parameters (Top 10):</strong>
+                </span>
+                <button class="btn btn-danger" onclick='ignoreAllVisibleParameters(${addressesJson})' 
+                        style="padding: 4px 12px; font-size: 12px; white-space: nowrap;">
+                    Ignore All (${visibleParams.length})
+                </button>
+            </div>
+            ${individualItems}
+        `;
+    }
     
     container.innerHTML = `
-        <div style="margin-bottom: 10px; color: ${headerColor}; font-size: 0.85em;">
-            <strong>Top ${highFreq.length} high-frequency parameter(s):</strong>
-        </div>
-        ${suggestionsHtml}
+        ${patternSuggestionsHtml}
+        ${individualSuggestionsHtml}
     `;
 }
 
@@ -2236,15 +2592,93 @@ async function quickIgnoreParameter(address) {
             debugLog(`Added ${address} to ignore list`, 'info');
             renderOscQueryUnsubscriptions(result.unsubscriptions || []);
             
-            // Remove from frequency tracking
-            oscParameterFrequency.delete(address);
-            oscParameterLastUpdate.delete(address);
+            // If this is a wildcard pattern, remove all matching addresses from frequency tracking
+            if (address.includes('*')) {
+                // Convert wildcard pattern to regex
+                const regexPattern = address
+                    .replace(/\//g, '\\/')  // Escape slashes
+                    .replace(/\*/g, '.*');  // Convert * to .*
+                const regex = new RegExp(`^${regexPattern}$`);
+                
+                // Remove all matching addresses
+                const addressesToRemove = [];
+                for (const [trackedAddress] of oscParameterFrequency.entries()) {
+                    if (regex.test(trackedAddress)) {
+                        addressesToRemove.push(trackedAddress);
+                    }
+                }
+                
+                addressesToRemove.forEach(addr => {
+                    oscParameterFrequency.delete(addr);
+                    oscParameterLastUpdate.delete(addr);
+                });
+                
+                debugLog(`Removed ${addressesToRemove.length} parameter(s) matching pattern ${address}`, 'info');
+            } else {
+                // Remove exact address from frequency tracking
+                oscParameterFrequency.delete(address);
+                oscParameterLastUpdate.delete(address);
+            }
             
             // Update suggestions immediately
             renderHighFrequencySuggestions();
         }
     } catch (error) {
         debugLog(`Error ignoring parameter: ${error.message}`, 'error');
+    }
+}
+
+async function ignoreAllVisibleParameters(addresses) {
+    try {
+        debugLog(`Ignoring ${addresses.length} visible parameters`, 'info');
+        
+        // Add each address to the ignore list
+        for (const address of addresses) {
+            await window.electronAPI.addOscQueryUnsubscription(address);
+        }
+        
+        // Remove from frequency tracking
+        for (const address of addresses) {
+            oscParameterFrequency.delete(address);
+            oscParameterLastUpdate.delete(address);
+        }
+        
+        // Reload the unsubscriptions list
+        await loadOscQueryUnsubscriptions();
+        
+        // Update suggestions immediately
+        renderHighFrequencySuggestions();
+        
+        debugLog(`Successfully ignored all ${addresses.length} parameters`, 'info');
+    } catch (error) {
+        debugLog(`Error ignoring all parameters: ${error.message}`, 'error');
+    }
+}
+
+async function ignorePatternIndividually(addresses) {
+    try {
+        debugLog(`Ignoring pattern by adding ${addresses.length} individual parameters`, 'info');
+        
+        // Add each address to the ignore list individually
+        for (const address of addresses) {
+            await window.electronAPI.addOscQueryUnsubscription(address);
+        }
+        
+        // Remove from frequency tracking
+        for (const address of addresses) {
+            oscParameterFrequency.delete(address);
+            oscParameterLastUpdate.delete(address);
+        }
+        
+        // Reload the unsubscriptions list
+        await loadOscQueryUnsubscriptions();
+        
+        // Update suggestions immediately
+        renderHighFrequencySuggestions();
+        
+        debugLog(`Successfully ignored pattern (${addresses.length} individual parameters added)`, 'info');
+    } catch (error) {
+        debugLog(`Error ignoring pattern individually: ${error.message}`, 'error');
     }
 }
 
