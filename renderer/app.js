@@ -4037,9 +4037,6 @@ function updateSliderDisplays() {
 // Collect configuration from form
 function collectConfigFromForm() {
     return {
-        IP: "127.0.0.1", // Fixed
-        ListeningPort: 9001, // Fixed
-        SendingPort: 9000, // Fixed
         RunDeadzone: parseFloat(document.getElementById('config-run-deadzone').value) / 100,
         WalkDeadzone: parseFloat(document.getElementById('config-walk-deadzone').value) / 100,
         StrengthMultiplier: parseFloat(document.getElementById('config-strength-multiplier').value),
@@ -4096,9 +4093,6 @@ async function resetOSCLeashConfig() {
     }
 
     const defaultConfig = {
-        IP: "127.0.0.1",
-        ListeningPort: 9001,
-        SendingPort: 9000,
         RunDeadzone: 0.70,
         WalkDeadzone: 0.15,
         StrengthMultiplier: 1.2,

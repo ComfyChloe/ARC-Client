@@ -5,9 +5,6 @@ const configManager = require('../utils/configManager');
  * Default configuration for OSCLeash
  */
 const DefaultConfig = {
-  IP: "127.0.0.1",
-  ListeningPort: 9001,
-  SendingPort: 9000,
   RunDeadzone: 0.70,
   WalkDeadzone: 0.15,
   StrengthMultiplier: 1.2,
@@ -37,9 +34,6 @@ class OSCLeashConfig {
 
   setSettings(configJson) {
     try {
-      this.IP = configJson.IP || DefaultConfig.IP;
-      this.ListeningPort = configJson.ListeningPort || DefaultConfig.ListeningPort;
-      this.SendingPort = configJson.SendingPort || DefaultConfig.SendingPort;
       this.RunDeadzone = configJson.RunDeadzone ?? DefaultConfig.RunDeadzone;
       this.WalkDeadzone = configJson.WalkDeadzone ?? DefaultConfig.WalkDeadzone;
       this.StrengthMultiplier = configJson.StrengthMultiplier ?? DefaultConfig.StrengthMultiplier;
@@ -61,9 +55,7 @@ class OSCLeashConfig {
     if (this.Logging) {
       debug.info('  Logging is enabled');
     }
-    debug.info(`  IP: ${this.IP === "127.0.0.1" ? "Localhost" : this.IP}`);
-    debug.info(`  Listening on port ${this.ListeningPort}`);
-    debug.info(`  Sending on port ${this.SendingPort}`);
+    debug.info(`  Using integrated OSC service (no separate ports)`);
     debug.info(`  Leash name(s): ${this.Leashes.join(', ')}`);
     debug.info(`  Strength Multiplier: ${this.StrengthMultiplier}`);
     debug.info(`  Delays: ${this.ActiveDelay}ms & ${this.InactiveDelay}ms`);
@@ -74,9 +66,6 @@ class OSCLeashConfig {
 
   toJSON() {
     return {
-      IP: this.IP,
-      ListeningPort: this.ListeningPort,
-      SendingPort: this.SendingPort,
       RunDeadzone: this.RunDeadzone,
       WalkDeadzone: this.WalkDeadzone,
       StrengthMultiplier: this.StrengthMultiplier,

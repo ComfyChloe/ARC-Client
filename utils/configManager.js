@@ -37,18 +37,11 @@ class ConfigManager {
       },
       // OSCLeash configuration
       oscleash: {
-        IP: "127.0.0.1",
-        ListeningPort: 9001,
-        SendingPort: 9000,
         RunDeadzone: 0.70,
         WalkDeadzone: 0.15,
         StrengthMultiplier: 1.2,
         UpDownCompensation: 1.0,
         UpDownDeadzone: 0.5,
-        TurningEnabled: false,
-        TurningMultiplier: 0.80,
-        TurningDeadzone: 0.15,
-        TurningGoal: 90,
         ActiveDelay: 20,
         InactiveDelay: 500,
         Logging: false,
@@ -232,18 +225,11 @@ class ConfigManager {
   getOSCLeashConfig() {
     if (!this.config.oscleash) {
       this.config.oscleash = {
-        IP: "127.0.0.1",
-        ListeningPort: 9001,
-        SendingPort: 9000,
         RunDeadzone: 0.70,
         WalkDeadzone: 0.15,
         StrengthMultiplier: 1.2,
         UpDownCompensation: 1.0,
         UpDownDeadzone: 0.5,
-        TurningEnabled: false,
-        TurningMultiplier: 0.80,
-        TurningDeadzone: 0.15,
-        TurningGoal: 90,
         ActiveDelay: 20,
         InactiveDelay: 500,
         Logging: false,
