@@ -2041,9 +2041,9 @@ function renderOscQueryUnsubscriptions(unsubscriptions) {
     const pathColor = isDarkTheme ? '#e0e0e0' : '#495057';
     const emptyTextColor = isDarkTheme ? '#a0a0a0' : '#666';
     const headerColor = isDarkTheme ? '#b0b0b0' : '#666';
-    // Check if list is currently collapsed before re-rendering
+    // Check if list is currently expanded (not collapsed) before re-rendering
     const itemsContainer = document.getElementById('unsubscription-items-container');
-    const wasCollapsed = itemsContainer && itemsContainer.style.display === 'none';
+    const wasExpanded = itemsContainer && itemsContainer.style.display !== 'none';
 
     if (unsubscriptions.length === 0) {
         container.innerHTML = `
@@ -2070,24 +2070,24 @@ function renderOscQueryUnsubscriptions(unsubscriptions) {
             </span>
             <button class="btn btn-secondary" onclick="toggleUnsubscriptionList()" 
                     style="padding: 2px 8px; font-size: 11px;" id="toggle-unsub-list-btn">
-                <span id="toggle-unsub-arrow">▼</span> Collapse
+                <span id="toggle-unsub-arrow">▶</span> Expand
             </button>
         </div>
-        <div id="unsubscription-items-container">
+        <div id="unsubscription-items-container" style="display: none;">
             ${unsubsHtml}
         </div>
     `;
     
-    // Restore collapsed state if it was collapsed before
-    if (wasCollapsed) {
+    // Restore expanded state only if it was expanded before
+    if (wasExpanded) {
         const newItemsContainer = document.getElementById('unsubscription-items-container');
         const newToggleBtn = document.getElementById('toggle-unsub-list-btn');
         const newArrow = document.getElementById('toggle-unsub-arrow');
         
         if (newItemsContainer && newToggleBtn && newArrow) {
-            newItemsContainer.style.display = 'none';
-            newArrow.textContent = '▶';
-            newToggleBtn.innerHTML = '<span id="toggle-unsub-arrow">▶</span> Expand';
+            newItemsContainer.style.display = 'block';
+            newArrow.textContent = '▼';
+            newToggleBtn.innerHTML = '<span id="toggle-unsub-arrow">▼</span> Collapse';
         }
     }
 }
