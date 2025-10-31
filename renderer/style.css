@@ -891,3 +891,197 @@ body.dark-theme .status-value.disabled {
 body.dark-theme .status-description {
     color: #b0b0b0;
 }
+
+/* OSC Leash Configuration Styles */
+.config-tab-content {
+    display: none;
+    padding: 15px;
+    border: 1px solid #dee2e6;
+    border-radius: 0 5px 5px 5px;
+    background-color: #fff;
+}
+
+.config-tab-content.active {
+    display: block;
+}
+
+.config-tab-content .form-group {
+    margin-bottom: 12px;
+}
+
+.config-tab-content .form-group label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 0.9em;
+}
+
+.config-tab-content .form-group small {
+    display: block;
+    margin-top: 2px;
+    color: #6c757d;
+    font-size: 0.8em;
+    line-height: 1.2;
+}
+
+.config-tab-content input[type="range"] {
+    width: 100%;
+    margin: 2px 0;
+}
+
+.config-tab-content input[type="range"] + span {
+    display: inline-block;
+    margin-left: 10px;
+    font-weight: bold;
+    color: #3498db;
+    min-width: 50px;
+    font-size: 0.9em;
+}
+
+.config-tab-content input[type="text"] {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.config-tab-content input[type="checkbox"] {
+    margin-right: 6px;
+    transform: scale(1.1);
+}
+
+/* Dark theme for configuration */
+body.dark-theme .config-tab-content {
+    background-color: #2c3e50;
+    border-color: #34495e;
+}
+
+body.dark-theme .config-tab-content .form-group label {
+    color: #ecf0f1;
+}
+
+body.dark-theme .config-tab-content .form-group small {
+    color: #95a5a6;
+}
+
+body.dark-theme .config-tab-content input[type="text"] {
+    background-color: #34495e;
+    border-color: #34495e;
+    color: #ecf0f1;
+}
+
+body.dark-theme .config-tab-content input[type="text"]:read-only {
+    background-color: #1e2329;
+    color: #7f8c8d;
+}
+
+body.dark-theme .config-tab-content input[type="range"] + span {
+    color: #3498db;
+}
+
+/* OSC Leash Status Styles */
+.leash-disabled-message, .leash-empty-message {
+    text-align: center;
+    padding: 20px;
+}
+
+.leash-disabled-message {
+    color: #666;
+}
+
+.empty-primary {
+    color: #666;
+    margin-bottom: 10px;
+}
+
+.empty-secondary {
+    color: #999;
+    font-size: 12px;
+}
+
+.leash-item {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: white;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.leash-item.grabbed {
+    border-color: #2ecc71;
+    background: #f8fff8;
+}
+
+.leash-item-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.leash-name {
+    color: inherit;
+}
+
+.leash-status {
+    margin-left: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    color: white;
+}
+
+.leash-status.grabbed {
+    background: #2ecc71;
+}
+
+.leash-status.released {
+    background: #95a5a6;
+}
+
+.leash-metrics {
+    text-align: right;
+}
+
+.stretch-value {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.stretch-thresholds {
+    font-size: 10px;
+    color: #666;
+}
+
+/* Dark theme for OSC Leash status */
+body.dark-theme .leash-disabled-message {
+    color: #bdc3c7;
+}
+
+body.dark-theme .empty-primary {
+    color: #bdc3c7;
+}
+
+body.dark-theme .empty-secondary {
+    color: #7f8c8d;
+}
+
+body.dark-theme .leash-item {
+    background: #2c3e50;
+    border-color: #34495e;
+}
+
+body.dark-theme .leash-item.grabbed {
+    border-color: #2ecc71;
+    background: #1e3028;
+}
+
+body.dark-theme .leash-name {
+    color: #ecf0f1;
+}
+
+body.dark-theme .stretch-thresholds {
+    color: #bdc3c7;
+}

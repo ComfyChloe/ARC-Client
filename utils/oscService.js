@@ -11,6 +11,7 @@ class OscService extends EventEmitter {
     this.targetPort = 9000;
     this.targetAddress = '127.0.0.1';
     this.additionalConnections = [];
+    this.oscLeashListeners = new Map(); // Map of address -> callback for OSCLeash
   }
   initialize(localPort = null, targetPort = 9000, targetAddress = '127.0.0.1') {
     this.targetPort = targetPort;
@@ -23,7 +24,7 @@ class OscService extends EventEmitter {
     try {
       this.primaryUdpPort = new osc.UDPPort({
         localAddress: "0.0.0.0",
-        localPort: 0, // Use ephemeral port for sending only
+        localPort: this.localPort, // Listen on the local port for incoming messages
         remoteAddress: this.targetAddress,
         remotePort: this.targetPort,
         metadata: true
@@ -43,6 +44,21 @@ class OscService extends EventEmitter {
         targetPort: this.targetPort,
         targetAddress: this.targetAddress
       });
+    });
+    this.primaryUdpPort.on("message", (oscMessage) => {
+      // Handle incoming OSC messages for OSCLeash
+      if (this.oscLeashListeners.size > 0) {
+        const address = oscMessage.address;
+        const callback = this.oscLeashListeners.get(address);
+        if (callback) {
+          try {
+            const value = oscMessage.args && oscMessage.args.length > 0 ? oscMessage.args[0].value : 0;
+            callback(value);
+          } catch (error) {
+            console.error(`Error in OSCLeash listener for ${address}:`, error);
+          }
+        }
+      }
     });
     this.primaryUdpPort.on("error", (error) => {
       this.emit('error', error);
@@ -361,6 +377,15 @@ class OscService extends EventEmitter {
       });
     });
     return status;
+  }
+
+  // OSCLeash listener registration methods
+  registerOSCLeashListener(address, callback) {
+    this.oscLeashListeners.set(address, callback);
+  }
+
+  unregisterOSCLeashListener(address) {
+    this.oscLeashListeners.delete(address);
   }
 }
 module.exports = OscService;

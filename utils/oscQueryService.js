@@ -410,57 +410,11 @@ class OSCQueryService extends EventEmitter {
             });
             // Open the OSC UDP port
             this.oscUdpPort.open();
-            // Create native dgram listener on port 9001 (VRChat's default output port)
-            // This allows us to receive OSC data immediately without waiting for discovery
-            // Uses SO_REUSEADDR to share the port with other applications
-            try {
-                // Close existing VRChat listener if it exists
-                if (this.vrchatListenerPort) {
-                    try {
-                        this.vrchatListenerPort.close();
-                        this.vrchatListenerPort = null;
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    } catch (error) {
-                        console.error('[OSCQuery] Error closing existing VRChat listener:', error);
-                    }
-                }
-                // Create native UDP socket with SO_REUSEADDR enabled
-                this.vrchatListenerPort = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-                // Handle incoming OSC messages
-                this.vrchatListenerPort.on('message', (msg, rinfo) => {
-                    try {
-                        // Parse OSC message from raw buffer
-                        const oscMsg = osc.readPacket(msg, {
-                            metadata: true
-                        });
-                        // Handle the parsed OSC message
-                        this._handleOscMessage(oscMsg);
-                    } catch (error) {
-                        console.error('[OSCQuery] Error parsing OSC message from port 9001:', error);
-                    }
-                });
-                this.vrchatListenerPort.on('error', (error) => {
-                    // Don't treat port 9001 errors as critical - it might be in use by another app
-                    if (error.code === 'EADDRINUSE') {
-                        console.log('[OSCQuery] Port 9001 is in use by another application - will rely on OSC Query port only');
-                    } else {
-                        console.error('[OSCQuery] VRChat listener error:', error);
-                    }
-                });
-                this.vrchatListenerPort.on('listening', () => {
-                    const address = this.vrchatListenerPort.address();
-                    console.log(`[OSCQuery] VRChat passive listener started on ${address.address}:${address.port} (shared mode with SO_REUSEADDR)`);
-                });
-                // Bind to port 9001 with address reuse enabled
-                this.vrchatListenerPort.bind({
-                    port: 9001,
-                    address: '0.0.0.0',
-                    exclusive: false  // Allow port sharing
-                });
-            } catch (error) {
-                // Don't fail startup if we can't bind to 9001
-                console.log('[OSCQuery] Could not start VRChat passive listener on port 9001 (non-critical):', error.message);
-            }
+            
+            // DISABLED: VRChat listener on port 9001
+            // This was causing port binding conflicts (EACCES errors)
+            // OSC data will be received through the main OSC Query port instead
+            console.log('[OSCQuery] VRChat port 9001 listener disabled - using OSC Query port for all communication');
             // Initialize Bonjour for mDNS
             this.bonjour = new Bonjour();
             // Advertise service via mDNS with error handling for name conflicts
