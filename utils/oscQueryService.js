@@ -15,6 +15,8 @@ const dgram = require('dgram');
 const { Bonjour } = require('bonjour-service');
 const EventEmitter = require('events');
 const osc = require('osc');
+const https = require('https');
+const { URL } = require('url');
 /**
  * OSC Query Access Control enumeration
  */
@@ -65,6 +67,9 @@ class OSCQueryService extends EventEmitter {
         this.unsubscriptions = new Set(); // Paths to ignore (unsubscribe from)
         this.hardcodedUnsubscriptions = new Set(); // Hardcoded paths that cannot be removed
         this._discoveryTimer = null;
+        this._discoveryInterval = null; // Continuous discovery interval
+        this._currentVRChatOscQueryAddress = null; // Track current VRChat OSCQuery address
+        this._currentVRChatOscAddress = null; // Track current VRChat OSC address
         // Hardcode heartrate parameter to never be forwarded to ARC
         this.hardcodedUnsubscriptions.add('/avatar/parameters/ARCOSC/Heartrate/*');
         // Root node for OSC parameter tree
@@ -89,7 +94,6 @@ class OSCQueryService extends EventEmitter {
             console.log(`[OSCQuery] Reusing previously assigned OSC Port: ${this.assignedOscPort}`);
         }
         this.oscPort = this.assignedOscPort;
-        
         // Find available HTTP port if not specified
         if (!httpPort) {
             if (this.assignedHttpPort === null) {
@@ -103,9 +107,7 @@ class OSCQueryService extends EventEmitter {
             this.httpPort = httpPort;
             this.assignedHttpPort = httpPort; // Store explicitly provided port
         }
-        
         console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}`);
-
         // Setup OSC Query endpoints
         this._setupEndpoints();
     }
@@ -249,14 +251,12 @@ class OSCQueryService extends EventEmitter {
      */
     _handleOscMessage(oscMsg) {
         const address = oscMsg.address;
-        
         // Check if this message matches any unsubscription (if so, ignore it)
         const isUnsubscribed = this._matchesUnsubscription(address);
         if (isUnsubscribed) {
             // Silently ignore messages that match unsubscription patterns
             return;
         }
-        
         // Parse OSC value from args
         let value = null;
         let type = 'f'; // default type
@@ -265,7 +265,6 @@ class OSCQueryService extends EventEmitter {
             value = arg.value;
             type = arg.type || 'f';
         }
-        
         // Emit the OSC message for forwarding
         this.emit('osc-message', {
             address: address,
@@ -274,7 +273,6 @@ class OSCQueryService extends EventEmitter {
             timestamp: Date.now()
         });
     }
-    
     /**
      * Check if an OSC address matches any unsubscription pattern
      * @private
@@ -467,6 +465,8 @@ class OSCQueryService extends EventEmitter {
                 // Only trigger if still running
                 if (this.isRunning) {
                     this.triggerDiscovery();
+                    // Start continuous VRChat discovery after initial trigger
+                    this._startVRChatDiscovery();
                 }
             }, 1000);
             return {
@@ -504,6 +504,198 @@ class OSCQueryService extends EventEmitter {
         }, 1000);
     }
     /**
+     * Start continuous VRChat discovery (runs every 5 seconds)
+     * Based on OyasumiVR's implementation pattern
+     * @private
+     */
+    _startVRChatDiscovery() {
+        // Clear any existing interval
+        this._stopVRChatDiscovery();
+        console.log('[OSCQuery] Starting continuous VRChat discovery...');
+        // Run discovery immediately on start
+        this._performVRChatDiscovery();
+        // Then run every 5 seconds
+        this._discoveryInterval = setInterval(() => {
+            this._performVRChatDiscovery();
+        }, 5000);
+    }
+    /**
+     * Stop continuous VRChat discovery
+     * @private
+     */
+    _stopVRChatDiscovery() {
+        if (this._discoveryInterval) {
+            clearInterval(this._discoveryInterval);
+            this._discoveryInterval = null;
+            console.log('[OSCQuery] Stopped continuous VRChat discovery');
+        }
+    }
+    /**
+     * Perform a single VRChat discovery cycle
+     * Looks for services with names starting with "VRChat-Client-"
+     * Verifies they're alive with an HTTP request to /?HOST_INFO
+     * @private
+     */
+    async _performVRChatDiscovery() {
+        if (!this.bonjour || !this.isRunning) {
+            return;
+        }
+        try {
+            // Find OSCQuery services (type: oscjson)
+            const browser = this.bonjour.find({ type: 'oscjson' }, async (service) => {
+                // Only process VRChat client services
+                if (!service.name || !service.name.startsWith('VRChat-Client-')) {
+                    return;
+                }
+                // Get service details
+                const host = service.referer?.address || '127.0.0.1';
+                const port = service.port;
+                if (!port) {
+                    return;
+                }
+                const oscQueryAddress = `${host}:${port}`;
+                // Verify the service is alive with HTTP request
+                const isAlive = await this._verifyVRChatService(host, port);
+                if (isAlive) {
+                    // Get OSC port from HOST_INFO
+                    const oscPort = await this._getVRChatOscPort(host, port);
+                    if (oscPort) {
+                        const oscAddress = `${host}:${oscPort}`;
+                        
+                        // Update state if changed
+                        this._updateVRChatAddresses(oscQueryAddress, oscAddress);
+                    } else {
+                        // OSCQuery service exists but couldn't get OSC port
+                        this._updateVRChatAddresses(oscQueryAddress, null);
+                    }
+                } else {
+                    // Service is not responding, clear if it was the current one
+                    if (this._currentVRChatOscQueryAddress === oscQueryAddress) {
+                        this._updateVRChatAddresses(null, null);
+                    }
+                }
+            });
+            // Stop browser after 2 seconds to prevent memory leaks
+            setTimeout(() => {
+                try {
+                    browser.stop();
+                } catch (error) {
+                    // Ignore cleanup errors
+                }
+            }, 2000);
+            
+        } catch (error) {
+            console.error('[OSCQuery] Error during VRChat discovery:', error);
+        }
+    }
+    /**
+     * Verify a VRChat OSCQuery service is alive by making HTTP request
+     * @private
+     */
+    async _verifyVRChatService(host, port) {
+        return new Promise((resolve) => {
+            const url = `http://${host}:${port}/?HOST_INFO`;
+            
+            const req = http.get(url, { timeout: 2000 }, (res) => {
+                // Service is alive if we get a 200 response
+                resolve(res.statusCode === 200);
+                res.resume(); // Consume response data
+            });
+            req.on('error', () => {
+                resolve(false);
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                resolve(false);
+            });
+        });
+    }
+    /**
+     * Get VRChat's OSC port from HOST_INFO endpoint
+     * @private
+     */
+    async _getVRChatOscPort(host, port) {
+        return new Promise((resolve) => {
+            const url = `http://${host}:${port}/?HOST_INFO`;
+            const req = http.get(url, { timeout: 2000 }, (res) => {
+                if (res.statusCode !== 200) {
+                    resolve(null);
+                    return;
+                }
+                let data = '';
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                res.on('end', () => {
+                    try {
+                        const hostInfo = JSON.parse(data);
+                        resolve(hostInfo.OSC_PORT || null);
+                    } catch (error) {
+                        console.error('[OSCQuery] Failed to parse HOST_INFO:', error);
+                        resolve(null);
+                    }
+                });
+            });
+            req.on('error', () => {
+                resolve(null);
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                resolve(null);
+            });
+        });
+    }
+    /**
+     * Update VRChat addresses and emit events if changed
+     * @private
+     */
+    _updateVRChatAddresses(oscQueryAddress, oscAddress) {
+        let changed = false;
+        // Update OSCQuery address
+        if (this._currentVRChatOscQueryAddress !== oscQueryAddress) {
+            const previousAddress = this._currentVRChatOscQueryAddress;
+            this._currentVRChatOscQueryAddress = oscQueryAddress;
+            changed = true;
+            if (oscQueryAddress) {
+                console.log(`[OSCQuery] Found VRChat OSCQuery service: ${oscQueryAddress}`);
+            } else if (previousAddress) {
+                console.log(`[OSCQuery] Lost VRChat OSCQuery service`);
+            }
+            this.emit('vrchat-oscquery-address-changed', oscQueryAddress);
+        }
+        // Update OSC address
+        if (this._currentVRChatOscAddress !== oscAddress) {
+            const previousAddress = this._currentVRChatOscAddress;
+            this._currentVRChatOscAddress = oscAddress;
+            changed = true;
+            if (oscAddress) {
+                console.log(`[OSCQuery] Found VRChat OSC service: ${oscAddress}`);
+            } else if (previousAddress) {
+                console.log(`[OSCQuery] Lost VRChat OSC service`);
+            }
+            this.emit('vrchat-osc-address-changed', oscAddress);
+        }
+        // Emit combined event if anything changed
+        if (changed) {
+            this.emit('vrchat-addresses-changed', {
+                oscQueryAddress: this._currentVRChatOscQueryAddress,
+                oscAddress: this._currentVRChatOscAddress
+            });
+        }
+    }
+    /**
+     * Get current VRChat OSCQuery address (null if not found)
+     */
+    getVRChatOscQueryAddress() {
+        return this._currentVRChatOscQueryAddress;
+    }
+    /**
+     * Get current VRChat OSC address (null if not found)
+     */
+    getVRChatOscAddress() {
+        return this._currentVRChatOscAddress;
+    }
+    /**
      * Stop the OSC Query service
      */
     async stop() {
@@ -517,6 +709,8 @@ class OSCQueryService extends EventEmitter {
                 clearTimeout(this._discoveryTimer);
                 this._discoveryTimer = null;
             }
+            // Stop continuous VRChat discovery
+            this._stopVRChatDiscovery();
             // Stop OSC UDP listener FIRST to prevent new messages
             if (this.oscUdpPort) {
                 try {
@@ -622,7 +816,6 @@ class OSCQueryService extends EventEmitter {
             this.emit('unsubscriptions-updated', Array.from(this.unsubscriptions));
         }
     }
-    
     /**
      * Get all current unsubscriptions (includes hardcoded and user-defined)
      */
@@ -660,10 +853,11 @@ class OSCQueryService extends EventEmitter {
             httpPort: this.httpPort,
             oscPort: this.oscPort,
             serviceName: this.appName,
-            unsubscriptions: this.getUnsubscriptions()
+            unsubscriptions: this.getUnsubscriptions(),
+            vrchatOscQueryAddress: this._currentVRChatOscQueryAddress,
+            vrchatOscAddress: this._currentVRChatOscAddress
         };
     }
-    
     /**
      * Reset port assignments (will assign new random ports on next initialize)
      * Useful for troubleshooting or forcing VRChat to rediscover the service
@@ -680,7 +874,6 @@ class OSCQueryService extends EventEmitter {
         this.oscPort = null;
         return true;
     }
-    
     /**
      * Reset service name (will generate new name on next start)
      * Useful for forcing VRChat to see this as a new service
@@ -695,7 +888,6 @@ class OSCQueryService extends EventEmitter {
         this.appName = null;
         return true;
     }
-    
     /**
      * Reset everything (ports and service name)
      * Forces complete re-initialization on next start
