@@ -3,6 +3,8 @@
     padding: 0;
     box-sizing: border-box;
 }
+
+/* Global transition for smooth theme switching */
 *, *::before, *::after {
     transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
@@ -79,6 +81,7 @@ body {
 .status-connected { background-color: #27ae60; }
 .status-disconnected { background-color: #e74c3c; }
 .status-pending { background-color: #f39c12; }
+.status-warning { background-color: #f39c12; } /* Orange for stopping/warning states */
 .card {
     background: white;
     border-radius: 8px;
@@ -412,6 +415,7 @@ body {
 .parameter-item:hover {
     background-color: #f0f0f0;
 }
+/* Theme Toggle Styles */
 .theme-toggle {
     position: relative;
     width: 50px;
@@ -450,6 +454,7 @@ body {
     right: 4px;
     opacity: 0;
 }
+/* Dark theme toggle state */
 body.dark-theme .theme-toggle {
     background: linear-gradient(135deg, #2b2b2b, #454545);
 }
@@ -464,6 +469,7 @@ body.dark-theme .theme-toggle-moon {
     opacity: 1;
     right: 4px;
 }
+/* Dark Theme Styles */
 .server-btn-active {
     box-shadow: 0 0 0 2px #fff, 0 0 0 4px #3498db !important;
     transform: scale(1.02);
@@ -480,6 +486,7 @@ body.dark-theme .theme-toggle-moon {
 .btn-warning.server-btn-active {
     background-color: #e67e22 !important;
 }
+/* Dark Theme */
 body.dark-theme {
     background: #121212;
 }
@@ -587,6 +594,7 @@ body.dark-theme ::-webkit-scrollbar-track {
 body.dark-theme ::-webkit-scrollbar-corner {
     background: #2c3e50;
 }
+/* Dark theme specific improvements */
 body.dark-theme small {
     color: #bdc3c7 !important;
 }
@@ -600,11 +608,13 @@ body.dark-theme .osc-sender .form-group select {
     color: #ecf0f1;
     border-color: #34495e;
 }
-body.dark-theme .blacklist-patterns div {
+
+body.dark-theme #oscquery-subscriptions div {
     background-color: #34495e !important;
     color: #ecf0f1;
-    border-left-color: #3498db !important;
+    border-left-color: #28a745 !important;
 }
+
 body.dark-theme p {
     color: #bdc3c7 !important;
 }
@@ -623,6 +633,7 @@ body.dark-theme .osc-connection-item small {
 body.dark-theme .osc-connection-item .form-group label {
     color: #ecf0f1 !important;
 }
+/* Dark theme specific improvements */
 body.dark-theme small {
     color: #95a5a6;
 }
@@ -636,11 +647,13 @@ body.dark-theme .osc-sender .form-group select {
     color: #ecf0f1;
     border-color: #34495e;
 }
-body.dark-theme .blacklist-patterns div {
+
+body.dark-theme #oscquery-subscriptions div {
     background-color: #34495e !important;
     color: #ecf0f1;
-    border-left-color: #3498db !important;
+    border-left-color: #28a745 !important;
 }
+
 body.dark-theme .card[style*="background-color: #f8f9fa"],
 body.dark-theme div[style*="background-color: #f8f9fa"] {
     background-color: #2b2b2b !important;
@@ -675,12 +688,16 @@ body.dark-theme .osc-connection-controls {
     color: #e0e0e0 !important;
     border-color: #454545 !important;
 }
-body.dark-theme #blacklist-patterns span[style*="color: #495057"] {
+
+body.dark-theme #oscquery-subscriptions span[style*="color: #495057"] {
     color: #e0e0e0 !important;
 }
-body.dark-theme #blacklist-pattern::placeholder {
+
+body.dark-theme #oscquery-subscription::placeholder {
     color: #95a5a6 !important;
 }
+
+/* Modal styles */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -693,6 +710,7 @@ body.dark-theme #blacklist-pattern::placeholder {
     align-items: center;
     z-index: 1000;
 }
+
 .modal-content {
     background: white;
     border-radius: 8px;
@@ -703,6 +721,7 @@ body.dark-theme #blacklist-pattern::placeholder {
     overflow-y: auto;
     animation: modalAppear 0.3s ease;
 }
+
 @keyframes modalAppear {
     from {
         opacity: 0;
@@ -713,36 +732,47 @@ body.dark-theme #blacklist-pattern::placeholder {
         transform: scale(1);
     }
 }
+
 .modal-header {
     padding: 20px 20px 10px 20px;
     border-bottom: 1px solid #e9ecef;
 }
+
 .modal-body {
     padding: 20px;
 }
+
 .modal-footer {
     padding: 10px 20px 20px 20px;
     border-top: 1px solid #e9ecef;
 }
+
+/* Dark theme modal styles */
 body.dark-theme .modal-content {
     background: #2c3e50;
     color: #ecf0f1;
 }
+
 body.dark-theme .modal-header {
     border-bottom-color: #34495e;
 }
+
 body.dark-theme .modal-footer {
     border-top-color: #34495e;
 }
+
 body.dark-theme .modal-body p {
     color: #ecf0f1 !important;
 }
+
 body.dark-theme .modal-body p:nth-child(2) {
     color: #bdc3c7 !important;
 }
+
 body.dark-theme .modal-body p:last-child {
     color: #95a5a6 !important;
 }
+/* HypeRate specific styles */
 .tracker-item {
     background: #f8f9fa;
     transition: background-color 0.3s ease;
@@ -787,9 +817,12 @@ body.dark-theme pre {
     background: #2c3e50 !important;
     color: #ecf0f1 !important;
 }
+/* Enhanced styling for device ID input */
 #device-id-input {
     font-family: 'Courier New', monospace;
 }
+
+/* Status Panel Styles */
 .status-panel {
     background-color: #f8f9fa;
     border: 1px solid #dee2e6;
@@ -798,16 +831,19 @@ body.dark-theme pre {
     margin-bottom: 15px;
     border-left: 4px solid #17a2b8;
 }
+
 .status-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 10px;
 }
+
 .status-label {
     font-weight: 600;
     color: #495057;
 }
+
 .status-value {
     font-weight: 500;
     padding: 2px 8px;
@@ -816,10 +852,12 @@ body.dark-theme pre {
     color: #155724;
     font-size: 0.9em;
 }
+
 .status-value.disabled {
     background-color: #f8d7da;
     color: #721c24;
 }
+
 .status-description {
     margin-top: 10px;
     margin-bottom: 0;
@@ -827,23 +865,223 @@ body.dark-theme pre {
     color: #6c757d;
     line-height: 1.4;
 }
+
+/* Dark theme status panel */
 body.dark-theme .status-panel {
     background-color: #2b2b2b;
     border-color: #454545;
     border-left-color: #17a2b8;
     color: #e0e0e0;
 }
+
 body.dark-theme .status-label {
     color: #e0e0e0;
 }
+
 body.dark-theme .status-value {
     background-color: #1e5f3a;
     color: #d4edda;
 }
+
 body.dark-theme .status-value.disabled {
     background-color: #5a1e24;
     color: #f8d7da;
 }
+
 body.dark-theme .status-description {
     color: #b0b0b0;
+}
+
+/* OSC Leash Configuration Styles */
+.config-tab-content {
+    display: none;
+    padding: 15px;
+    border: 1px solid #dee2e6;
+    border-radius: 0 5px 5px 5px;
+    background-color: #fff;
+}
+
+.config-tab-content.active {
+    display: block;
+}
+
+.config-tab-content .form-group {
+    margin-bottom: 12px;
+}
+
+.config-tab-content .form-group label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 0.9em;
+}
+
+.config-tab-content .form-group small {
+    display: block;
+    margin-top: 2px;
+    color: #6c757d;
+    font-size: 0.8em;
+    line-height: 1.2;
+}
+
+.config-tab-content input[type="range"] {
+    width: 100%;
+    margin: 2px 0;
+}
+
+.config-tab-content input[type="range"] + span {
+    display: inline-block;
+    margin-left: 10px;
+    font-weight: bold;
+    color: #3498db;
+    min-width: 50px;
+    font-size: 0.9em;
+}
+
+.config-tab-content input[type="text"] {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.config-tab-content input[type="checkbox"] {
+    margin-right: 6px;
+    transform: scale(1.1);
+}
+
+/* Dark theme for configuration */
+body.dark-theme .config-tab-content {
+    background-color: #2c3e50;
+    border-color: #34495e;
+}
+
+body.dark-theme .config-tab-content .form-group label {
+    color: #ecf0f1;
+}
+
+body.dark-theme .config-tab-content .form-group small {
+    color: #95a5a6;
+}
+
+body.dark-theme .config-tab-content input[type="text"] {
+    background-color: #34495e;
+    border-color: #34495e;
+    color: #ecf0f1;
+}
+
+body.dark-theme .config-tab-content input[type="text"]:read-only {
+    background-color: #1e2329;
+    color: #7f8c8d;
+}
+
+body.dark-theme .config-tab-content input[type="range"] + span {
+    color: #3498db;
+}
+
+/* OSC Leash Status Styles */
+.leash-disabled-message, .leash-empty-message {
+    text-align: center;
+    padding: 20px;
+}
+
+.leash-disabled-message {
+    color: #666;
+}
+
+.empty-primary {
+    color: #666;
+    margin-bottom: 10px;
+}
+
+.empty-secondary {
+    color: #999;
+    font-size: 12px;
+}
+
+.leash-item {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: white;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.leash-item.grabbed {
+    border-color: #2ecc71;
+    background: #f8fff8;
+}
+
+.leash-item-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.leash-name {
+    color: inherit;
+}
+
+.leash-status {
+    margin-left: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    color: white;
+}
+
+.leash-status.grabbed {
+    background: #2ecc71;
+}
+
+.leash-status.released {
+    background: #95a5a6;
+}
+
+.leash-metrics {
+    text-align: right;
+}
+
+.stretch-value {
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.stretch-thresholds {
+    font-size: 10px;
+    color: #666;
+}
+
+/* Dark theme for OSC Leash status */
+body.dark-theme .leash-disabled-message {
+    color: #bdc3c7;
+}
+
+body.dark-theme .empty-primary {
+    color: #bdc3c7;
+}
+
+body.dark-theme .empty-secondary {
+    color: #7f8c8d;
+}
+
+body.dark-theme .leash-item {
+    background: #2c3e50;
+    border-color: #34495e;
+}
+
+body.dark-theme .leash-item.grabbed {
+    border-color: #2ecc71;
+    background: #1e3028;
+}
+
+body.dark-theme .leash-name {
+    color: #ecf0f1;
+}
+
+body.dark-theme .stretch-thresholds {
+    color: #bdc3c7;
 }

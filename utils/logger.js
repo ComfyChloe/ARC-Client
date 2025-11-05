@@ -1,8 +1,10 @@
 const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
+
 class Logger {
   constructor() {
+    // Use userData path for logs instead of relative to __dirname
     this.logDir = path.join(app.getPath('userData'), 'logs');
     this.ensureLogDirectory();
   }
