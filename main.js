@@ -13,6 +13,7 @@ const OscService = require('./utils/oscService');
 const { OSCQueryService } = require('./utils/oscQueryService');
 const HyperateAddon = require('./Containers/Hyperate');
 const OSCLeashAddon = require('./Containers/OSCLeash');
+const VRChatAPIContainer = require('./Containers/VRC-API');
 // Logger will be loaded after app is ready
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
@@ -27,6 +28,7 @@ let wsManager;
 let serverConfig = configManager.getServerConfig();
 let hyperateAddon;
 let oscLeashAddon;
+let vrchatApiContainer;
 // On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
 if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
   serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
@@ -1077,6 +1079,94 @@ ipcMain.handle('oscleash-set-autostart', (event, enabled) => {
   }
 });
 
+// VRChat API IPC handlers
+ipcMain.handle('vrchatapi-get-status', () => {
+  try {
+    if (vrchatApiContainer) {
+      return vrchatApiContainer.getStatus();
+    }
+    return { enabled: false, authenticated: false, currentUser: null };
+  } catch (error) {
+    debug.error(`Failed to get VRChat API status: ${error.message}`);
+    return { enabled: false, authenticated: false, currentUser: null };
+  }
+});
+
+ipcMain.handle('vrchatapi-login', async (event, credentials) => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const { username, password, rememberCredentials } = credentials;
+    const result = await vrchatApiContainer.login(username, password, rememberCredentials);
+    
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API login error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vrchatapi-verify-2fa', async (event, data) => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const { code, type } = data;
+    const result = await vrchatApiContainer.verify2FA(code, type);
+    
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API 2FA verification error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vrchatapi-logout', async () => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const result = await vrchatApiContainer.logout();
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API logout error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vrchatapi-restore-session', async () => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const result = await vrchatApiContainer.restoreSession();
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API session restore error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+// VRChat API - Get Stats
+ipcMain.handle('vrchatapi-get-stats', async () => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const result = await vrchatApiContainer.getStats();
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API get stats error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(() => {
   debug.logAppStartup();
   // Load logger after app is ready
@@ -1085,6 +1175,8 @@ app.whenReady().then(() => {
   hyperateAddon = new HyperateAddon();
   // Initialize OSCLeash addon
   oscLeashAddon = new OSCLeashAddon();
+  // Initialize VRChat API container
+  vrchatApiContainer = new VRChatAPIContainer();
   // Get app settings from config
   const appSettings = configManager.getAppSettings();
   
@@ -1245,6 +1337,15 @@ function cleanup(source = 'unknown') {
     }
   } catch (error) {
     debug.error(`Error stopping HypeRate addon: ${error.message}`);
+  }
+  try {
+    if (vrchatApiContainer) {
+      // Stop the container but preserve session for next startup
+      vrchatApiContainer.stop();
+      vrchatApiContainer = null;
+    }
+  } catch (error) {
+    debug.error(`Error stopping VRChat API container: ${error.message}`);
   }
   // Force garbage collection before exit
   if (global.gc) {

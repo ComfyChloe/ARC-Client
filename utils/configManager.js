@@ -55,6 +55,11 @@ class ConfigManager {
           Y_Negative_Param: "Leash_Y-"
         }
       },
+      // VRChat API configuration
+      vrchatapi: {
+        enabled: false,
+        cookies: null
+      },
       // Version for future migration support
       configVersion: 1
     };
@@ -256,6 +261,29 @@ class ConfigManager {
       ...oscLeashConfig
     };
     debug.info('OSCLeash config updated in configuration manager');
+    return this.saveConfig();
+  }
+
+  // VRChat API configuration methods
+  getVRChatAPIConfig() {
+    if (!this.config.vrchatapi) {
+      this.config.vrchatapi = {
+        enabled: false,
+        cookies: null
+      };
+    }
+    return { ...this.config.vrchatapi };
+  }
+
+  updateVRChatAPIConfig(vrchatApiConfig) {
+    if (!this.config.vrchatapi) {
+      this.config.vrchatapi = {};
+    }
+    this.config.vrchatapi = {
+      ...this.config.vrchatapi,
+      ...vrchatApiConfig
+    };
+    debug.info('VRChat API config updated in configuration manager');
     return this.saveConfig();
   }
 }
