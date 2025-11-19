@@ -58,7 +58,8 @@ class ConfigManager {
       // VRChat API configuration
       vrchatapi: {
         enabled: false,
-        cookies: null
+        authToken: null,
+        twoFactorToken: null
       },
       // Version for future migration support
       configVersion: 1
@@ -191,7 +192,6 @@ class ConfigManager {
   getSavedPassword() {
     return this.config.appSettings?.savedPassword || '';
   }
-  
   setSavedPassword(password) {
     if (!this.config.appSettings) {
       this.config.appSettings = {};
@@ -200,7 +200,6 @@ class ConfigManager {
     debug.info(`Saved password ${password ? 'updated' : 'cleared'} in configuration`);
     return this.saveConfig();
   }
-  
   // HypeRate configuration methods
   getHyperateConfig() {
     if (!this.config.hyperate) {
@@ -213,7 +212,6 @@ class ConfigManager {
     }
     return { ...this.config.hyperate };
   }
-  
   updateHyperateConfig(hyperateConfig) {
     if (!this.config.hyperate) {
       this.config.hyperate = {};
@@ -225,7 +223,6 @@ class ConfigManager {
     debug.info('HypeRate config updated in configuration manager');
     return this.saveConfig();
   }
-
   // OSCLeash configuration methods
   getOSCLeashConfig() {
     if (!this.config.oscleash) {
@@ -251,7 +248,6 @@ class ConfigManager {
     }
     return { ...this.config.oscleash };
   }
-
   updateOSCLeashConfig(oscLeashConfig) {
     if (!this.config.oscleash) {
       this.config.oscleash = {};
@@ -263,18 +259,17 @@ class ConfigManager {
     debug.info('OSCLeash config updated in configuration manager');
     return this.saveConfig();
   }
-
   // VRChat API configuration methods
   getVRChatAPIConfig() {
     if (!this.config.vrchatapi) {
       this.config.vrchatapi = {
         enabled: false,
-        cookies: null
+        authToken: null,
+        twoFactorToken: null
       };
     }
     return { ...this.config.vrchatapi };
   }
-
   updateVRChatAPIConfig(vrchatApiConfig) {
     if (!this.config.vrchatapi) {
       this.config.vrchatapi = {};

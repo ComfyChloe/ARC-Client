@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { encryptData, decryptData } = require('./utils/encryption');
 // Set userdata path and ensure it exists
 const userDataPath = path.join(process.cwd(), 'userdata');
 if (!fs.existsSync(userDataPath)) {
@@ -1078,7 +1079,13 @@ ipcMain.handle('oscleash-set-autostart', (event, enabled) => {
     return { success: false, error: error.message };
   }
 });
-
+// Encryption/Decryption IPC handlers
+ipcMain.handle('encrypt-data', (event, plaintext) => {
+  return encryptData(plaintext);
+});
+ipcMain.handle('decrypt-data', (event, encryptedData) => {
+  return decryptData(encryptedData);
+});
 // VRChat API IPC handlers
 ipcMain.handle('vrchatapi-get-status', () => {
   try {

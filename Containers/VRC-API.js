@@ -2,7 +2,7 @@ const debug = require('../utils/debugger');
 const configManager = require('../utils/configManager');
 const { VRChat } = require('vrchat');
 const { app } = require('electron');
-
+const { encryptData, decryptData } = require('../utils/encryption');
 class VRChatAPIContainer {
   constructor() {
     this.enabled = false;
@@ -12,7 +12,6 @@ class VRChatAPIContainer {
     this.config = this.loadConfig();
     this.twoFactorResolver = null; // Resolver for 2FA promise
     this.loginPromise = null; // Track ongoing login attempt
-    
     // Keepalive and reconnection
     this.keepaliveInterval = null;
     this.reconnectAttempts = 0;
@@ -20,13 +19,10 @@ class VRChatAPIContainer {
     this.reconnectDelay = 60000; // 60 seconds
     this.backoffDelay = 180000; // 3 minutes for 500 errors
     this.isReconnecting = false;
-    
     // Initialize VRChat API client with proper application info and user agent
     this.initializeClient();
-    
     debug.info('VRChat API container initialized');
   }
-
   /**
    * Initialize the VRChat API client with application info
    */
@@ -34,37 +30,97 @@ class VRChatAPIContainer {
     try {
       const appVersion = app.getVersion();
       const appName = 'ARC-OSC-Client';
-      
       // Create a simple keyv-compatible adapter using Map
-      const cookieStore = new Map();
-      
-      // Load saved cookies into the store (the library expects a 'cookies' key with array of cookie objects)
-      if (this.config.cookies) {
+      const cookieStore = new Map();      
+      // Load and decrypt saved tokens, then reconstruct cookies
+      if (this.config.authToken || this.config.twoFactorToken) {
         try {
-          const cookieArray = JSON.parse(this.config.cookies);
-          // Store as 'cookies' key since that's what the VRChat library uses
-          cookieStore.set('cookies', cookieArray);
-          debug.info(`Restored ${cookieArray.length} VRChat API cookies from config`);
-          debug.debug('Restored cookie details:', JSON.stringify(cookieArray.map(c => ({
-            name: c.name,
-            hasValue: !!c.value,
-            valueLength: c.value ? c.value.length : 0,
-            expires: c.expires,
-            domain: c.domain
-          }))));
+          const cookieArray = [];
+          // Decrypt and restore auth cookie
+          if (this.config.authToken) {
+            const decryptedAuth = decryptData(this.config.authToken);
+            if (decryptedAuth) {
+              const authCookie = {
+                name: 'auth',
+                value: decryptedAuth,
+                domain: 'api.vrchat.cloud',
+                path: '/',
+                secure: true,
+                httpOnly: true,
+                expires: Date.now() + (365 * 24 * 60 * 60 * 1000), // 1 year
+                options: {
+                  'max-age': '31556952',
+                  path: '/',
+                  samesite: 'Lax'
+                }
+              };
+              cookieArray.push(authCookie);
+              debug.info(`Decrypted and restored auth token (length: ${decryptedAuth.length})`);
+            } else {
+              debug.warn('Failed to decrypt auth token - clearing saved session');
+              this.config.authToken = null;
+              this.config.twoFactorToken = null;
+              this.saveConfig();
+            }
+          }
+          // Decrypt and restore twoFactorAuth cookie
+          if (this.config.twoFactorToken) {
+            const decryptedTwoFactor = decryptData(this.config.twoFactorToken);
+            if (decryptedTwoFactor) {
+              const twoFactorCookie = {
+                name: 'twoFactorAuth',
+                value: decryptedTwoFactor,
+                domain: 'api.vrchat.cloud',
+                path: '/',
+                secure: true,
+                httpOnly: true,
+                expires: Date.now() + (30 * 24 * 60 * 60 * 1000), // 30 days
+                options: {
+                  'max-age': '2592000',
+                  path: '/',
+                  samesite: 'Lax'
+                }
+              };
+              cookieArray.push(twoFactorCookie);
+              debug.info(`Decrypted and restored twoFactorAuth token (length: ${decryptedTwoFactor.length})`);
+            } else {
+              debug.warn('Failed to decrypt twoFactorAuth token');
+            }
+          }
+          // Store cookies in keyv format if we have any
+          if (cookieArray.length > 0) {
+            const keyvData = { value: cookieArray };
+            cookieStore.set('keyv:cookies', JSON.stringify(keyvData));
+            debug.info(`Restored ${cookieArray.length} cookie(s) from encrypted config`);
+          }
         } catch (e) {
-          debug.warn(`Failed to restore cookies: ${e.message}`);
+          debug.error(`Failed to restore cookies: ${e.message}`);
+          // Clear corrupted data
+          this.config.authToken = null;
+          this.config.twoFactorToken = null;
+          this.saveConfig();
         }
       }
-      
-      // Create a keyv-compatible adapter
+      // Create a keyv-compatible adapter with logging
       const keyvAdapter = {
-        get: async (key) => cookieStore.get(key),
-        set: async (key, value) => cookieStore.set(key, value),
-        delete: async (key) => cookieStore.delete(key),
-        clear: async () => cookieStore.clear()
+        get: async (key) => {
+          const value = cookieStore.get(key);
+          debug.debug(`Keyv adapter GET: key=${key}, hasValue=${!!value}, isArray=${Array.isArray(value)}, length=${value?.length || 0}`);
+          return value;
+        },
+        set: async (key, value) => {
+          debug.debug(`Keyv adapter SET: key=${key}, isArray=${Array.isArray(value)}, length=${value?.length || 0}`);
+          cookieStore.set(key, value);
+        },
+        delete: async (key) => {
+          debug.debug(`Keyv adapter DELETE: key=${key}`);
+          cookieStore.delete(key);
+        },
+        clear: async () => {
+          debug.debug('Keyv adapter CLEAR');
+          cookieStore.clear();
+        }
       };
-      
       this.apiClient = new VRChat({
         application: {
           name: appName,
@@ -77,7 +133,6 @@ class VRChatAPIContainer {
         keyv: keyvAdapter, // Use keyv-compatible adapter for persistent cookies
         verbose: false // Set to true for debugging
       });
-      
       // Store reference to cookie store
       this.cookieStore = cookieStore;
       
@@ -86,7 +141,6 @@ class VRChatAPIContainer {
       debug.error(`Failed to initialize VRChat API client: ${error.message}`);
     }
   }
-
   loadConfig() {
     try {
       const vrchatConfig = configManager.getVRChatAPIConfig();
@@ -97,44 +151,71 @@ class VRChatAPIContainer {
     } catch (error) {
       debug.error(`Failed to load VRChat API config: ${error.message}`);
     }
-    
     return {
       enabled: false,
-      cookies: null
+      authToken: null
     };
   }
-
   saveConfig() {
     try {
-      // Serialize cookies from the store (the library stores them under 'cookies' key)
-      let cookiesJson = null;
-      if (this.cookieStore && this.cookieStore.has('cookies')) {
-        const cookieArray = this.cookieStore.get('cookies');
-        if (cookieArray && cookieArray.length > 0) {
-          cookiesJson = JSON.stringify(cookieArray);
-          debug.info(`Saving ${cookieArray.length} cookies to config`);
-          debug.debug('Cookie details:', JSON.stringify(cookieArray.map(c => ({
-            name: c.name,
-            hasValue: !!c.value,
-            valueLength: c.value ? c.value.length : 0,
-            expires: c.expires,
-            domain: c.domain
-          }))));
+      // Extract auth and twoFactorAuth cookies from cookie store
+      let encryptedAuth = null;
+      let encryptedTwoFactor = null;
+      if (this.cookieStore && this.cookieStore.has('keyv:cookies')) {
+        const cookieData = this.cookieStore.get('keyv:cookies');
+        debug.info(`Extracting cookies - type: ${typeof cookieData}, length: ${cookieData?.length || 0}`);
+        // Parse cookies
+        let cookieArray = null;
+        if (typeof cookieData === 'string') {
+          try {
+            const parsed = JSON.parse(cookieData);
+            // Extract cookie array from parsed structure
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              if (parsed.value && Array.isArray(parsed.value)) {
+                cookieArray = parsed.value;
+              } else if (parsed.val && Array.isArray(parsed.val)) {
+                cookieArray = parsed.val;
+              }
+            } else if (Array.isArray(parsed)) {
+              cookieArray = parsed;
+            }
+          } catch (e) {
+            debug.warn(`Failed to parse cookie data: ${e.message}`);
+          }
+        } else if (Array.isArray(cookieData)) {
+          cookieArray = cookieData;
         }
+        // Extract both auth and twoFactorAuth cookies
+        if (Array.isArray(cookieArray)) {
+          const authCookie = cookieArray.find(c => c.name === 'auth');
+          const twoFactorCookie = cookieArray.find(c => c.name === 'twoFactorAuth');
+          if (authCookie && authCookie.value) {
+            // Encrypt the auth token
+            encryptedAuth = encryptData(authCookie.value);
+            debug.info(`Extracted and encrypted auth token (original length: ${authCookie.value.length}, encrypted length: ${encryptedAuth?.length || 0})`);
+          }
+          if (twoFactorCookie && twoFactorCookie.value) {
+            encryptedTwoFactor = encryptData(twoFactorCookie.value);
+            debug.info(`Extracted and encrypted twoFactorAuth token (original length: ${twoFactorCookie.value.length}, encrypted length: ${encryptedTwoFactor?.length || 0})`);
+          }
+          if (!authCookie) {
+            debug.warn(`No auth cookie found in ${cookieArray.length} cookies`);
+          }
+        }
+      } else {
+        debug.info('No cookies in store to extract');
       }
-      
       const config = {
         enabled: this.enabled,
-        cookies: cookiesJson
+        authToken: encryptedAuth,
+        twoFactorToken: encryptedTwoFactor
       };
-      
       configManager.updateVRChatAPIConfig(config);
-      debug.info('VRChat API config saved');
+      debug.info(`VRChat API config saved (auth: ${encryptedAuth ? 'encrypted' : 'absent'}, 2FA: ${encryptedTwoFactor ? 'encrypted' : 'absent'})`);
     } catch (error) {
       debug.error(`Failed to save VRChat API config: ${error.message}`);
     }
   }
-
   /**
    * Clear saved cookies
    */
@@ -143,11 +224,12 @@ class VRChatAPIContainer {
       if (this.cookieStore) {
         this.cookieStore.clear();
       }
-      this.config.cookies = null;
+      this.config.authToken = null;
+      this.config.twoFactorToken = null;
       this.saveConfig();
-      debug.info('VRChat API cookies cleared');
+      debug.info('VRChat API encrypted tokens cleared');
     } catch (error) {
-      debug.error(`Failed to clear cookies: ${error.message}`);
+      debug.error(`Failed to clear encrypted tokens: ${error.message}`);
     }
   }
 
@@ -160,10 +242,8 @@ class VRChatAPIContainer {
   }
 
   getStatus() {
-    // Check if we have saved cookies (stored under 'cookies' key)
-    const hasCookies = this.cookieStore && this.cookieStore.has('cookies');
-    const cookies = hasCookies ? this.cookieStore.get('cookies') : null;
-    const hasSavedSession = cookies && cookies.length > 0;
+    // Check if we have saved encrypted tokens
+    const hasSavedSession = !!(this.config && (this.config.authToken || this.config.twoFactorToken));
     
     return {
       enabled: this.enabled,
@@ -468,13 +548,12 @@ class VRChatAPIContainer {
    */
   async restoreSession() {
     try {
-      const cookies = this.cookieStore.has('cookies') ? this.cookieStore.get('cookies') : null;
-      if (!cookies || cookies.length === 0) {
-        debug.info('No saved session to restore VRChat API session');
+      if (!this.config || (!this.config.authToken && !this.config.twoFactorToken)) {
+        debug.info('No saved encrypted tokens to restore VRChat API session');
         return { success: false, error: 'No saved session' };
       }
 
-      debug.info(`Attempting to restore VRChat API session from ${cookies.length} saved cookies`);
+      debug.info(`Attempting to restore VRChat API session with encrypted tokens`);
       
       // Try to verify the session with saved cookies
       // The VRChat library returns { data, error, response, request }
