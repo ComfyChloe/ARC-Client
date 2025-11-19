@@ -458,17 +458,34 @@ class VRChatAPIContainer {
     }
 
     try {
-      const uploadedAvatars = this.currentUser.ownedAvatarCount || 0;
-
-      const [favoritesResult, friendsResult] = await Promise.all([
-        this.apiClient.getFavorites({ type: 'avatar', n: 100 }).catch(e => ({ error: e })),
-        this.apiClient.getFriends({ offline: false }).catch(e => ({ error: e }))
+      const [avatarsResult, friendsResult, favoriteGroupsResult] = await Promise.all([
+        this.apiClient.searchAvatars({ query: { user: 'me', n: 100, releaseStatus: 'all' } }).catch(e => ({ error: e })),
+        this.apiClient.getFriends({ query: { offline: false } }).catch(e => ({ error: e })),
+        this.apiClient.getFavoriteGroups().catch(e => ({ error: e }))
       ]);
+
+      // Count favorited avatars across all favorite groups
+      let favoritedAvatars = 0;
+      if (Array.isArray(favoriteGroupsResult.data)) {
+        const avatarGroups = favoriteGroupsResult.data.filter(g => g.type === 'avatar');
+        
+        // Fetch favorites for each avatar group
+        for (const group of avatarGroups) {
+          try {
+            const favs = await this.apiClient.getFavorites({ 
+              query: { type: 'avatar', n: 100, tag: group.name } 
+            });
+            favoritedAvatars += Array.isArray(favs.data) ? favs.data.length : 0;
+          } catch (error) {
+            console.error(`Error fetching favorites for group ${group.name}:`, error.message);
+          }
+        }
+      }
 
       return {
         success: true,
-        uploadedAvatars,
-        favoritedAvatars: Array.isArray(favoritesResult.data) ? favoritesResult.data.length : 0,
+        uploadedAvatars: Array.isArray(avatarsResult.data) ? avatarsResult.data.length : 0,
+        favoritedAvatars,
         friendsOnline: Array.isArray(friendsResult.data) ? friendsResult.data.length : 0
       };
     } catch (error) {
