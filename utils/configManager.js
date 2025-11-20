@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 const debug = require('./debugger');
-const { encryptData, decryptData } = require('./encryption');
 class ConfigManager {
   constructor() {
     this.configFile = path.join(app.getPath('userData'), 'config.json');
@@ -55,12 +54,6 @@ class ConfigManager {
           Y_Positive_Param: "Leash_Y+",
           Y_Negative_Param: "Leash_Y-"
         }
-      },
-      // VRChat API configuration
-      vrchatapi: {
-        enabled: false,
-        authToken: null,
-        twoFactorToken: null
       },
       // Version for future migration support
       configVersion: 1
@@ -191,39 +184,18 @@ class ConfigManager {
   }
   // Password management methods
   getSavedPassword() {
-    const encryptedPassword = this.config.appSettings?.savedPassword || '';
-    if (!encryptedPassword) return '';
-    
-    const decrypted = decryptData(encryptedPassword);
-    if (!decrypted) {
-      debug.warn('Failed to decrypt saved password, clearing stored value');
-      this.setSavedPassword('');
-      return '';
-    }
-    
-    return decrypted;
+    return this.config.appSettings?.savedPassword || '';
   }
+  
   setSavedPassword(password) {
     if (!this.config.appSettings) {
       this.config.appSettings = {};
     }
-    
-    if (!password) {
-      this.config.appSettings.savedPassword = '';
-      debug.info('Saved password cleared in configuration');
-      return this.saveConfig();
-    }
-    
-    const encrypted = encryptData(password);
-    if (!encrypted) {
-      debug.error('Failed to encrypt password');
-      return false;
-    }
-    
-    this.config.appSettings.savedPassword = encrypted;
-    debug.info('Saved password updated (encrypted) in configuration');
+    this.config.appSettings.savedPassword = password || '';
+    debug.info(`Saved password ${password ? 'updated' : 'cleared'} in configuration`);
     return this.saveConfig();
   }
+  
   // HypeRate configuration methods
   getHyperateConfig() {
     if (!this.config.hyperate) {
@@ -236,6 +208,7 @@ class ConfigManager {
     }
     return { ...this.config.hyperate };
   }
+  
   updateHyperateConfig(hyperateConfig) {
     if (!this.config.hyperate) {
       this.config.hyperate = {};
@@ -247,6 +220,7 @@ class ConfigManager {
     debug.info('HypeRate config updated in configuration manager');
     return this.saveConfig();
   }
+
   // OSCLeash configuration methods
   getOSCLeashConfig() {
     if (!this.config.oscleash) {
@@ -272,6 +246,7 @@ class ConfigManager {
     }
     return { ...this.config.oscleash };
   }
+
   updateOSCLeashConfig(oscLeashConfig) {
     if (!this.config.oscleash) {
       this.config.oscleash = {};
@@ -281,28 +256,6 @@ class ConfigManager {
       ...oscLeashConfig
     };
     debug.info('OSCLeash config updated in configuration manager');
-    return this.saveConfig();
-  }
-  // VRChat API configuration methods
-  getVRChatAPIConfig() {
-    if (!this.config.vrchatapi) {
-      this.config.vrchatapi = {
-        enabled: false,
-        authToken: null,
-        twoFactorToken: null
-      };
-    }
-    return { ...this.config.vrchatapi };
-  }
-  updateVRChatAPIConfig(vrchatApiConfig) {
-    if (!this.config.vrchatapi) {
-      this.config.vrchatapi = {};
-    }
-    this.config.vrchatapi = {
-      ...this.config.vrchatapi,
-      ...vrchatApiConfig
-    };
-    debug.info('VRChat API config updated in configuration manager');
     return this.saveConfig();
   }
 }

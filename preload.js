@@ -52,16 +52,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   oscleashUpdateConfig: (config) => ipcRenderer.invoke('oscleash-update-config', config),
   oscleashGetAutostart: () => ipcRenderer.invoke('oscleash-get-autostart'),
   oscleashSetAutostart: (enabled) => ipcRenderer.invoke('oscleash-set-autostart', enabled),
-  // Encryption API
-  encryptData: (plaintext) => ipcRenderer.invoke('encrypt-data', plaintext),
-  decryptData: (encryptedData) => ipcRenderer.invoke('decrypt-data', encryptedData),
-  // VRChat API
-  vrchatApiGetStatus: () => ipcRenderer.invoke('vrchatapi-get-status'),
-  vrchatApiLogin: (credentials) => ipcRenderer.invoke('vrchatapi-login', credentials),
-  vrchatApiVerify2FA: (data) => ipcRenderer.invoke('vrchatapi-verify-2fa', data),
-  vrchatApiLogout: () => ipcRenderer.invoke('vrchatapi-logout'),
-  vrchatApiRestoreSession: () => ipcRenderer.invoke('vrchatapi-restore-session'),
-  vrchatApiGetStats: () => ipcRenderer.invoke('vrchatapi-get-stats'),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
