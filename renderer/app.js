@@ -3083,11 +3083,21 @@ async function loadSavedPasswordSetting() {
         const result = await window.electronAPI.getSavedPassword();
         const checkbox = document.getElementById('save-password-checkbox');
         const passwordInput = document.getElementById('password');
+        const usernameInput = document.getElementById('username');
         
         if (result && result.password) {
             checkbox.checked = true;
             passwordInput.value = result.password;
-            debugLog('Saved password loaded from configuration');
+            debugLog('Saved password loaded from configuration (encrypted)');
+            
+            // Auto-connect if username is also present
+            if (usernameInput && usernameInput.value.trim()) {
+                debugLog('Auto-connecting with saved credentials...');
+                // Delay slightly to ensure UI is ready
+                setTimeout(() => {
+                    authenticate();
+                }, 500);
+            }
         }
     } catch (error) {
         debugLog(`Error loading saved password: ${error.message}`, 'error');
@@ -4296,6 +4306,7 @@ function updateVRChatApiUI() {
     const statusText = document.getElementById('vrchatapi-status-text');
     const userInfo = document.getElementById('vrchatapi-user-info');
     const userDisplay = document.getElementById('vrchatapi-user-display');
+    const userIdEl = document.getElementById('vrchatapi-user-id');
     const loginCard = document.getElementById('vrchatapi-login-card');
     const actionsCard = document.getElementById('vrchatapi-actions-card');
     const statsCard = document.getElementById('vrchatapi-stats-card');
@@ -4306,6 +4317,9 @@ function updateVRChatApiUI() {
         statusText.textContent = 'Authenticated';
         userInfo.style.display = 'block';
         userDisplay.textContent = `${vrchatApiStatus.currentUser.displayName} (@${vrchatApiStatus.currentUser.username})`;
+        if (userIdEl) {
+            userIdEl.textContent = vrchatApiStatus.currentUser.id ? vrchatApiStatus.currentUser.id : '';
+        }
         loginCard.style.display = 'none';
         actionsCard.style.display = 'block';
         statsCard.style.display = 'block';
@@ -4317,6 +4331,7 @@ function updateVRChatApiUI() {
         loginCard.style.display = 'none';
         actionsCard.style.display = 'none';
         statsCard.style.display = 'none';
+        if (userIdEl) userIdEl.textContent = '';
     } else {
         // Not authenticated state
         statusIndicator.className = 'status-indicator status-disconnected';
@@ -4325,6 +4340,7 @@ function updateVRChatApiUI() {
         loginCard.style.display = 'block';
         actionsCard.style.display = 'none';
         statsCard.style.display = 'none';
+        if (userIdEl) userIdEl.textContent = '';
     }
 }
 
