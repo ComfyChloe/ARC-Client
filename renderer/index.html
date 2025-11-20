@@ -7,6 +7,22 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- 2FA Modal -->
+    <div id="vrchatapi-2fa-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 400px; width: 90%;">
+            <h3 style="margin-top: 0; color: #fff;">Two-Factor Authentication</h3>
+            <p id="vrchatapi-2fa-type" style="margin-bottom: 15px; color: #aaa; font-size: 14px;"></p>
+            <div class="form-group">
+                <label for="vrchatapi-2fa-code" style="color: #fff;">Enter 6-Digit Code</label>
+                <input type="text" id="vrchatapi-2fa-code" placeholder="000000" maxlength="6" style="width: 120px; text-align: center; font-size: 18px; letter-spacing: 5px; font-family: monospace;" onkeypress="if(event.key==='Enter')vrchatApiVerify2FA()">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="vrchatApiVerify2FA()">Verify</button>
+                <button class="btn btn-secondary" onclick="vrchatApiCancel2FA()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div class="app-container">
         <div class="sidebar">
             <div class="sidebar-section">
@@ -189,13 +205,58 @@
         <div class="main-content view-transition" id="vrchatapi-view" style="display: none;">
             <div class="header">
                 <h1>VRChat API</h1>
-                <p>Coming soon - Direct VRChat API integration and management</p>
+                <p>Direct VRChat API integration for advanced features</p>
             </div>
+
             <div class="card">
-                <h3>Feature Not Available</h3>
-                <p style="color: #666; text-align: center; padding: 20px;">
-                    This feature is planned for development and will be available in the future.
-                </p>
+                <h3>Connection Status</h3>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="vrchatapi-status"></span>
+                    <span id="vrchatapi-status-text">Not Authenticated</span>
+                </div>
+                <div id="vrchatapi-user-info" class="user-info-box" style="display: none;">
+                    <div class="user-info-label">Logged in as:</div>
+                    <div id="vrchatapi-user-display" class="user-info-display"></div>
+                </div>
+            </div>
+
+            <div class="card" id="vrchatapi-login-card">
+                <h3>Authentication</h3>
+                <div class="form-group">
+                    <label for="vrchatapi-username">VRChat Username or Email</label>
+                    <input type="text" id="vrchatapi-username" placeholder="Enter username or email">
+                </div>
+                <div class="form-group">
+                    <label for="vrchatapi-password">Password</label>
+                    <input type="password" id="vrchatapi-password" placeholder="Enter password">
+                </div>
+                <button class="btn btn-primary" id="vrchatapi-login-btn" onclick="vrchatApiLogin()">Login</button>
+            </div>
+
+            <div class="card" id="vrchatapi-actions-card" style="display: none;">
+                <h3>Actions</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-danger" onclick="vrchatApiLogout()">Logout</button>
+                    <button class="btn btn-secondary" onclick="refreshVRChatApiStatus()">Refresh Stats</button>
+                </div>
+            </div>
+
+            <div class="card" id="vrchatapi-stats-card" style="display: none;">
+                <h3>Account Details</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div style="text-align: center; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 24px; font-weight: bold; color: var(--primary-color);" id="vrchatapi-avatar-count">-</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Uploaded Avatars</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 24px; font-weight: bold; color: var(--primary-color);" id="vrchatapi-favorite-avatar-count">-</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Favorited Avatars</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 24px; font-weight: bold; color: var(--primary-color);" id="vrchatapi-friends-online">-</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Online & Active Friends</div>
+                    </div>
+                </div>
             </div>
         </div>
 

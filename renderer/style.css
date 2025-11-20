@@ -82,6 +82,26 @@ body {
 .status-disconnected { background-color: #e74c3c; }
 .status-pending { background-color: #f39c12; }
 .status-warning { background-color: #f39c12; } /* Orange for stopping/warning states */
+
+/* User Info Box */
+.user-info-box {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+.user-info-label {
+    font-size: 0.9em;
+    color: #666;
+    transition: color 0.3s ease;
+}
+.user-info-display {
+    font-weight: bold;
+    color: #2c3e50;
+    transition: color 0.3s ease;
+}
+
 .card {
     background: white;
     border-radius: 8px;
@@ -537,6 +557,15 @@ body.dark-theme .form-group input:focus,
 body.dark-theme .form-group select:focus {
     border-color: #3498db;
     background: #34495e;
+}
+body.dark-theme .user-info-box {
+    background-color: #353535;
+}
+body.dark-theme .user-info-label {
+    color: #bdc3c7;
+}
+body.dark-theme .user-info-display {
+    color: #ecf0f1;
 }
 body.dark-theme .parameter-item {
     background: #2c3e50;
