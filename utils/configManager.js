@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 const debug = require('./debugger');
+const { encryptData, decryptData } = require('./encryption');
 class ConfigManager {
   constructor() {
     this.configFile = path.join(app.getPath('userData'), 'config.json');
@@ -190,14 +191,37 @@ class ConfigManager {
   }
   // Password management methods
   getSavedPassword() {
-    return this.config.appSettings?.savedPassword || '';
+    const encryptedPassword = this.config.appSettings?.savedPassword || '';
+    if (!encryptedPassword) return '';
+    
+    const decrypted = decryptData(encryptedPassword);
+    if (!decrypted) {
+      debug.warn('Failed to decrypt saved password, clearing stored value');
+      this.setSavedPassword('');
+      return '';
+    }
+    
+    return decrypted;
   }
   setSavedPassword(password) {
     if (!this.config.appSettings) {
       this.config.appSettings = {};
     }
-    this.config.appSettings.savedPassword = password || '';
-    debug.info(`Saved password ${password ? 'updated' : 'cleared'} in configuration`);
+    
+    if (!password) {
+      this.config.appSettings.savedPassword = '';
+      debug.info('Saved password cleared in configuration');
+      return this.saveConfig();
+    }
+    
+    const encrypted = encryptData(password);
+    if (!encrypted) {
+      debug.error('Failed to encrypt password');
+      return false;
+    }
+    
+    this.config.appSettings.savedPassword = encrypted;
+    debug.info('Saved password updated (encrypted) in configuration');
     return this.saveConfig();
   }
   // HypeRate configuration methods
