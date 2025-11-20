@@ -3054,12 +3054,19 @@ async function toggleTheme() {
 // Password saving functionality
 async function handleSavePasswordCheckbox() {
     const checkbox = document.getElementById('save-password-checkbox');
-    const modal = document.getElementById('password-warning-modal');
     
     if (checkbox.checked) {
-        // Show warning modal
-        modal.style.display = 'flex';
-        setupPasswordWarningModal();
+        // Save current password if there is one
+        const password = document.getElementById('password').value;
+        if (password) {
+            try {
+                await window.electronAPI.setSavedPassword(password);
+                debugLog('Password saved to configuration (encrypted)');
+            } catch (error) {
+                debugLog(`Error saving password: ${error.message}`, 'error');
+                checkbox.checked = false;
+            }
+        }
     } else {
         // Unchecking - remove saved password
         try {
@@ -3069,43 +3076,6 @@ async function handleSavePasswordCheckbox() {
             debugLog(`Error removing saved password: ${error.message}`, 'error');
         }
     }
-}
-
-function setupPasswordWarningModal() {
-    const modal = document.getElementById('password-warning-modal');
-    const cancelBtn = document.getElementById('password-warning-cancel');
-    const confirmBtn = document.getElementById('password-warning-confirm');
-    const checkbox = document.getElementById('save-password-checkbox');
-    
-    cancelBtn.onclick = () => {
-        checkbox.checked = false;
-        modal.style.display = 'none';
-        debugLog('Password save cancelled by user');
-    };
-    
-    confirmBtn.onclick = async () => {
-        modal.style.display = 'none';
-        debugLog('User confirmed password save warning');
-        // Save current password if there is one
-        const password = document.getElementById('password').value;
-        if (password) {
-            try {
-                await window.electronAPI.setSavedPassword(password);
-                debugLog('Password saved to configuration (encrypted storage would be better, but user confirmed plain text)');
-            } catch (error) {
-                debugLog(`Error saving password: ${error.message}`, 'error');
-            }
-        }
-    };
-    
-    // Close modal when clicking overlay
-    modal.onclick = (e) => {
-        if (e.target === modal) {
-            checkbox.checked = false;
-            modal.style.display = 'none';
-            debugLog('Password save modal closed');
-        }
-    };
 }
 
 async function loadSavedPasswordSetting() {
