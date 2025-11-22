@@ -651,6 +651,37 @@ ipcMain.handle('websocket-get-forwarding-status', () => {
     canForward: enableForwarding && wsManager && wsManager.isConnected
   };
 });
+// VRChat account linking
+ipcMain.handle('send-vrchat-link', async (event, vrchatUserId, vrchatUsername) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    
+    debug.info(`Sending VRChat account link request: ${vrchatUsername} (${vrchatUserId})`);
+    const response = await wsManager.sendVRChatLink(vrchatUserId, vrchatUsername);
+    debug.info(`VRChat account linked successfully`);
+    return response;
+  } catch (error) {
+    debug.error(`Failed to link VRChat account: ${error.message}`);
+    throw error;
+  }
+});
+// Check VRChat account link status
+ipcMain.handle('check-vrchat-link', async (event) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    debug.info(`Checking VRChat account link status`);
+    const response = await wsManager.checkVRChatLink();
+    debug.info(`VRChat link status: ${response.linked ? 'linked' : 'not linked'}`);
+    return response;
+  } catch (error) {
+    debug.error(`Failed to check VRChat link status: ${error.message}`);
+    throw error;
+  }
+});
 ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
   try {
     debug.info(`Setting WebSocket forwarding to: ${enabled}`);

@@ -175,6 +175,65 @@ class WebSocketManager {
         this.socket.emit(event, data);
         return { success: true };
     }
+    /**
+     * Send VRChat account linking request to server
+     * @param {string} vrchatUserId - VRChat user ID (usr_xxx format)
+     * @param {string} vrchatUsername - VRChat display name
+     * @returns {Promise} Promise that resolves with server response
+     */
+    sendVRChatLink(vrchatUserId, vrchatUsername) {
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected || !this.socket) {
+                reject(new Error('Not connected to server'));
+                return;
+            }
+            // Set up response listener
+            const responseHandler = (response) => {
+                if (response.success) {
+                    resolve(response);
+                } else {
+                    reject(new Error(response.error || 'Failed to link VRChat account'));
+                }
+            };
+            // Listen for response (one-time listener)
+            this.socket.once('vrchat-link-response', responseHandler);
+            // Send the link request
+            this.socket.emit('link-vrchat-account', {
+                vrchatUserId,
+                vrchatUsername
+            });
+            // Set timeout for response
+            setTimeout(() => {
+                this.socket.off('vrchat-link-response', responseHandler);
+                reject(new Error('Link request timed out'));
+            }, 10000); // 10 second timeout
+        });
+    }
+    /**
+     * Check VRChat account link status
+     * @returns {Promise} Promise that resolves with link status
+     */
+    checkVRChatLink() {
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected || !this.socket) {
+                reject(new Error('Not connected to server'));
+                return;
+            }
+            // Set up response listener
+            const responseHandler = (response) => {
+                resolve(response);
+            };
+            // Listen for response (one-time listener)
+            this.socket.once('vrchat-link-status-response', responseHandler);
+            // Send the status check request
+            this.socket.emit('check-vrchat-link');
+            // Set timeout for response
+            setTimeout(() => {
+                this.socket.off('vrchat-link-status-response', responseHandler);
+                reject(new Error('Link status check timed out'));
+            }, 5000); // 5 second timeout
+        });
+    }
     getStatus() {
         return {
             isConnected: this.isConnected,

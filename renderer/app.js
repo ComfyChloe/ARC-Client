@@ -246,6 +246,7 @@ function setupEventListeners() {
         if (data.status === 'connected') {
             isConnected = true;
             debugLog('Connected to WebSocket server');
+            checkVRChatLinkStatus();
         } else if (data.status === 'disconnected') {
             isConnected = false;
             isAuthenticated = false;
@@ -4323,6 +4324,7 @@ function updateVRChatApiUI() {
         loginCard.style.display = 'none';
         actionsCard.style.display = 'block';
         statsCard.style.display = 'block';
+        checkVRChatLinkStatus();
     } else if (vrchatApiStatus.pending2FA) {
         // 2FA required state - modal handles display
         statusIndicator.className = 'status-indicator status-connecting';
@@ -4544,7 +4546,152 @@ async function vrchatApiLogout() {
         updateVRChatApiConnectionStatus(`Error: ${error.message}`, 'error');
     }
 }
-
+/**
+ * Share VRChat account with ARC - sends user ID and username to ARC server
+ */
+async function shareVRChatWithARC() {
+    try {
+        // Check if authenticated with VRChat
+        if (!vrchatApiStatus.authenticated || !vrchatApiStatus.currentUser) {
+            debugLog('Must be logged into VRChat API first', 'error');
+            alert('Please log into your VRChat account first.');
+            return;
+        }
+        // Check if connected to ARC WebSocket
+        if (!isAuthenticated) {
+            debugLog('Must be connected to ARC WebSocket first', 'error');
+            alert('Please connect to ARC WebSocket first (Main tab).');
+            return;
+        }
+        const vrchatUserId = vrchatApiStatus.currentUser.id;
+        const vrchatUsername = vrchatApiStatus.currentUser.displayName;
+        // Show modal confirmation dialog
+        showVRChatLinkModal(vrchatUsername, vrchatUserId);
+    } catch (error) {
+        debugLog(`Unexpected error in shareVRChatWithARC: ${error.message}`, 'error');
+        alert(`An unexpected error occurred:\n${error.message}`);
+    }
+}
+/**
+ * Show VRChat link confirmation modal
+ */
+function showVRChatLinkModal(username, userId) {
+    const modal = document.getElementById('vrchat-link-modal');
+    document.getElementById('vrchat-link-username').textContent = username;
+    document.getElementById('vrchat-link-userid').textContent = userId;
+    
+    modal.style.display = 'block';
+    // Trigger fade in
+    setTimeout(() => {
+        modal.style.opacity = '1';
+    }, 10);
+}
+/**
+ * Close VRChat link modal
+ */
+function closeVRChatLinkModal() {
+    const modal = document.getElementById('vrchat-link-modal');
+    modal.style.opacity = '0';
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
+    debugLog('VRChat account linking cancelled by user');
+}
+/**
+ * Show VRChat link success modal
+ */
+function showVRChatLinkSuccessModal(vrchatUsername) {
+    const modal = document.getElementById('vrchat-link-success-modal');
+    const usernameElement = document.getElementById('vrchat-link-success-username');
+    usernameElement.textContent = vrchatUsername;
+    modal.style.display = 'block';
+    // Trigger fade in
+    setTimeout(() => {
+        modal.style.opacity = '1';
+    }, 10);
+}
+/**
+ * Close VRChat link success modal
+ */
+function closeVRChatLinkSuccessModal() {
+    const modal = document.getElementById('vrchat-link-success-modal');
+    modal.style.opacity = '0';
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
+}
+/**
+ * Confirm and execute VRChat account linking
+ */
+async function confirmVRChatLink() {
+    const vrchatUserId = vrchatApiStatus.currentUser.id;
+    const vrchatUsername = vrchatApiStatus.currentUser.displayName;
+    // Close modal
+    closeVRChatLinkModal();
+    debugLog('Sending VRChat account link request to ARC...');
+    // Send link request via WebSocket
+    try {
+        const response = await window.electronAPI.sendVRChatLink(vrchatUserId, vrchatUsername);
+        if (response.success) {
+            debugLog(`VRChat account linked successfully: ${vrchatUsername}`);
+            showVRChatLinkSuccessModal(vrchatUsername);
+            // Update UI to show linked state
+            updateVRChatLinkButton(true);
+        } else {
+            debugLog(`Failed to link VRChat account: ${response.error}`, 'error');
+            alert(`Failed to link VRChat account:\n${response.error}`);
+        }
+    } catch (error) {
+        debugLog(`Error linking VRChat account: ${error.message}`, 'error');
+        alert(`Error linking VRChat account:\n${error.message}`);
+    }
+}
+/**
+ * Check if VRChat account is already linked to ARC
+ */
+async function checkVRChatLinkStatus() {
+    try {
+        // Only check if authenticated with both VRChat and ARC WebSocket
+        if (!vrchatApiStatus.authenticated || !isAuthenticated) {
+            updateVRChatLinkButton(false);
+            return;
+        }
+        debugLog('Checking VRChat account link status...');
+        // Request link status from server via WebSocket
+        try {
+            const status = await window.electronAPI.checkVRChatLink();
+            if (status && status.linked) {
+                debugLog(`VRChat account already linked: ${status.vrchatUsername}`);
+                updateVRChatLinkButton(true);
+            } else {
+                updateVRChatLinkButton(false);
+            }
+        } catch (error) {
+            debugLog(`Error checking link status: ${error.message}`, 'error');
+            updateVRChatLinkButton(false);
+        }
+    } catch (error) {
+        debugLog(`Error checking VRChat link status: ${error.message}`, 'error');
+        updateVRChatLinkButton(false);
+    }
+}
+/**
+ * Update the VRChat link button display
+ * @param {boolean} linked - Whether the account is linked
+ */
+function updateVRChatLinkButton(linked) {
+    const linkBtn = document.getElementById('vrchat-link-arc-btn');
+    const linkedBtn = document.getElementById('vrchat-linked-arc-btn');
+    if (linked) {
+        // Show "Account Linked" button (gray, disabled)
+        linkBtn.style.display = 'none';
+        linkedBtn.style.display = 'inline-block';
+    } else {
+        // Show "Link to ARC" button
+        linkBtn.style.display = 'inline-block';
+        linkedBtn.style.display = 'none';
+    }
+}
 /**
  * Refresh VRChat API status
  */
@@ -4553,12 +4700,12 @@ async function refreshVRChatApiStatus() {
         debugLog('Refreshing VRChat API stats...');
         await loadVRChatApiStatus();
         await loadVRChatApiStats();
+        await checkVRChatLinkStatus();
         debugLog('VRChat API stats refreshed');
     } catch (error) {
         debugLog(`Error refreshing VRChat API status: ${error.message}`, 'error');
     }
 }
-
 /**
  * Load VRChat API stats (avatars, friends, etc.)
  */
@@ -4567,20 +4714,15 @@ async function loadVRChatApiStats() {
         if (!vrchatApiStatus.authenticated) {
             return;
         }
-
         debugLog('Loading VRChat API stats...');
         const stats = await window.electronAPI.vrchatApiGetStats();
-
         if (stats.success) {
             // Update avatar count
             document.getElementById('vrchatapi-avatar-count').textContent = stats.uploadedAvatars || '0';
-            
             // Update favorited avatars count
             document.getElementById('vrchatapi-favorite-avatar-count').textContent = stats.favoritedAvatars || '0';
-            
             // Update friends online count
             document.getElementById('vrchatapi-friends-online').textContent = stats.friendsOnline || '0';
-            
             debugLog('VRChat API stats loaded successfully');
         } else {
             debugLog(`Failed to load VRChat API stats: ${stats.error}`, 'error');
@@ -4593,7 +4735,6 @@ async function loadVRChatApiStats() {
         debugLog(`Error loading VRChat API stats: ${error.message}`, 'error');
     }
 }
-
 // Load VRChat API status when the view is shown
 // Wrap the original showVRChatAPIView function
 const originalShowVRChatAPIView = showVRChatAPIView;
@@ -4601,7 +4742,6 @@ window.showVRChatAPIView = function() {
     if (originalShowVRChatAPIView) {
         originalShowVRChatAPIView();
     }
-    
     // Load status and stats after view is shown
     setTimeout(() => {
         loadVRChatApiStatus();

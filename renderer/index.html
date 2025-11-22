@@ -23,6 +23,71 @@
         </div>
     </div>
 
+    <!-- VRChat Link Confirmation Modal -->
+    <div id="vrchat-link-modal" class="modal-fade" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; opacity: 0; transition: opacity 0.3s ease;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 450px; width: 90%;">
+            <h3 style="margin-top: 0; color: #fff;">🌐 Link VRChat Account to ARC</h3>
+            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px; line-height: 1.5;">
+                This will connect your VRChat account to your ARC account, enabling enhanced features and synchronization.
+            </p>
+            <div style="background: #1a1a1a; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #888;">VRChat Username:</span>
+                        <span id="vrchat-link-username" style="color: #fff; font-weight: 500;"></span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #888;">User ID:</span>
+                        <span id="vrchat-link-userid" style="color: #888; font-size: 0.85em; font-family: monospace;"></span>
+                    </div>
+                </div>
+            </div>
+            <div style="background: #1a3a1a; padding: 12px; border-radius: 6px; margin-bottom: 20px; border-left: 3px solid #4CAF50;">
+                <p style="margin: 0; color: #8BC34A; font-size: 13px;">
+                    ✓ VRCMarketplace benefits<br>
+                    ✓ Patreon supporter perks<br>
+                    ✓ Enhanced avatar synchronization
+                </p>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeVRChatLinkModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmVRChatLink()">Link Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VRChat Link Success Modal -->
+    <div id="vrchat-link-success-modal" class="modal-fade" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; opacity: 0; transition: opacity 0.3s ease;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 450px; width: 90%;">
+            <h3 style="margin-top: 0; color: #fff;">✓ Account Linked Successfully!</h3>
+            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px; line-height: 1.5;">
+                Your VRChat account has been successfully linked to your ARC account.
+            </p>
+            <div style="background: #1a1a1a; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #888;">VRChat Account:</span>
+                        <span id="vrchat-link-success-username" style="color: #fff; font-weight: 500;"></span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #888;">Status:</span>
+                        <span style="color: #4CAF50; font-weight: 500;">🟢 Linked</span>
+                    </div>
+                </div>
+            </div>
+            <div style="background: #1a3a1a; padding: 12px; border-radius: 6px; margin-bottom: 20px; border-left: 3px solid #4CAF50;">
+                <p style="margin: 0; color: #8BC34A; font-size: 13px; line-height: 1.6;">
+                    ✓ Your VRChat account is now connected<br>
+                    ✓ Enhanced features are now available<br>
+                    ✓ Visit the ARC dashboard to view your linked account
+                </p>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-primary" onclick="closeVRChatLinkSuccessModal()">OK</button>
+            </div>
+        </div>
+    </div>
+
     <div class="app-container">
         <div class="sidebar">
             <div class="sidebar-section">
@@ -237,6 +302,12 @@
             <div class="card" id="vrchatapi-actions-card" style="display: none;">
                 <h3>Actions</h3>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" id="vrchat-link-arc-btn" onclick="shareVRChatWithARC()" style="display: none;">
+                        Link to ARC
+                    </button>
+                    <button class="btn btn-secondary disabled" id="vrchat-linked-arc-btn" disabled style="display: none;">
+                        ✓ Account Linked
+                    </button>
                     <button class="btn btn-danger" onclick="vrchatApiLogout()">Logout</button>
                     <button class="btn btn-secondary" onclick="refreshVRChatApiStatus()">Refresh Stats</button>
                 </div>

@@ -62,6 +62,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   vrchatApiLogout: () => ipcRenderer.invoke('vrchatapi-logout'),
   vrchatApiRestoreSession: () => ipcRenderer.invoke('vrchatapi-restore-session'),
   vrchatApiGetStats: () => ipcRenderer.invoke('vrchatapi-get-stats'),
+  // VRChat account linking
+  sendVRChatLink: (vrchatUserId, vrchatUsername) => ipcRenderer.invoke('send-vrchat-link', vrchatUserId, vrchatUsername),
+  checkVRChatLink: () => ipcRenderer.invoke('check-vrchat-link'),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
