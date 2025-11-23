@@ -132,12 +132,22 @@
                     <div class="tree-content">
                         <div class="tree-items">
                             <button class="tree-child" id="nav-arcfeedback" onclick="showARCFeedbackView()">ARC Feedback</button>
-                            <button class="tree-child" id="nav-auto-inviter" onclick="showAutoInviterView()">Auto-Inviter</button>
                             <button class="tree-child" id="nav-chatbox" onclick="showChatboxView()">Chatbox</button>
                             <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
                             <button class="tree-child" id="nav-osc-leash" onclick="showOSCLeashView()">OSC Leash</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
-                            <button class="tree-child" id="nav-vrchatapi" onclick="showVRChatAPIView()">VRChat API</button>
+                            <div class="tree-item" style="margin-top: 5px;">
+                                <button class="tree-toggle" id="nav-vrchatapi-toggle" style="width: 100%; display: flex; align-items: center;">
+                                    <span class="arrow">▶</span>
+                                    <span style="margin:0;">VRChat API</span>
+                                </button>
+                                <div class="tree-content">
+                                    <div class="tree-items">
+                                        <button class="tree-child" id="nav-vrchatapi" onclick="showVRChatAPIView()">Account Info</button>
+                                        <button class="tree-child" id="nav-auto-inviter" onclick="showAutoInviterView()">Auto-Inviter</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -59,6 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadTheme();
     setupEventListeners();
     setupExtrasDropdown();
+    setupVRChatApiDropdown();
     
     // Load OSC Query unsubscriptions on app start (visible whether OSC is enabled or not)
     await loadOscQueryUnsubscriptions();
@@ -1317,6 +1318,24 @@ function setupExtrasDropdown() {
         });
     });
     // Keep the tree expanded when clicking inside it
+    treeContent.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+}
+// Nested dropdown for VRChat API (contains Auto-Inviter)
+function setupVRChatApiDropdown() {
+    const treeToggle = document.getElementById('nav-vrchatapi-toggle');
+    if (!treeToggle) return; // Not present yet
+    const treeContent = treeToggle.nextElementSibling;
+    let isExpanded = false;
+    treeToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isExpanded = !isExpanded;
+        treeContent.classList.toggle('expanded');
+        treeToggle.classList.toggle('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) arrow.textContent = isExpanded ? '▼' : '▶';
+    });
     treeContent.addEventListener('click', (e) => {
         e.stopPropagation();
     });
