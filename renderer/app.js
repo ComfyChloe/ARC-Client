@@ -60,6 +60,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     setupExtrasDropdown();
     setupVRChatApiDropdown();
+    // Initialize VRChat API session on startup
+    setTimeout(() => {
+        if (typeof loadVRChatApiStatus === 'function') {
+            loadVRChatApiStatus();
+        }
+    }, 500);
     
     // Load OSC Query unsubscriptions on app start (visible whether OSC is enabled or not)
     await loadOscQueryUnsubscriptions();
