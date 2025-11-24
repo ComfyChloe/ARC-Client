@@ -59,6 +59,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadTheme();
     setupEventListeners();
     setupExtrasDropdown();
+    setupVRChatApiDropdown();
+    // Initialize VRChat API session on startup
+    setTimeout(() => {
+        if (typeof loadVRChatApiStatus === 'function') {
+            loadVRChatApiStatus();
+        }
+    }, 500);
     
     // Load OSC Query unsubscriptions on app start (visible whether OSC is enabled or not)
     await loadOscQueryUnsubscriptions();
@@ -246,6 +253,7 @@ function setupEventListeners() {
         if (data.status === 'connected') {
             isConnected = true;
             debugLog('Connected to WebSocket server');
+            checkVRChatLinkStatus();
         } else if (data.status === 'disconnected') {
             isConnected = false;
             isAuthenticated = false;
@@ -1316,6 +1324,24 @@ function setupExtrasDropdown() {
         });
     });
     // Keep the tree expanded when clicking inside it
+    treeContent.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+}
+// Nested dropdown for VRChat API (contains Auto-Inviter)
+function setupVRChatApiDropdown() {
+    const treeToggle = document.getElementById('nav-vrchatapi-toggle');
+    if (!treeToggle) return; // Not present yet
+    const treeContent = treeToggle.nextElementSibling;
+    let isExpanded = false;
+    treeToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isExpanded = !isExpanded;
+        treeContent.classList.toggle('expanded');
+        treeToggle.classList.toggle('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) arrow.textContent = isExpanded ? '▼' : '▶';
+    });
     treeContent.addEventListener('click', (e) => {
         e.stopPropagation();
     });
@@ -3054,12 +3080,19 @@ async function toggleTheme() {
 // Password saving functionality
 async function handleSavePasswordCheckbox() {
     const checkbox = document.getElementById('save-password-checkbox');
-    const modal = document.getElementById('password-warning-modal');
     
     if (checkbox.checked) {
-        // Show warning modal
-        modal.style.display = 'flex';
-        setupPasswordWarningModal();
+        // Save current password if there is one
+        const password = document.getElementById('password').value;
+        if (password) {
+            try {
+                await window.electronAPI.setSavedPassword(password);
+                debugLog('Password saved to configuration (encrypted)');
+            } catch (error) {
+                debugLog(`Error saving password: ${error.message}`, 'error');
+                checkbox.checked = false;
+            }
+        }
     } else {
         // Unchecking - remove saved password
         try {
@@ -3071,53 +3104,26 @@ async function handleSavePasswordCheckbox() {
     }
 }
 
-function setupPasswordWarningModal() {
-    const modal = document.getElementById('password-warning-modal');
-    const cancelBtn = document.getElementById('password-warning-cancel');
-    const confirmBtn = document.getElementById('password-warning-confirm');
-    const checkbox = document.getElementById('save-password-checkbox');
-    
-    cancelBtn.onclick = () => {
-        checkbox.checked = false;
-        modal.style.display = 'none';
-        debugLog('Password save cancelled by user');
-    };
-    
-    confirmBtn.onclick = async () => {
-        modal.style.display = 'none';
-        debugLog('User confirmed password save warning');
-        // Save current password if there is one
-        const password = document.getElementById('password').value;
-        if (password) {
-            try {
-                await window.electronAPI.setSavedPassword(password);
-                debugLog('Password saved to configuration (encrypted storage would be better, but user confirmed plain text)');
-            } catch (error) {
-                debugLog(`Error saving password: ${error.message}`, 'error');
-            }
-        }
-    };
-    
-    // Close modal when clicking overlay
-    modal.onclick = (e) => {
-        if (e.target === modal) {
-            checkbox.checked = false;
-            modal.style.display = 'none';
-            debugLog('Password save modal closed');
-        }
-    };
-}
-
 async function loadSavedPasswordSetting() {
     try {
         const result = await window.electronAPI.getSavedPassword();
         const checkbox = document.getElementById('save-password-checkbox');
         const passwordInput = document.getElementById('password');
+        const usernameInput = document.getElementById('username');
         
         if (result && result.password) {
             checkbox.checked = true;
             passwordInput.value = result.password;
-            debugLog('Saved password loaded from configuration');
+            debugLog('Saved password loaded from configuration (encrypted)');
+            
+            // Auto-connect if username is also present
+            if (usernameInput && usernameInput.value.trim()) {
+                debugLog('Auto-connecting with saved credentials...');
+                // Delay slightly to ensure UI is ready
+                setTimeout(() => {
+                    authenticate();
+                }, 500);
+            }
         }
     } catch (error) {
         debugLog(`Error loading saved password: ${error.message}`, 'error');
@@ -3154,1101 +3160,125 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 100);
 });
-// HypeRate Integration Functions
-let hyperateStatus = {
-    enabled: false,
-    connected: false,
-    stopping: false,
-    hasApiKey: false
-};
-async function toggleHyperate() {
-    try {
-        const toggleBtn = document.getElementById('hyperate-toggle-btn');
-        toggleBtn.disabled = true;
-        if (hyperateStatus.enabled) {
-            // Stop HypeRate - show stopping status immediately
-            hyperateStatus.stopping = true;
-            updateHyperateUI();
-            const result = await window.electronAPI.hyperateStop();
-            if (result.success) {
-                debugLog('HypeRate stopped');
-                hyperateStatus.stopping = false;
-                updateHyperateUI();
-            } else {
-                debugLog(`Failed to stop HypeRate: ${result.error}`, 'error');
-                // Reset stopping state on failure
-                hyperateStatus.stopping = false;
-                updateHyperateUI();
-            }
-        } else {
-            // Start HypeRate - show connecting status immediately
-            hyperateStatus.enabled = true;
-            hyperateStatus.connected = false;
-            updateHyperateUI();
-            const result = await window.electronAPI.hyperateStart();
-            if (result.success) {
-                debugLog('HypeRate started');
-                updateHyperateUI();
-            } else {
-                debugLog(`Failed to start HypeRate: ${result.error}`, 'error');
-                alert(`Failed to start HypeRate: ${result.error}`);
-                // Reset status on failure
-                hyperateStatus.enabled = false;
-                updateHyperateUI();
-            }
-        }
-    } catch (error) {
-        debugLog(`Error toggling HypeRate: ${error.message}`, 'error');
-    } finally {
-        const toggleBtn = document.getElementById('hyperate-toggle-btn');
-        toggleBtn.disabled = false;
-    }
-}
-// HypeRate auto-start functions
-async function toggleHyperateAutostart() {
-    try {
-        const autostartBtn = document.getElementById('hyperate-autostart-btn');
-        autostartBtn.disabled = true;
-        // Get current autostart status
-        const currentStatus = await window.electronAPI.hyperateGetAutostart();
-        const newEnabled = !currentStatus.enabled;
-        // Update autostart setting
-        const result = await window.electronAPI.hyperateSetAutostart(newEnabled);
-        if (result.success) {
-            debugLog(`HypeRate autostart ${newEnabled ? 'enabled' : 'disabled'}`);
-            updateHyperateAutostartUI(newEnabled);
-        } else {
-            debugLog(`Failed to update HypeRate autostart: ${result.error}`, 'error');
-            alert(`Failed to update autostart setting: ${result.error}`);
-        }
-    } catch (error) {
-        debugLog(`Error toggling HypeRate autostart: ${error.message}`, 'error');
-    } finally {
-        const autostartBtn = document.getElementById('hyperate-autostart-btn');
-        autostartBtn.disabled = false;
-    }
-}
-function updateHyperateAutostartUI(enabled) {
-    const autostartBtn = document.getElementById('hyperate-autostart-btn');
-    if (autostartBtn) {
-        autostartBtn.textContent = `Auto-start: ${enabled ? 'Enabled' : 'Disabled'}`;
-        autostartBtn.className = enabled ? 'btn btn-success' : 'btn btn-secondary';
-    }
-}
-async function refreshHyperateStatus(includeAutostart = false) {
-    try {
-        const status = await window.electronAPI.hyperateGetStatus();
-        hyperateStatus = { ...status, stopping: false }; // Ensure stopping is reset from server status
-        updateHyperateUI();
-        // Only refresh auto-start status when explicitly requested (not during periodic updates)
-        if (includeAutostart) {
-            const autostartStatus = await window.electronAPI.hyperateGetAutostart();
-            updateHyperateAutostartUI(autostartStatus.enabled);
-        }
-        // Always refresh trackers list to show correct active/inactive states
-        await refreshHyperateTrackers();
-    } catch (error) {
-        debugLog(`Error refreshing HypeRate status: ${error.message}`, 'error');
-    }
-}
-async function addHyperateTracker() {
-    try {
-        const deviceIdInput = document.getElementById('device-id-input');
-        const deviceNameInput = document.getElementById('device-name-input');
-        const deviceId = deviceIdInput.value.trim();
-        const deviceName = deviceNameInput ? deviceNameInput.value.trim() : null;
-        if (!deviceId) {
-            alert('Please enter a device ID');
-            return;
-        }
-        const result = await window.electronAPI.hyperateAddTracker(deviceId, deviceName || null);
-        if (result.success) {
-            debugLog(`Added HypeRate tracker: ${deviceId}${deviceName ? ` (${deviceName})` : ''}`);
-            deviceIdInput.value = '';
-            if (deviceNameInput) deviceNameInput.value = '';
-            await refreshHyperateTrackers();
-        } else {
-            debugLog(`Failed to add HypeRate tracker: ${result.error}`, 'error');
-            alert(`Failed to add tracker: ${result.error}`);
-        }
-    } catch (error) {
-        debugLog(`Error adding HypeRate tracker: ${error.message}`, 'error');
-    }
-}
-async function removeHyperateTracker(deviceId) {
-    try {
-        const result = await window.electronAPI.hyperateRemoveTracker(deviceId);
-        if (result.success) {
-            debugLog(`Removed HypeRate tracker: ${deviceId}`);
-            await refreshHyperateTrackers();
-        } else {
-            debugLog(`Failed to remove HypeRate tracker: ${result.error}`, 'error');
-        }
-    } catch (error) {
-        debugLog(`Error removing HypeRate tracker: ${error.message}`, 'error');
-    }
-}
-async function setPrimaryHyperateTracker(deviceId) {
-    try {
-        const result = await window.electronAPI.hyperateSetPrimary(deviceId);
-        if (result.success) {
-            debugLog(`Set primary HypeRate tracker: ${deviceId}`);
-            await refreshHyperateTrackers();
-        } else {
-            debugLog(`Failed to set primary HypeRate tracker: ${result.error}`, 'error');
-        }
-    } catch (error) {
-        debugLog(`Error setting primary HypeRate tracker: ${error.message}`, 'error');
-    }
-}
-async function refreshHyperateTrackers() {
-    try {
-        const trackers = await window.electronAPI.hyperateGetTrackers();
-        const trackersList = document.getElementById('hyperate-trackers-list');
-        if (trackers.length === 0) {
-            trackersList.innerHTML = '<p style="color: #666; text-align: center; padding: 10px;">No trackers added yet</p>';
-            const primaryInfo = document.getElementById('primary-tracker-info');
-            if (primaryInfo) {
-                primaryInfo.textContent = 'No primary tracker set';
-            }
-            return;
-        }
-        let trackersHtml = '';
-        let primaryTracker = null;
-        trackers.forEach(tracker => {
-            const lastUpdate = tracker.lastUpdate ? new Date(tracker.lastUpdate).toLocaleTimeString() : 'Never';
-            const heartRate = tracker.lastHeartRate || '--';
-            const isPrimary = tracker.isPrimary;
-            const displayName = tracker.name || tracker.deviceId;
-            const status = tracker.isActive ? 'Active' : 'Inactive';
-            const statusColor = tracker.isActive ? '#2ecc71' : '#95a5a6';
-            if (isPrimary) {
-                primaryTracker = tracker;
-                updateHeartRateDisplay(tracker.lastHeartRate);
-            }
-            const primaryBadge = isPrimary ? '<span style="background: #2ecc71; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">PRIMARY</span>' : '';
-            const primaryAction = isPrimary ? '' : `<button class="btn btn-secondary btn-small" onclick="setPrimaryHyperateTracker('${tracker.deviceId}')" style="margin-right: 5px;">Set Primary</button>`;
-            trackersHtml += `
-                <div class="tracker-item" style="border: 1px solid ${isPrimary ? '#2ecc71' : '#ddd'}; border-radius: 4px; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; background: ${isPrimary ? '#f8fff8' : 'white'};">
-                    <div>
-                        <strong>${displayName}</strong>${primaryBadge}<br>
-                        <small style="color: #666;">ID: ${tracker.deviceId}</small><br>
-                        <small>Status: <span style="color: ${statusColor};">${status}</span> | HR: ${heartRate} BPM | Last Update: ${lastUpdate}</small>
-                    </div>
-                    <div>
-                        <button class="btn btn-secondary btn-small" onclick="editTrackerName('${tracker.deviceId}', '${tracker.name || ''}')" style="margin-right: 5px;">Edit</button>
-                        ${primaryAction}
-                        <button class="btn btn-danger btn-small" onclick="removeHyperateTracker('${tracker.deviceId}')">Remove</button>
-                    </div>
-                </div>
-            `;
-        });
-        trackersList.innerHTML = trackersHtml;
-        const primaryInfo = document.getElementById('primary-tracker-info');
-        if (primaryInfo) {
-            if (primaryTracker) {
-                const displayName = primaryTracker.name || primaryTracker.deviceId;
-                primaryInfo.textContent = `Primary: ${displayName}`;
-            } else {
-                primaryInfo.textContent = 'No primary tracker set';
-            }
-        }
-    } catch (error) {
-        debugLog(`Error refreshing HypeRate trackers: ${error.message}`, 'error');
-    }
-}
-function updateHyperateUI() {
-    const statusIndicator = document.getElementById('hyperate-status');
-    const statusText = document.getElementById('hyperate-status-text');
-    const toggleBtn = document.getElementById('hyperate-toggle-btn');
-    if (!hyperateStatus.hasApiKey) {
-        statusIndicator.className = 'status-indicator status-error';
-        statusText.textContent = 'No API Key - Check secrets.json';
-        toggleBtn.textContent = 'Missing API Key';
-        toggleBtn.disabled = true;
-        return;
-    }
-    if (hyperateStatus.enabled && hyperateStatus.connected) {
-        statusIndicator.className = 'status-indicator status-connected';
-        statusText.textContent = 'Connected and Active';
-        toggleBtn.textContent = 'Stop HypeRate';
-        toggleBtn.disabled = false;
-    } else if (hyperateStatus.stopping) {
-        statusIndicator.className = 'status-indicator status-stopping';
-        statusText.textContent = 'Stopping...';
-        toggleBtn.textContent = 'Stopping...';
-        toggleBtn.disabled = true;
-    } else if (hyperateStatus.enabled) {
-        statusIndicator.className = 'status-indicator status-connecting';
-        statusText.textContent = 'Connecting...';
-        toggleBtn.textContent = 'Stop HypeRate';
-        toggleBtn.disabled = false;
-    } else {
-        statusIndicator.className = 'status-indicator status-disconnected';
-        statusText.textContent = 'Stopped';
-        toggleBtn.textContent = 'Start HypeRate';
-        toggleBtn.disabled = false;
-    }
-    // Update current heart rate from status
-    if (hyperateStatus.enabled && hyperateStatus.lastHeartRate) {
-        updateHeartRateDisplay(hyperateStatus.lastHeartRate);
-    } else if (!hyperateStatus.enabled) {
-        updateHeartRateDisplay(null);
-    }
-}
-// Auto-refresh HypeRate status when viewing the HypeRate page
-let hyperateStatusInterval = null;
-function startHyperateStatusUpdates() {
-    if (hyperateStatusInterval) {
-        clearInterval(hyperateStatusInterval);
-    }
-    hyperateStatusInterval = setInterval(async () => {
-        if (document.getElementById('Hyperate-view').style.display !== 'none') {
-            await refreshHyperateStatus();
-            // Periodic cleanup during HypeRate updates
-            if (Math.random() < 0.1) { // 10% chance per update
-                clearFloatRateLimitingData();
-            }
-        }
-    }, 2000); // Update every 2 seconds
-}
-function stopHyperateStatusUpdates() {
-    if (hyperateStatusInterval) {
-        clearInterval(hyperateStatusInterval);
-        hyperateStatusInterval = null;
-    }
-}
-// Update heart rate display
-function updateHeartRateDisplay(heartRate) {
-    const heartRateElement = document.getElementById('current-heartrate');
-    if (heartRateElement) {
-        heartRateElement.textContent = heartRate || '--';
-        // Add a pulse animation for valid heart rates
-        if (heartRate && heartRate > 0) {
-            heartRateElement.style.animation = 'none';
-            setTimeout(() => {
-                heartRateElement.style.animation = 'pulse 1s ease-in-out';
-            }, 10);
-        }
-    }
-}
-// Listen for heart rate updates from main process
-window.electronAPI.onHyperateUpdate?.((data) => {
-    if (data.heartRate) {
-        updateHeartRateDisplay(data.heartRate);
-        hyperateStatus.lastHeartRate = data.heartRate;
-    }
-});
 
-// Listen for OSCLeash movement data updates from main process
-window.electronAPI.onOSCLeashMovement?.((data) => {
-    // Only update displays if OSCLeash view is visible
-    if (document.getElementById('osc-leash-view').style.display !== 'none') {
-        // Update movement display with real-time data
-        updateMovementDisplay(data.vertical, data.horizontal, data.run);
-        
-        // Update physbone inputs display with real-time data
-        updatePhysboneInputsDisplay(data.physboneData);
-    }
-});
-// Enhanced showHyperateView function to include auto-refresh
+// =============================================
+// HypeRate Integration - See Hyperate-UI.js
+// =============================================
+// All HypeRate UI functions have been moved to Hyperate-UI.js
+// Functions include: toggleHyperate(), refreshHyperateStatus(), addHyperateTracker(),
+// removeHyperateTracker(), setPrimaryHyperateTracker(), refreshHyperateTrackers(), 
+// updateHyperateUI(), and tracker edit modal functions
+// Access via: window.HyperateUI.functionName()
+
+// Enhanced showHyperateView to include auto-refresh functionality
 const originalShowHyperateView = showHyperateView;
 showHyperateView = function() {
     try {
         // Stop any existing status updates first
-        stopHyperateStatusUpdates();
+        if (window.HyperateUI && typeof window.HyperateUI.stopStatusUpdates === 'function') {
+            window.HyperateUI.stopStatusUpdates();
+        }
         
         // Call the original function
         originalShowHyperateView.call(this);
         
-        // Use a longer delay to ensure the view transition is complete
+        // Refresh HypeRate status after view loads
         setTimeout(async () => {
             try {
-                await refreshHyperateStatus();
-                await refreshHyperateTrackers();
-                startHyperateStatusUpdates();
+                if (window.HyperateUI) {
+                    await window.HyperateUI.refreshHyperateStatus();
+                    await window.HyperateUI.refreshHyperateTrackers();
+                    if (typeof window.HyperateUI.startStatusUpdates === 'function') {
+                        window.HyperateUI.startStatusUpdates();
+                    }
+                }
             } catch (error) {
                 debugLog(`Error refreshing HypeRate view: ${error.message}`, 'error');
             }
         }, 800);
     } catch (error) {
         debugLog(`Error in showHyperateView: ${error.message}`, 'error');
-        // Fallback to original function
-        try {
-            originalShowHyperateView.call(this);
-        } catch (fallbackError) {
-            debugLog(`Fallback error in showHyperateView: ${fallbackError.message}`, 'error');
-        }
+        originalShowHyperateView.call(this);
     }
 };
-// Stop updates when leaving HypeRate view
-const originalShowMainView = showMainView;
-const originalShowOscView = showOscView;
-const originalShowLogsView = showLogsView;
-const originalShowSettingsView = showSettingsView;
-const originalShowVOSKView = showVOSKView;
-showMainView = function() {
-    stopHyperateStatusUpdates();
-    originalShowMainView.call(this);
-};
-showOscView = function() {
-    stopHyperateStatusUpdates();
-    originalShowOscView.call(this);
-};
-showLogsView = function() {
-    stopHyperateStatusUpdates();
-    originalShowLogsView.call(this);
-};
-showSettingsView = function() {
-    stopHyperateStatusUpdates();
-    originalShowSettingsView.call(this);
-};
-showVOSKView = function() {
-    stopHyperateStatusUpdates();
-    originalShowVOSKView.call(this);
-};
-// Tracker edit modal functionality
-let currentEditingTrackerId = null;
-function openTrackerEditModal(deviceId, currentName) {
-    currentEditingTrackerId = deviceId;
-    const modal = document.getElementById('tracker-edit-modal');
-    const nameInput = document.getElementById('edit-tracker-name');
-    const idInput = document.getElementById('edit-tracker-id');
-    // Populate the form
-    nameInput.value = currentName || '';
-    idInput.value = deviceId;
-    modal.style.display = 'flex';
-    nameInput.focus();
-    // Setup event handlers
-    setupTrackerEditModalHandlers();
-}
-function setupTrackerEditModalHandlers() {
-    const modal = document.getElementById('tracker-edit-modal');
-    const cancelBtn = document.getElementById('tracker-edit-cancel');
-    const saveBtn = document.getElementById('tracker-edit-save');
-    // Remove existing handlers
-    cancelBtn.onclick = null;
-    saveBtn.onclick = null;
-    modal.onclick = null;
-    cancelBtn.onclick = () => {
-        modal.style.display = 'none';
-        currentEditingTrackerId = null;
-    };
-    saveBtn.onclick = async () => {
-        const nameInput = document.getElementById('edit-tracker-name');
-        if (!currentEditingTrackerId) return;
-        try {
-            // Update name
-            const newName = nameInput.value.trim() || null;
-            const nameResult = await window.electronAPI.hyperateUpdateTrackerName(currentEditingTrackerId, newName);
-            if (nameResult.success) {
-                debugLog(`Updated tracker ${currentEditingTrackerId}: name="${newName || 'default'}"`);
-                await refreshHyperateTrackers();
-                modal.style.display = 'none';
-                currentEditingTrackerId = null;
-            } else {
-                const error = nameResult.error || 'Unknown error';
-                alert(`Failed to update tracker: ${error}`);
+
+// Listen for heart rate updates from main process
+window.electronAPI.onHyperateUpdate?.((data) => {
+    if (data.heartRate && window.HyperateUI && typeof window.HyperateUI.updateHeartRateDisplay === 'function') {
+        window.HyperateUI.updateHeartRateDisplay(data.heartRate);
+    }
+});
+
+// =============================================
+// OSCLeash Integration - See OSCLeash-UI.js
+// =============================================
+// All OSCLeash UI functions have been moved to OSCLeash-UI.js
+// Functions include: toggleOSCLeash(), refreshOSCLeashStatus(), updateLeashesDisplay(),
+// loadOSCLeashConfig(), saveOSCLeashConfig(), resetOSCLeashConfig(), showConfigTab()
+// Access via: window.OSCLeashUI.functionName()
+
+// Listen for OSCLeash movement data updates from main process
+window.electronAPI.onOSCLeashMovement?.((data) => {
+    // Only update displays if OSCLeash view is visible
+    if (document.getElementById('osc-leash-view').style.display !== 'none') {
+        if (window.OSCLeashUI) {
+            // Update movement display with real-time data
+            if (typeof window.OSCLeashUI.updateMovementDisplay === 'function') {
+                window.OSCLeashUI.updateMovementDisplay(data.vertical, data.horizontal, data.run);
             }
-        } catch (error) {
-            debugLog(`Error updating tracker: ${error.message}`, 'error');
-            alert(`Error updating tracker: ${error.message}`);
-        }
-    };
-    // Close modal when clicking overlay
-    modal.onclick = (e) => {
-        if (e.target === modal) {
-            modal.style.display = 'none';
-            currentEditingTrackerId = null;
-        }
-    };
-    // Handle Enter key in name input
-    const nameInput = document.getElementById('edit-tracker-name');
-    nameInput.onkeydown = (e) => {
-        if (e.key === 'Enter') {
-            saveBtn.click();
-        }
-    };
-}
-async function editTrackerName(deviceId, currentName) {
-    openTrackerEditModal(deviceId, currentName);
-}
-
-// =============================================
-// OSC LEASH FUNCTIONS
-// =============================================
-
-// OSC Leash status tracking
-let oscLeashStatus = {
-    enabled: false,
-    leashCount: 0,
-    activeLeashes: []
-};
-
-// Real-time movement data
-let movementData = {
-    vertical: 0,
-    horizontal: 0,
-    run: 0,
-
-};
-
-// Physbone input data
-let physboneInputs = {
-    stretch: 0,
-    grabbed: false,
-    zPos: 0,
-    zNeg: 0,
-    xPos: 0,
-    xNeg: 0,
-    yPos: 0,
-    yNeg: 0
-};
-
-function showOSCLeashView() {
-    debugLog('showOSCLeashView called');
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
-    
-    views.forEach(view => {
-        if (view) view.style.opacity = '0';
-    });
-    
-    setTimeout(() => {
-        views.forEach(view => {
-            if (view) view.style.display = 'none';
-        });
-        
-        const oscLeashView = document.getElementById('osc-leash-view');
-        if (oscLeashView) {
-            oscLeashView.style.display = 'block';
-            oscLeashView.style.opacity = '0';
-            requestAnimationFrame(() => {
-                oscLeashView.style.opacity = '1';
-            });
             
-            // Automatically load the current configuration when opening OSCLeash view
-            loadOSCLeashConfig();
-        } else {
-            debugLog('Error: OSC Leash view element not found!', 'error');
-        }
-    }, 300);
-
-    // Reset ALL main navigation buttons explicitly
-    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
-    allMainNavButtons.forEach(navId => {
-        const navElement = document.getElementById(navId);
-        if (navElement) {
-            navElement.classList.remove('active');
-            navElement.disabled = false;
-        }
-    });
-
-    // Reset all tree-child buttons and set OSC Leash as active
-    const treeChildren = document.querySelectorAll('.tree-child');
-    treeChildren.forEach(child => {
-        child.classList.remove('active');
-        child.disabled = false;
-    });
-
-    const navOSCLeash = document.getElementById('nav-osc-leash');
-    if (navOSCLeash) {
-        navOSCLeash.classList.add('active');
-        navOSCLeash.disabled = true;
-    }
-
-    // Ensure extras dropdown is expanded
-    const treeToggle = document.getElementById('nav-extras');
-    const treeContent = treeToggle?.nextElementSibling;
-    if (treeToggle && treeContent) {
-        treeContent.classList.add('expanded');
-        treeToggle.classList.add('expanded');
-        const arrow = treeToggle.querySelector('.arrow');
-        if (arrow) {
-            arrow.textContent = '▼';
-        }
-    }
-
-    // Initialize OSC Leash status
-    refreshOSCLeashStatus(true);
-    debugLog('Switched to OSC Leash view');
-}
-
-async function toggleOSCLeash() {
-    try {
-        const toggleBtn = document.getElementById('oscleash-toggle-btn');
-        toggleBtn.disabled = true;
-
-        if (oscLeashStatus.enabled) {
-            // Stop OSC Leash
-            const result = await window.electronAPI.oscleashStop();
-            if (result.success) {
-                debugLog('OSC Leash stopped');
-                oscLeashStatus.enabled = false;
-                updateOSCLeashUI();
-                clearMovementData();
-                clearPhysboneInputs();
-            } else {
-                debugLog(`Failed to stop OSC Leash: ${result.error}`, 'error');
-                alert(`Failed to stop OSC Leash: ${result.error}`);
-            }
-        } else {
-            // Start OSC Leash
-            const result = await window.electronAPI.oscleashStart();
-            if (result.success) {
-                debugLog('OSC Leash started');
-                oscLeashStatus.enabled = true;
-                updateOSCLeashUI();
-                await refreshOSCLeashStatus();
-            } else {
-                debugLog(`Failed to start OSC Leash: ${result.error}`, 'error');
-                alert(`Failed to start OSC Leash: ${result.error}`);
+            // Update physbone inputs display with real-time data
+            if (typeof window.OSCLeashUI.updatePhysboneInputsDisplay === 'function') {
+                window.OSCLeashUI.updatePhysboneInputsDisplay(data.physboneData);
             }
         }
-    } catch (error) {
-        debugLog(`Error toggling OSC Leash: ${error.message}`, 'error');
-    } finally {
-        const toggleBtn = document.getElementById('oscleash-toggle-btn');
-        toggleBtn.disabled = false;
     }
-}
+});
 
-async function refreshOSCLeashStatus(includeConfig = false) {
-    try {
-        const status = await window.electronAPI.oscleashGetStatus();
-        oscLeashStatus = status;
-        updateOSCLeashUI();
-        updateLeashesDisplay();
-        // Update movement displays with real OSC data
-        if (status.enabled && status.activeLeashes.length > 0) {
-            // Update movement display with real calculated movement
-            updateMovementDisplay(
-                status.movementData.vertical,
-                status.movementData.horizontal,
-                status.movementData.run
-            );
-            // Update physbone inputs display with real leash data
-            const activeLeash = status.activeLeashes[0]; // Use first active leash
-            updatePhysboneInputsDisplay({
-                stretch: activeLeash.stretch,
-                grabbed: activeLeash.grabbed,
-                zPos: activeLeash.zPos,
-                zNeg: activeLeash.zNeg,
-                xPos: activeLeash.xPos,
-                xNeg: activeLeash.xNeg,
-                yPos: activeLeash.yPos,
-                yNeg: activeLeash.yNeg
-            });
-        } else {
-            // Clear displays when no active leashes
-            clearMovementData();
-            clearPhysboneInputs();
-        }
-
-        if (includeConfig) {
-            await refreshOSCLeashConfig();
-        }
-    } catch (error) {
-        debugLog(`Error refreshing OSC Leash status: ${error.message}`, 'error');
-    }
-}
-
-async function refreshOSCLeashConfig() {
-    try {
-        const config = await window.electronAPI.oscleashGetConfig();
-        updateConfigDisplay(config);
-    } catch (error) {
-        debugLog(`Error refreshing OSC Leash config: ${error.message}`, 'error');
-    }
-}
-
-function updateOSCLeashUI() {
-    const statusIndicator = document.getElementById('oscleash-status');
-    const statusText = document.getElementById('oscleash-status-text');
-    const toggleBtn = document.getElementById('oscleash-toggle-btn');
-
-    if (oscLeashStatus.enabled) {
-        statusIndicator.className = 'status-indicator status-connected';
-        statusText.textContent = 'Enabled and Active';
-        toggleBtn.textContent = 'Disable OSC Leash';
-        toggleBtn.className = 'btn btn-danger';
-    } else {
-        statusIndicator.className = 'status-indicator status-disconnected';
-        statusText.textContent = 'Disabled';
-        toggleBtn.textContent = 'Enable OSC Leash';
-        toggleBtn.className = 'btn btn-primary';
-    }
-}
-
-function updateLeashesDisplay() {
-    const container = document.getElementById('oscleash-leashes-container');
-    
-    if (!oscLeashStatus.enabled) {
-        container.innerHTML = '<div class="leash-disabled-message">OSC Leash is disabled. Enable it to see leash status.</div>';
-        return;
-    }
-
-    // Use discoveredLeashes if available, fallback to activeLeashes for compatibility
-    const leashesToDisplay = oscLeashStatus.discoveredLeashes || oscLeashStatus.activeLeashes || [];
-    if (leashesToDisplay.length === 0) {
-        container.innerHTML = `
-            <div class="leash-empty-message">
-                <div class="empty-primary">OSC Leash is enabled but no leashes have been detected yet.</div>
-                <div class="empty-secondary">Grab a leash in VRChat to detect and see it appear here.</div>
-            </div>
-        `;
-        return;
-    }
-
-    let leashesHtml = '';
-    leashesToDisplay.forEach(leash => {
-        const stretchPercent = (leash.stretch * 100).toFixed(1);
-        const stretchColor = leash.stretch > 0.7 ? '#e74c3c' : leash.stretch > 0.15 ? '#f39c12' : '#2ecc71';
-        
-        leashesHtml += `
-            <div class="leash-item ${leash.grabbed ? 'grabbed' : 'released'}">
-                <div class="leash-item-content">
-                    <div class="leash-info">
-                        <strong class="leash-name">${leash.name}</strong>
-                        <span class="leash-status ${leash.grabbed ? 'grabbed' : 'released'}">
-                            ${leash.grabbed ? 'GRABBED' : 'RELEASED'}
-                        </span>
-                    </div>
-                    <div class="leash-metrics">
-                        <div class="stretch-value" style="color: ${stretchColor};">
-                            ${stretchPercent}% stretch
-                        </div>
-                        <div class="stretch-thresholds">
-                            Walk: ${(0.15 * 100).toFixed(0)}% | Run: ${(0.7 * 100).toFixed(0)}%
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-
-    container.innerHTML = leashesHtml;
-}
-
-function updateConfigDisplay(config) {
-    const display = document.getElementById('oscleash-config-display');
-    
-    if (!config) {
-        display.textContent = 'Configuration not available';
-        return;
-    }
-
-    const configText = `
-Run Deadzone: ${(config.RunDeadzone * 100).toFixed(0)}%
-Walk Deadzone: ${(config.WalkDeadzone * 100).toFixed(0)}%
-Strength Multiplier: ${config.StrengthMultiplier}
-Up/Down Compensation: ${config.UpDownCompensation}
-Up/Down Deadzone: ${(config.UpDownDeadzone * 100).toFixed(0)}%
-
-Active Delay: ${config.ActiveDelay}ms
-Inactive Delay: ${config.InactiveDelay}ms
-Physbone Parameters: ${config.PhysboneParameters.join(', ')}
-    `.trim();
-
-    display.textContent = configText;
-}
-
-function updateMovementDisplay(vertical, horizontal, run) {
-    movementData = { vertical, horizontal, run };
-
-    const verticalEl = document.getElementById('movement-vertical');
-    const horizontalEl = document.getElementById('movement-horizontal');
-    const runEl = document.getElementById('movement-run');
-
-
-    if (verticalEl) {
-        verticalEl.textContent = vertical.toFixed(2);
-        verticalEl.style.color = Math.abs(vertical) > 0.1 ? '#2ecc71' : '#bdc3c7';
-    }
-
-    if (horizontalEl) {
-        horizontalEl.textContent = horizontal.toFixed(2);
-        horizontalEl.style.color = Math.abs(horizontal) > 0.1 ? '#e74c3c' : '#bdc3c7';
-    }
-
-    if (runEl) {
-        if (run === 1) {
-            runEl.innerHTML = '<span style="color: #e74c3c;">RUNNING</span>';
-        } else if (Math.abs(vertical) > 0.1 || Math.abs(horizontal) > 0.1) {
-            runEl.innerHTML = '<span style="color: #f39c12;">WALKING</span>';
-        } else {
-            runEl.innerHTML = '<span style="color: #95a5a6;">IDLE</span>';
-        }
-    }
-
-
-}
-
-function updatePhysboneInputsDisplay(inputs) {
-    physboneInputs = { ...physboneInputs, ...inputs };
-
-    const container = document.getElementById('physbone-inputs');
-    if (!container) return;
-
-    const formatValue = (val) => val.toFixed(3).padStart(6, ' ');
-    const getColor = (val) => Math.abs(val) > 0.1 ? '#2ecc71' : '#666';
-
-    const html = `
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-    <div>
-        <div style="color: #3498db; font-weight: bold; margin-bottom: 5px;">LEASH STATE</div>
-        <div>Stretch: <span style="color: ${getColor(physboneInputs.stretch)};">${formatValue(physboneInputs.stretch)}</span></div>
-        <div>Grabbed: <span style="color: ${physboneInputs.grabbed ? '#2ecc71' : '#e74c3c'};">${physboneInputs.grabbed ? 'TRUE ' : 'FALSE'}</span></div>
-    </div>
-    <div>
-        <div style="color: #e74c3c; font-weight: bold; margin-bottom: 5px;">DIRECTIONAL FORCES</div>
-        <div>Z+ (Fwd): <span style="color: ${getColor(physboneInputs.zPos)};">${formatValue(physboneInputs.zPos)}</span></div>
-        <div>Z- (Back): <span style="color: ${getColor(physboneInputs.zNeg)};">${formatValue(physboneInputs.zNeg)}</span></div>
-        <div>X+ (Right): <span style="color: ${getColor(physboneInputs.xPos)};">${formatValue(physboneInputs.xPos)}</span></div>
-        <div>X- (Left): <span style="color: ${getColor(physboneInputs.xNeg)};">${formatValue(physboneInputs.xNeg)}</span></div>
-        <div>Y+ (Up): <span style="color: ${getColor(physboneInputs.yPos)};">${formatValue(physboneInputs.yPos)}</span></div>
-        <div>Y- (Down): <span style="color: ${getColor(physboneInputs.yNeg)};">${formatValue(physboneInputs.yNeg)}</span></div>
-    </div>
-</div>
-    `;
-
-    container.innerHTML = html;
-}
-function clearMovementData() {
-    updateMovementDisplay(0, 0, 0);
-}
-function clearPhysboneInputs() {
-    const container = document.getElementById('physbone-inputs');
-    if (container) {
-        container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">No physbone data available</div>';
-    }
-}
-// Auto-refresh OSC Leash status when viewing the OSC Leash page
-let oscLeashStatusInterval = null;
-function startOSCLeashStatusUpdates() {
-    if (oscLeashStatusInterval) {
-        clearInterval(oscLeashStatusInterval);
-    }
-    oscLeashStatusInterval = setInterval(async () => {
-        if (document.getElementById('osc-leash-view').style.display !== 'none') {
-            await refreshOSCLeashStatus();
-        }
-    }, 400); // Update every 400ms for responsive movement display
-}
-function stopOSCLeashStatusUpdates() {
-    if (oscLeashStatusInterval) {
-        clearInterval(oscLeashStatusInterval);
-        oscLeashStatusInterval = null;
-    }
-}
-// Start status updates when OSC Leash view is shown
+// Enhanced showOSCLeashView to load configuration
 const originalShowOSCLeashView = showOSCLeashView;
 showOSCLeashView = function() {
-    originalShowOSCLeashView();
-    startOSCLeashStatusUpdates();
+    try {
+        originalShowOSCLeashView.call(this);
+        setTimeout(async () => {
+            try {
+                if (window.OSCLeashUI) {
+                    await window.OSCLeashUI.refreshOSCLeashStatus();
+                    await window.OSCLeashUI.loadOSCLeashConfig();
+                }
+            } catch (error) {
+                debugLog(`Error refreshing OSCLeash view: ${error.message}`, 'error');
+            }
+        }, 100);
+    } catch (error) {
+        debugLog(`Error in showOSCLeashView: ${error.message}`, 'error');
+        originalShowOSCLeashView.call(this);
+    }
 };
+
 // =============================================
-// OSC LEASH CONFIGURATION FUNCTIONS
+// VRChat API Integration - See VRC-API-UI.js
 // =============================================
-let currentOSCLeashConfig = null;
-// Tab switching for configuration
-function showConfigTab(tabName) {
-    // Remove active class from all tabs
-    document.querySelectorAll('.tab').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    // Hide all config content
-    document.querySelectorAll('.config-tab-content').forEach(content => {
-        content.style.display = 'none';
-    });
-    // Show selected tab and content
-    document.getElementById(`config-tab-${tabName}`).classList.add('active');
-    document.getElementById(`config-content-${tabName}`).style.display = 'block';
-}
-// Load current configuration from backend
-async function loadOSCLeashConfig() {
+// All VRChat API UI functions have been moved to VRC-API-UI.js
+// Functions include: loadVRChatApiStatus(), vrchatApiLogin(), vrchatApiVerify2FA(),
+// vrchatApiLogout(), shareVRChatWithARC(), confirmVRChatLink(), and modal functions
+// Access via: window.VRChatAPIUI.functionName()
+
+// Wrap showVRChatAPIView to load status and stats
+const originalShowVRChatAPIView = showVRChatAPIView;
+window.showVRChatAPIView = function() {
     try {
-        const config = await window.electronAPI.oscleashGetConfig();
-        if (config) {
-            currentOSCLeashConfig = config;
-            populateConfigForm(config);
-            updateConfigDisplay(config);
-            debugLog('OSC Leash configuration loaded');
-        } else {
-            debugLog('No OSC Leash configuration available', 'warning');
-        }
-    } catch (error) {
-        debugLog(`Error loading OSC Leash config: ${error.message}`, 'error');
-        alert('Failed to load configuration. Please try again.');
-    }
-}
-// Populate form fields with config values
-function populateConfigForm(config) {
-    // Movement settings
-    document.getElementById('config-run-deadzone').value = (config.RunDeadzone * 100);
-    document.getElementById('config-walk-deadzone').value = (config.WalkDeadzone * 100);
-    document.getElementById('config-strength-multiplier').value = config.StrengthMultiplier;
-    document.getElementById('config-updown-compensation').value = config.UpDownCompensation;
-    document.getElementById('config-updown-deadzone').value = (config.UpDownDeadzone * 100);
-    // Timing settings
-    document.getElementById('config-active-delay').value = config.ActiveDelay;
-    document.getElementById('config-inactive-delay').value = config.InactiveDelay;
-    document.getElementById('config-logging').checked = config.Logging;
-    // Advanced settings (physbone parameters)
-    document.getElementById('config-physbone-params').value = config.PhysboneParameters.join(', ');
-    document.getElementById('config-z-positive').value = config.DirectionalParameters.Z_Positive_Param;
-    document.getElementById('config-z-negative').value = config.DirectionalParameters.Z_Negative_Param;
-    document.getElementById('config-x-positive').value = config.DirectionalParameters.X_Positive_Param;
-    document.getElementById('config-x-negative').value = config.DirectionalParameters.X_Negative_Param;
-    document.getElementById('config-y-positive').value = config.DirectionalParameters.Y_Positive_Param;
-    document.getElementById('config-y-negative').value = config.DirectionalParameters.Y_Negative_Param;
-    // Update all slider displays
-    updateSliderDisplays();
-
-}
-// Update slider value displays
-function updateSliderDisplays() {
-    const sliders = [
-        { id: 'config-run-deadzone', suffix: '%' },
-        { id: 'config-walk-deadzone', suffix: '%' },
-        { id: 'config-strength-multiplier', suffix: '' },
-        { id: 'config-updown-compensation', suffix: '' },
-        { id: 'config-updown-deadzone', suffix: '%' },
-        { id: 'config-active-delay', suffix: 'ms' },
-        { id: 'config-inactive-delay', suffix: 'ms' },
-
-    ];
-
-    sliders.forEach(slider => {
-        const element = document.getElementById(slider.id);
-        const display = document.getElementById(slider.id + '-value');
-        if (element && display) {
-            element.addEventListener('input', () => {
-                display.textContent = element.value + slider.suffix;
-            });
-            // Trigger initial update
-            display.textContent = element.value + slider.suffix;
-        }
-    });
-}
-
-
-
-
-// Collect configuration from form
-function collectConfigFromForm() {
-    return {
-        RunDeadzone: parseFloat(document.getElementById('config-run-deadzone').value) / 100,
-        WalkDeadzone: parseFloat(document.getElementById('config-walk-deadzone').value) / 100,
-        StrengthMultiplier: parseFloat(document.getElementById('config-strength-multiplier').value),
-        UpDownCompensation: parseFloat(document.getElementById('config-updown-compensation').value),
-        UpDownDeadzone: parseFloat(document.getElementById('config-updown-deadzone').value) / 100,
-        ActiveDelay: parseInt(document.getElementById('config-active-delay').value),
-        InactiveDelay: parseInt(document.getElementById('config-inactive-delay').value),
-        Logging: document.getElementById('config-logging').checked,
-        PhysboneParameters: document.getElementById('config-physbone-params').value.split(',').map(p => p.trim()),
-        DirectionalParameters: {
-            Z_Positive_Param: document.getElementById('config-z-positive').value,
-            Z_Negative_Param: document.getElementById('config-z-negative').value,
-            X_Positive_Param: document.getElementById('config-x-positive').value,
-            X_Negative_Param: document.getElementById('config-x-negative').value,
-            Y_Positive_Param: document.getElementById('config-y-positive').value,
-            Y_Negative_Param: document.getElementById('config-y-negative').value
-        }
-    };
-}
-
-// Save configuration to backend
-async function saveOSCLeashConfig() {
-    try {
-        const config = collectConfigFromForm();
-        const result = await window.electronAPI.oscleashUpdateConfig(config);
+        originalShowVRChatAPIView.call(this);
         
-        if (result.success) {
-            currentOSCLeashConfig = config;
-            updateConfigDisplay(config);
-            debugLog('OSC Leash configuration saved successfully');
-            
-            // Show success message
-            const saveBtn = document.getElementById('oscleash-save-config-btn');
-            const originalText = saveBtn.textContent;
-            saveBtn.textContent = 'Saved!';
-            saveBtn.className = 'btn btn-success';
-            setTimeout(() => {
-                saveBtn.textContent = originalText;
-                saveBtn.className = 'btn btn-success';
-            }, 2000);
-        } else {
-            throw new Error(result.error || 'Unknown error');
-        }
-    } catch (error) {
-        debugLog(`Error saving OSC Leash config: ${error.message}`, 'error');
-        alert(`Failed to save configuration: ${error.message}`);
-    }
-}
-
-// Reset configuration to defaults
-async function resetOSCLeashConfig() {
-    if (!confirm('Are you sure you want to reset all OSC Leash settings to their default values?')) {
-        return;
-    }
-
-    const defaultConfig = {
-        RunDeadzone: 0.70,
-        WalkDeadzone: 0.15,
-        StrengthMultiplier: 1.2,
-        UpDownCompensation: 1.0,
-        UpDownDeadzone: 0.5,
-
-        ActiveDelay: 20,
-        InactiveDelay: 500,
-        Logging: false,
-        PhysboneParameters: ["Leash"],
-        DirectionalParameters: {
-            Z_Positive_Param: "Leash_Z+",
-            Z_Negative_Param: "Leash_Z-",
-            X_Positive_Param: "Leash_X+",
-            X_Negative_Param: "Leash_X-",
-            Y_Positive_Param: "Leash_Y+",
-            Y_Negative_Param: "Leash_Y-"
-        }
-    };
-
-    try {
-        populateConfigForm(defaultConfig);
-        debugLog('OSC Leash configuration reset to defaults');
-        
-        // Show reset message
-        const resetBtn = document.getElementById('oscleash-reset-config-btn');
-        const originalText = resetBtn.textContent;
-        resetBtn.textContent = 'Reset!';
+        // Load status and stats after view is shown
         setTimeout(() => {
-            resetBtn.textContent = originalText;
-        }, 2000);
+            if (window.VRChatAPIUI) {
+                window.VRChatAPIUI.loadVRChatApiStatus();
+                window.VRChatAPIUI.loadVRChatApiStats();
+            }
+        }, 100);
     } catch (error) {
-        debugLog(`Error resetting OSC Leash config: ${error.message}`, 'error');
-        alert('Failed to reset configuration. Please try again.');
+        debugLog(`Error in showVRChatAPIView: ${error.message}`, 'error');
+        originalShowVRChatAPIView.call(this);
     }
-}
-
-// OSC Leash autostart functionality
-async function toggleOSCLeashAutostart() {
-    try {
-        const autostartBtn = document.getElementById('oscleash-autostart-btn');
-        autostartBtn.disabled = true;
-
-        // Get current autostart status
-        const currentStatus = await window.electronAPI.oscleashGetAutostart();
-        const newEnabled = !currentStatus.enabled;
-
-        // Update autostart setting
-        const result = await window.electronAPI.oscleashSetAutostart(newEnabled);
-        
-        if (result.success) {
-            debugLog(`OSCLeash autostart ${newEnabled ? 'enabled' : 'disabled'}`);
-            updateOSCLeashAutostartButton(newEnabled);
-        } else {
-            debugLog(`Failed to update OSCLeash autostart: ${result.error}`, 'error');
-            alert(`Failed to update autostart setting: ${result.error}`);
-        }
-    } catch (error) {
-        debugLog(`Error toggling OSCLeash autostart: ${error.message}`, 'error');
-        alert('Failed to update autostart setting. Please try again.');
-    } finally {
-        const autostartBtn = document.getElementById('oscleash-autostart-btn');
-        autostartBtn.disabled = false;
-    }
-}
-
-function updateOSCLeashAutostartButton(enabled) {
-    const autostartBtn = document.getElementById('oscleash-autostart-btn');
-    if (autostartBtn) {
-        autostartBtn.textContent = `Auto-start: ${enabled ? 'Enabled' : 'Disabled'}`;
-        autostartBtn.className = enabled ? 'btn btn-success' : 'btn btn-secondary';
-    }
-}
-
-async function loadOSCLeashAutostartStatus() {
-    try {
-        const status = await window.electronAPI.oscleashGetAutostart();
-        updateOSCLeashAutostartButton(status.enabled);
-    } catch (error) {
-        debugLog(`Error loading OSCLeash autostart status: ${error.message}`, 'error');
-    }
-}
-
-// Initialize configuration UI when OSC Leash view is shown  
-// Override the existing showOSCLeashView function to include config loading
-const originalOSCLeashView = showOSCLeashView;
-window.showOSCLeashView = function() {
-    debugLog('showOSCLeashView called with config loading');
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
-    
-    views.forEach(view => {
-        if (view) view.style.opacity = '0';
-    });
-    
-    setTimeout(() => {
-        views.forEach(view => {
-            if (view) view.style.display = 'none';
-        });
-        
-        const oscLeashView = document.getElementById('osc-leash-view');
-        if (oscLeashView) {
-            oscLeashView.style.display = 'block';
-            oscLeashView.style.opacity = '0';
-            requestAnimationFrame(() => {
-                oscLeashView.style.opacity = '1';
-            });
-        } else {
-            debugLog('Error: OSC Leash view element not found!', 'error');
-        }
-    }, 300);
-
-    // Reset ALL main navigation buttons explicitly
-    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
-    allMainNavButtons.forEach(navId => {
-        const navElement = document.getElementById(navId);
-        if (navElement) {
-            navElement.classList.remove('active');
-            navElement.disabled = false;
-        }
-    });
-
-    // Reset all tree-child buttons and set OSC Leash as active
-    const treeChildren = document.querySelectorAll('.tree-child');
-    treeChildren.forEach(child => {
-        child.classList.remove('active');
-        child.disabled = false;
-    });
-
-    const navOSCLeash = document.getElementById('nav-osc-leash');
-    if (navOSCLeash) {
-        navOSCLeash.classList.add('active');
-        navOSCLeash.disabled = true;
-    }
-
-    // Ensure extras dropdown is expanded
-    const treeToggle = document.getElementById('nav-extras');
-    const treeContent = treeToggle?.nextElementSibling;
-    if (treeToggle && treeContent) {
-        treeContent.classList.add('expanded');
-        treeToggle.classList.add('expanded');
-        const arrow = treeToggle.querySelector('.arrow');
-        if (arrow) {
-            arrow.textContent = '▼';
-        }
-    }
-
-    // Initialize OSC Leash status and configuration
-    refreshOSCLeashStatus(true);
-    startOSCLeashStatusUpdates();
-    
-    // Load configuration and autostart status automatically
-    setTimeout(() => {
-        loadOSCLeashConfig();
-        updateSliderDisplays();
-        loadOSCLeashAutostartStatus();
-    }, 500);
-    
-    debugLog('Switched to OSC Leash view with configuration');
 };

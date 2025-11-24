@@ -52,6 +52,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   oscleashUpdateConfig: (config) => ipcRenderer.invoke('oscleash-update-config', config),
   oscleashGetAutostart: () => ipcRenderer.invoke('oscleash-get-autostart'),
   oscleashSetAutostart: (enabled) => ipcRenderer.invoke('oscleash-set-autostart', enabled),
+  // Encryption API
+  encryptData: (plaintext) => ipcRenderer.invoke('encrypt-data', plaintext),
+  decryptData: (encryptedData) => ipcRenderer.invoke('decrypt-data', encryptedData),
+  // VRChat API
+  vrchatApiGetStatus: () => ipcRenderer.invoke('vrchatapi-get-status'),
+  vrchatApiLogin: (credentials) => ipcRenderer.invoke('vrchatapi-login', credentials),
+  vrchatApiVerify2FA: (data) => ipcRenderer.invoke('vrchatapi-verify-2fa', data),
+  vrchatApiLogout: () => ipcRenderer.invoke('vrchatapi-logout'),
+  vrchatApiRestoreSession: () => ipcRenderer.invoke('vrchatapi-restore-session'),
+  vrchatApiGetStats: () => ipcRenderer.invoke('vrchatapi-get-stats'),
+  // VRChat account linking
+  sendVRChatLink: (vrchatUserId, vrchatUsername) => ipcRenderer.invoke('send-vrchat-link', vrchatUserId, vrchatUsername),
+  checkVRChatLink: () => ipcRenderer.invoke('check-vrchat-link'),
+  // Feedback API
+  sendFeedback: (feedbackData) => ipcRenderer.invoke('send-feedback', feedbackData),
+  getFeedbackList: () => ipcRenderer.invoke('get-feedback-list'),
+  voteFeedback: (feedbackId) => ipcRenderer.invoke('vote-feedback', feedbackId),
+  getUserFeedbackStats: () => ipcRenderer.invoke('get-user-feedback-stats'),
+  getClientVersion: () => ipcRenderer.invoke('get-client-version'),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
@@ -94,6 +113,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onHyperateUpdate: (callback) => {
     ipcRenderer.on('hyperate-update', (event, data) => callback(data));
+  },
+  onFeedbackUpdate: (callback) => {
+    ipcRenderer.on('feedback-update', (event, data) => callback(data));
   },
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);

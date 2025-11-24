@@ -1,6 +1,6 @@
 {
   "name": "arc-osc-client",
-  "version": "0.74.0",
+  "version": "0.83.0",
   "author": "ComfyChloe",
   "description": "Standalone OSC Client for ARC-OSC",
   "main": "main.js",
@@ -10,6 +10,7 @@
     "osc": "2.4.5",
     "portfinder": "^1.0.38",
     "socket.io-client": "4.7.4",
+    "vrchat": "^2.20.5",
     "ws": "^8.18.3"
   },
   "scripts": {

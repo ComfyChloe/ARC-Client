@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { encryptData, decryptData } = require('./utils/encryption');
 // Set userdata path and ensure it exists
 const userDataPath = path.join(process.cwd(), 'userdata');
 if (!fs.existsSync(userDataPath)) {
@@ -13,6 +14,7 @@ const OscService = require('./utils/oscService');
 const { OSCQueryService } = require('./utils/oscQueryService');
 const HyperateAddon = require('./Containers/Hyperate');
 const OSCLeashAddon = require('./Containers/OSCLeash');
+const VRChatAPIContainer = require('./Containers/VRC-API');
 // Logger will be loaded after app is ready
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
@@ -27,6 +29,7 @@ let wsManager;
 let serverConfig = configManager.getServerConfig();
 let hyperateAddon;
 let oscLeashAddon;
+let vrchatApiContainer;
 // On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
 if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
   serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
@@ -34,7 +37,36 @@ if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes(
 }
 let isShuttingDown = false;
 let hasShownCriticalError = false;
+
+// Helper function to update splash screen progress
+function updateSplashProgress(progress, message) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send('splash-progress', { progress, message });
+  }
+}
+
 function createWindow() {
+  // Create splash window first
+  splashWindow = new BrowserWindow({
+    width: 600,
+    height: 400,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    center: true,
+    resizable: false,
+    skipTaskbar: true,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  splashWindow.loadFile('renderer/splash.html');
+  splashWindow.show();
+
+  updateSplashProgress(0, 'Initializing');
+
   const windowState = configManager.getWindowState();
   mainWindow = new BrowserWindow({
     width: windowState.width,
@@ -56,10 +88,23 @@ function createWindow() {
     mainWindow.maximize();
   }
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    mainWindow.focus();
+    // Minimum 3 second splash display
+    const minSplashTime = 3000;
+    const startTime = Date.now();
+    
+    updateSplashProgress(100, 'Ready');
+    
+    setTimeout(() => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    }, Math.max(0, minSplashTime - (Date.now() - startTime)));
   });
   mainWindow.setMenuBarVisibility(false);
+
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
     mainWindow.webContents.openDevTools();
@@ -114,32 +159,6 @@ function createWindow() {
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
-  });
-  mainWindow.webContents.once('did-finish-load', () => {
-    // Send the current app settings to the renderer
-    const appSettings = configManager.getAppSettings();
-    sendToRenderer('app-settings', appSettings);
-    if (oscEnabled && oscService) {
-      sendToRenderer('osc-server-status', { 
-        status: 'connected', 
-        port: serverConfig.legacyOscPort 
-      });
-    } else {
-      sendToRenderer('osc-server-status', { 
-        status: oscEnabled ? 'disconnected' : 'disabled', 
-        port: serverConfig.legacyOscPort 
-      });
-    }
-    sendToRenderer('websocket-status', {
-      status: 'disconnected'
-    });
-    // Trigger OSC Query mDNS discovery after UI is fully loaded (4-6 seconds)
-    setTimeout(() => {
-      if (oscQueryService && oscQueryService.isRunning) {
-        debug.info('Triggering OSC Query mDNS discovery for VRChat awareness...');
-        oscQueryService.triggerDiscovery();
-      }
-    }, 5000); // 5 seconds after UI loads
   });
   mainWindow.webContents.on('crashed', () => {
     if (hasShownCriticalError) {
@@ -229,6 +248,10 @@ function initWebSocket() {
     wsManager.on('server-message', (data) => {
       sendToRenderer('websocket-server-message', data);
     });
+    wsManager.on('feedback-update', (data) => {
+      sendToRenderer('feedback-update', data);
+      debug.info(`Feedback update received: ${data.action} for feedback ${data.feedbackId || 'unknown'}`);
+    });
   }
 }
 
@@ -250,6 +273,7 @@ function initOscServer() {
   debug.info(`Initializing OSC service with port ${serverConfig.legacyOscPort}`);
   oscService = new OscService();
   oscService.on('ready', (config) => {
+    updateSplashProgress(80, 'OSC service ready');
     debug.logOscServiceReady(config);
     sendToRenderer('osc-server-status', { 
       status: 'connected', 
@@ -647,6 +671,94 @@ ipcMain.handle('websocket-get-forwarding-status', () => {
     isConnected: wsManager ? wsManager.isConnected : false,
     canForward: enableForwarding && wsManager && wsManager.isConnected
   };
+});
+// VRChat account linking
+ipcMain.handle('send-vrchat-link', async (event, vrchatUserId, vrchatUsername) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    
+    debug.info(`Sending VRChat account link request: ${vrchatUsername} (${vrchatUserId})`);
+    const response = await wsManager.sendVRChatLink(vrchatUserId, vrchatUsername);
+    debug.info(`VRChat account linked successfully`);
+    return response;
+  } catch (error) {
+    debug.error(`Failed to link VRChat account: ${error.message}`);
+    throw error;
+  }
+});
+// Check VRChat account link status
+ipcMain.handle('check-vrchat-link', async (event) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    debug.info(`Checking VRChat account link status`);
+    const response = await wsManager.checkVRChatLink();
+    debug.info(`VRChat link status: ${response.linked ? 'linked' : 'not linked'}`);
+    return response;
+  } catch (error) {
+    debug.error(`Failed to check VRChat link status: ${error.message}`);
+    throw error;
+  }
+});
+// Feedback System IPC Handlers
+ipcMain.handle('send-feedback', async (event, feedbackData) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    debug.info(`Submitting feedback: ${feedbackData.type} - ${feedbackData.title}`);
+    const response = await wsManager.sendMessage('submit-feedback', feedbackData);
+    debug.info(`Feedback submitted successfully`);
+    return response;
+  } catch (error) {
+    debug.error(`Failed to submit feedback: ${error.message}`);
+    throw error;
+  }
+});
+ipcMain.handle('get-feedback-list', async (event) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    const response = await wsManager.sendMessage('get-feedback-list', {});
+    return response.feedbackList || [];
+  } catch (error) {
+    debug.error(`Failed to get feedback list: ${error.message}`);
+    throw error;
+  }
+});
+ipcMain.handle('vote-feedback', async (event, feedbackId) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    debug.info(`Voting on feedback: ${feedbackId}`);
+    const response = await wsManager.sendMessage('vote-feedback', { feedbackId });
+    debug.info(`Vote submitted successfully`);
+    return response;
+  } catch (error) {
+    debug.error(`Failed to vote on feedback: ${error.message}`);
+    throw error;
+  }
+});
+ipcMain.handle('get-user-feedback-stats', async (event) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    const response = await wsManager.sendMessage('get-user-feedback-stats', {});
+    return response.stats || { total: 0, feature: 0, bug: 0, improvement: 0, other: 0 };
+  } catch (error) {
+    debug.error(`Failed to get user feedback stats: ${error.message}`);
+    throw error;
+  }
+});
+ipcMain.handle('get-client-version', () => {
+  const packageJson = require('./package.json');
+  return packageJson.version;
 });
 ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
   try {
@@ -1076,16 +1188,115 @@ ipcMain.handle('oscleash-set-autostart', (event, enabled) => {
     return { success: false, error: error.message };
   }
 });
+// Encryption/Decryption IPC handlers
+ipcMain.handle('encrypt-data', (event, plaintext) => {
+  return encryptData(plaintext);
+});
+ipcMain.handle('decrypt-data', (event, encryptedData) => {
+  return decryptData(encryptedData);
+});
+// VRChat API IPC handlers
+ipcMain.handle('vrchatapi-get-status', () => {
+  try {
+    if (vrchatApiContainer) {
+      return vrchatApiContainer.getStatus();
+    }
+    return { enabled: false, authenticated: false, currentUser: null };
+  } catch (error) {
+    debug.error(`Failed to get VRChat API status: ${error.message}`);
+    return { enabled: false, authenticated: false, currentUser: null };
+  }
+});
 
-app.whenReady().then(() => {
+ipcMain.handle('vrchatapi-login', async (event, credentials) => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const { username, password, rememberCredentials } = credentials;
+    const result = await vrchatApiContainer.login(username, password, rememberCredentials);
+    
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API login error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vrchatapi-verify-2fa', async (event, data) => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const { code, type } = data;
+    const result = await vrchatApiContainer.verify2FA(code, type);
+    
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API 2FA verification error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vrchatapi-logout', async () => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const result = await vrchatApiContainer.logout();
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API logout error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vrchatapi-restore-session', async () => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const result = await vrchatApiContainer.restoreSession();
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API session restore error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+// VRChat API - Get Stats
+ipcMain.handle('vrchatapi-get-stats', async () => {
+  try {
+    if (!vrchatApiContainer) {
+      return { success: false, error: 'VRChat API container not initialized' };
+    }
+    
+    const result = await vrchatApiContainer.getStats();
+    return result;
+  } catch (error) {
+    debug.error(`VRChat API get stats error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+app.whenReady().then(async () => {
   debug.logAppStartup();
+  // Create splash window immediately after log cleanup
+  createWindow();
   // Load logger after app is ready
+  updateSplashProgress(10, 'Loading logger');
   logger = require('./utils/logger');
-  // Initialize HypeRate addon
+  // Initialize addons
+  updateSplashProgress(20, 'Initializing addons');
   hyperateAddon = new HyperateAddon();
-  // Initialize OSCLeash addon
   oscLeashAddon = new OSCLeashAddon();
+  vrchatApiContainer = new VRChatAPIContainer();
   // Get app settings from config
+  updateSplashProgress(30, 'Loading configuration');
   const appSettings = configManager.getAppSettings();
   
   // Ensure serverConfig has appSettings
@@ -1095,35 +1306,56 @@ app.whenReady().then(() => {
     // Merge app settings to ensure all settings are available
     serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
-  // Initialize OSC server
+  
   // Check if OSC should be enabled for autostart features
   const needsOscForAutostart = appSettings.hyperateAutostart || appSettings.oscleashAutostart;
-  // Only enable OSC if user has previously enabled it AND autostart features need it
-  // Don't override client-wide OSC setting - autostart should work with user's OSC preference
-  
-  // Important: Window before initializing OSC service
-  createWindow();
-  // Set up periodic memory management
-  setupMemoryManagement();
-  // Initialize OSC after a short delay to ensure the window is ready
-  setTimeout(() => {
-    if (oscEnabled) {
-      debug.info('Starting OSC service...');
-      initOscServer();
-      initOscClient();
+  // Wait for main window to finish loading
+  updateSplashProgress(40, 'Loading interface');
+  await new Promise(resolve => {
+    if (mainWindow.webContents.isLoading()) {
+      mainWindow.webContents.once('did-finish-load', resolve);
     } else {
-      sendToRenderer('osc-server-status', { 
-        status: 'disabled', 
-        port: serverConfig.legacyOscPort 
-      });
-      
-      // Inform user if autostart features are enabled but OSC is disabled
-      if (needsOscForAutostart) {
-        debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
-      }
+      resolve();
     }
-
-  }, 500); // Short delay to ensure window is ready
+  });
+  // Send settings to renderer now that window is ready
+  updateSplashProgress(50, 'Configuring settings');
+  sendToRenderer('app-settings', appSettings);
+  sendToRenderer('osc-server-status', { 
+    status: 'disabled', 
+    port: serverConfig.legacyOscPort 
+  });
+  sendToRenderer('websocket-status', {
+    status: 'disconnected'
+  });
+  // Set up periodic memory management
+  updateSplashProgress(60, 'Setting up memory management');
+  setupMemoryManagement();
+  // Initialize OSC services
+  updateSplashProgress(70, 'Preparing services');
+  if (oscEnabled) {
+    debug.info('Starting OSC service...');
+    initOscServer();
+    initOscClient();
+    // Inform user if autostart features are enabled but OSC is disabled
+    if (needsOscForAutostart) {
+      debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
+    }
+  } else {
+    sendToRenderer('osc-server-status', { 
+      status: 'disabled', 
+      port: serverConfig.legacyOscPort 
+    });
+  }
+  
+  updateSplashProgress(90, 'Finishing up');
+  // Schedule mDNS discovery after UI is fully loaded
+  setTimeout(() => {
+    if (oscQueryService && oscQueryService.isRunning) {
+      debug.info('Triggering OSC Query mDNS discovery for VRChat awareness...');
+      oscQueryService.triggerDiscovery();
+    }
+  }, 5000);
   setTimeout(() => {
     debug.connectionTimeout();
   }, 30000); // Check after 30 seconds
@@ -1193,6 +1425,15 @@ function cleanup(source = 'unknown') {
     clearTimeout(global.saveWindowStateTimeout);
     global.saveWindowStateTimeout = null;
   }
+  // Close splash window if still open
+  try {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.close();
+      splashWindow = null;
+    }
+  } catch (error) {
+    debug.error(`Error closing splash window: ${error.message}`);
+  }
   try {
     if (oscService) {
       debug.info('Stopping OSC service during cleanup...');
@@ -1245,6 +1486,15 @@ function cleanup(source = 'unknown') {
     }
   } catch (error) {
     debug.error(`Error stopping HypeRate addon: ${error.message}`);
+  }
+  try {
+    if (vrchatApiContainer) {
+      // Stop the container but preserve session for next startup
+      vrchatApiContainer.stop();
+      vrchatApiContainer = null;
+    }
+  } catch (error) {
+    debug.error(`Error stopping VRChat API container: ${error.message}`);
   }
   // Force garbage collection before exit
   if (global.gc) {

@@ -7,6 +7,86 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- 2FA Modal -->
+    <div id="vrchatapi-2fa-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 400px; width: 90%;">
+            <h3 style="margin-top: 0; color: #fff;">Two-Factor Authentication</h3>
+            <p id="vrchatapi-2fa-type" style="margin-bottom: 15px; color: #aaa; font-size: 14px;"></p>
+            <div class="form-group">
+                <label for="vrchatapi-2fa-code" style="color: #fff;">Enter 6-Digit Code</label>
+                <input type="text" id="vrchatapi-2fa-code" placeholder="000000" maxlength="6" style="width: 120px; text-align: center; font-size: 18px; letter-spacing: 5px; font-family: monospace;" onkeypress="if(event.key==='Enter')vrchatApiVerify2FA()">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="vrchatApiVerify2FA()">Verify</button>
+                <button class="btn btn-secondary" onclick="vrchatApiCancel2FA()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VRChat Link Confirmation Modal -->
+    <div id="vrchat-link-modal" class="modal-fade" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; opacity: 0; transition: opacity 0.3s ease;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 450px; width: 90%;">
+            <h3 style="margin-top: 0; color: #fff;">🌐 Link VRChat Account to ARC</h3>
+            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px; line-height: 1.5;">
+                This will connect your VRChat account to your ARC account, enabling VRChat Marketplace & Patreon benefits.
+            </p>
+            <div style="background: #1a1a1a; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #888;">VRChat Username:</span>
+                        <span id="vrchat-link-username" style="color: #fff; font-weight: 500;"></span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #888;">User ID:</span>
+                        <span id="vrchat-link-userid" style="color: #888; font-size: 0.85em; font-family: monospace;"></span>
+                    </div>
+                </div>
+            </div>
+            <div style="background: #1a3a1a; padding: 12px; border-radius: 6px; margin-bottom: 20px; border-left: 3px solid #4CAF50;">
+                <p style="margin: 0; color: #8BC34A; font-size: 13px;">
+                    ✓ VRCMarketplace benefits<br>
+                    ✓ Patreon supporter perks<br>
+                </p>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeVRChatLinkModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmVRChatLink()">Link Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VRChat Link Success Modal -->
+    <div id="vrchat-link-success-modal" class="modal-fade" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; opacity: 0; transition: opacity 0.3s ease;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 450px; width: 90%;">
+            <h3 style="margin-top: 0; color: #fff;">✓ Account Linked Successfully!</h3>
+            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px; line-height: 1.5;">
+                Your VRChat account has been successfully linked to your ARC account.
+            </p>
+            <div style="background: #1a1a1a; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #888;">VRChat Account:</span>
+                        <span id="vrchat-link-success-username" style="color: #fff; font-weight: 500;"></span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #888;">Status:</span>
+                        <span style="color: #4CAF50; font-weight: 500;">🟢 Linked</span>
+                    </div>
+                </div>
+            </div>
+            <div style="background: #1a3a1a; padding: 12px; border-radius: 6px; margin-bottom: 20px; border-left: 3px solid #4CAF50;">
+                <p style="margin: 0; color: #8BC34A; font-size: 13px; line-height: 1.6;">
+                    ✓ Your VRChat account is now connected<br>
+                    ✓ Enhanced features are now available<br>
+                    ✓ Visit the ARC dashboard to view your linked account
+                </p>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-primary" onclick="closeVRChatLinkSuccessModal()">OK</button>
+            </div>
+        </div>
+    </div>
+
     <div class="app-container">
         <div class="sidebar">
             <div class="sidebar-section">
@@ -52,12 +132,22 @@
                     <div class="tree-content">
                         <div class="tree-items">
                             <button class="tree-child" id="nav-arcfeedback" onclick="showARCFeedbackView()">ARC Feedback</button>
-                            <button class="tree-child" id="nav-auto-inviter" onclick="showAutoInviterView()">Auto-Inviter</button>
                             <button class="tree-child" id="nav-chatbox" onclick="showChatboxView()">Chatbox</button>
                             <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
                             <button class="tree-child" id="nav-osc-leash" onclick="showOSCLeashView()">OSC Leash</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
-                            <button class="tree-child" id="nav-vrchatapi" onclick="showVRChatAPIView()">VRChat API</button>
+                            <div class="tree-item" style="margin-top: 5px;">
+                                <button class="tree-toggle" id="nav-vrchatapi-toggle" style="width: 100%; display: flex; align-items: center;">
+                                    <span class="arrow">▶</span>
+                                    <span style="margin:0;">VRChat API</span>
+                                </button>
+                                <div class="tree-content">
+                                    <div class="tree-items">
+                                        <button class="tree-child" id="nav-vrchatapi" onclick="showVRChatAPIView()">Account Info</button>
+                                        <button class="tree-child" id="nav-auto-inviter" onclick="showAutoInviterView()">Auto-Inviter</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -163,13 +253,103 @@
         <div class="main-content view-transition" id="arcfeedback-view" style="display: none;">
             <div class="header">
                 <h1>ARC Feedback</h1>
-                <p>Coming soon - Advanced feedback system for ARC integration</p>
+                <p>Share your ideas and report issues to help improve ARC</p>
             </div>
+
+            <!-- Submit Feedback Card -->
+            <div class="card feedback-section">
+                <h3>Submit Feedback</h3>
+                <div class="form-group">
+                    <label for="feedback-type">Feedback Type</label>
+                    <!-- Hidden input retains existing logic access -->
+                    <input type="hidden" id="feedback-type" value="feature">
+                    <div class="feedback-type-group" id="feedback-type-group">
+                        <button type="button" class="feedback-type-btn feature selected" data-type="feature" aria-pressed="true">Feature Request</button>
+                        <button type="button" class="feedback-type-btn bug" data-type="bug" aria-pressed="false">Bug Report</button>
+                        <button type="button" class="feedback-type-btn improvement" data-type="improvement" aria-pressed="false">Improvement</button>
+                        <button type="button" class="feedback-type-btn other" data-type="other" aria-pressed="false">Other</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="feedback-title">Title</label>
+                    <input type="text" id="feedback-title" placeholder="Brief summary of your feedback" maxlength="100" style="width: 100%;">
+                    <small style="color: #666;">Max 100 characters</small>
+                </div>
+                <div class="form-group">
+                    <label for="feedback-description">Description</label>
+                    <textarea id="feedback-description" class="feedback-textarea" placeholder="Provide detailed information about your feedback..." rows="6" maxlength="2000"></textarea>
+                    <small style="color: #666;">Max 2000 characters - <span id="feedback-char-count">0</span>/2000</small>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button class="btn btn-primary" id="submit-feedback-btn" onclick="submitFeedback()">Submit Feedback</button>
+                    <button class="btn btn-secondary" onclick="clearFeedbackForm()">Clear Form</button>
+                </div>
+                <div class="feedback-note">
+                    <small>
+                        <strong>Note:</strong> Your feedback will be visible to all users (without your username). Staff can update the status and respond to feedback items.
+                    </small>
+                </div>
+            </div>
+
+            <!-- Feedback Statistics Card -->
             <div class="card">
-                <h3>Feature Not Available</h3>
-                <p style="color: #666; text-align: center; padding: 20px;">
-                    This feature is planned for development and will be available in the future.
-                </p>
+                <h3>Your Feedback Statistics</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                    <div style="text-align: center; padding: 15px; background: rgba(52, 152, 219, 0.1); border-radius: 8px; border: 1px solid rgba(52, 152, 219, 0.3);">
+                        <div style="font-size: 24px; font-weight: bold; color: #3498db;" id="stats-total">0</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Total Submitted</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: rgba(46, 204, 113, 0.1); border-radius: 8px; border: 1px solid rgba(46, 204, 113, 0.3);">
+                        <div style="font-size: 24px; font-weight: bold; color: #2ecc71;" id="stats-features">0</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Feature Requests</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: rgba(231, 76, 60, 0.1); border-radius: 8px; border: 1px solid rgba(231, 76, 60, 0.3);">
+                        <div style="font-size: 24px; font-weight: bold; color: #e74c3c;" id="stats-bugs">0</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Bug Reports</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: rgba(241, 196, 15, 0.1); border-radius: 8px; border: 1px solid rgba(241, 196, 15, 0.3);">
+                        <div style="font-size: 24px; font-weight: bold; color: #f1c40f;" id="stats-improvements">0</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Improvements</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: rgba(155, 89, 182, 0.1); border-radius: 8px; border: 1px solid rgba(155, 89, 182, 0.3);">
+                        <div style="font-size: 24px; font-weight: bold; color: #9b59b6;" id="stats-other">0</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Other</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Community Feedback List -->
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">Community Feedback</h3>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <select id="feedback-filter-type" onchange="filterFeedback()" style="padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="all">All Types</option>
+                            <option value="feature">Feature Requests</option>
+                            <option value="bug">Bug Reports</option>
+                            <option value="improvement">Improvements</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <select id="feedback-filter-status" onchange="filterFeedback()" style="padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="all">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="completed">Completed</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                        <select id="feedback-sort" onchange="sortFeedback()" style="padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="votes">Most Votes</option>
+                            <option value="recent">Most Recent</option>
+                            <option value="oldest">Oldest First</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="refreshFeedbackList()">Refresh</button>
+                    </div>
+                </div>
+                <div id="feedback-list-container">
+                    <div style="text-align: center; padding: 40px; color: #666;">
+                        <p>Loading feedback...</p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -189,13 +369,65 @@
         <div class="main-content view-transition" id="vrchatapi-view" style="display: none;">
             <div class="header">
                 <h1>VRChat API</h1>
-                <p>Coming soon - Direct VRChat API integration and management</p>
+                <p>Direct VRChat API integration for advanced features</p>
             </div>
+
             <div class="card">
-                <h3>Feature Not Available</h3>
-                <p style="color: #666; text-align: center; padding: 20px;">
-                    This feature is planned for development and will be available in the future.
-                </p>
+                <h3>Connection Status</h3>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="vrchatapi-status"></span>
+                    <span id="vrchatapi-status-text">Not Authenticated</span>
+                </div>
+                <div id="vrchatapi-user-info" class="user-info-box" style="display: none;">
+                    <div class="user-info-label">Logged in as:</div>
+                    <div id="vrchatapi-user-display" class="user-info-display"></div>
+                    <div id="vrchatapi-user-id" class="user-info-id" style="font-size: 0.7em; opacity: 0.65; margin-top: 3px; word-break: break-all;"></div>
+                </div>
+            </div>
+
+            <div class="card" id="vrchatapi-login-card">
+                <h3>Authentication</h3>
+                <div class="form-group">
+                    <label for="vrchatapi-username">VRChat Username or Email</label>
+                    <input type="text" id="vrchatapi-username" placeholder="Enter username or email">
+                </div>
+                <div class="form-group">
+                    <label for="vrchatapi-password">Password</label>
+                    <input type="password" id="vrchatapi-password" placeholder="Enter password">
+                </div>
+                <button class="btn btn-primary" id="vrchatapi-login-btn" onclick="vrchatApiLogin()">Login</button>
+            </div>
+
+            <div class="card" id="vrchatapi-actions-card" style="display: none;">
+                <h3>Actions</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" id="vrchat-link-arc-btn" onclick="shareVRChatWithARC()" style="display: none;">
+                        Link to ARC
+                    </button>
+                    <button class="btn btn-secondary disabled" id="vrchat-linked-arc-btn" disabled style="display: none;">
+                        ✓ Account Linked
+                    </button>
+                    <button class="btn btn-danger" onclick="vrchatApiLogout()">Logout</button>
+                    <button class="btn btn-secondary" onclick="refreshVRChatApiStatus()">Refresh Stats</button>
+                </div>
+            </div>
+
+            <div class="card" id="vrchatapi-stats-card" style="display: none;">
+                <h3>Account Details</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div style="text-align: center; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 24px; font-weight: bold; color: var(--primary-color);" id="vrchatapi-avatar-count">-</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Uploaded Avatars</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 24px; font-weight: bold; color: var(--primary-color);" id="vrchatapi-favorite-avatar-count">-</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Favorited Avatars</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 24px; font-weight: bold; color: var(--primary-color);" id="vrchatapi-friends-online">-</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Online & Active Friends</div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -650,30 +882,6 @@
         </div>
     </div>
 
-    <!-- Password Save Warning Modal -->
-    <div class="modal-overlay" id="password-warning-modal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 style="color: #e74c3c; margin: 0;">⚠️ Security Warning</h3>
-            </div>
-            <div class="modal-body">
-                <p style="margin-bottom: 15px; color: #2c3e50; font-weight: 500;">
-                    <strong>WARNING:</strong> Checking this box will save your password in plain text, readable by anyone who has access to your configuration files.
-                </p>
-                <p style="margin-bottom: 15px; color: #7f8c8d;">
-                    Your password will be stored unencrypted on your local machine. Only enable this feature if you understand the security implications and are not concerned about others potentially accessing your password.
-                </p>
-                <p style="margin-bottom: 0; color: #7f8c8d; font-size: 0.9em; font-style: italic;">
-                    This warning will not appear again until you uncheck and re-check the box.
-                </p>
-            </div>
-            <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
-                <button class="btn btn-secondary" id="password-warning-cancel">Cancel</button>
-                <button class="btn btn-danger" id="password-warning-confirm">I Understand, Proceed</button>
-            </div>
-        </div>
-    </div>
-
     <!-- HypeRate Tracker Edit Modal -->
     <div class="modal-overlay" id="tracker-edit-modal" style="display: none;">
         <div class="modal-content">
@@ -700,6 +908,13 @@
         </div>
     </div>
 
+    <!-- UI Modules - Load before app.js -->
+    <script src="Hyperate-UI.js"></script>
+    <script src="OSCLeash-UI.js"></script>
+    <script src="VRC-API-UI.js"></script>
+    <script src="ARCFeedback-UI.js"></script>
+    
+    <!-- Main Application -->
     <script src="app.js"></script>
 </body>
 </html>
