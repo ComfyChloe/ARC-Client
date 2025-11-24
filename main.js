@@ -79,7 +79,7 @@ function createWindow() {
       enableRemoteModule: false,
       preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, 'assets', 'icon.png'),
+    icon: path.join(__dirname, 'Assets', 'ARC.ico'),
     title: 'ARC-OSC Client',
     show: false // Start hidden so we can control when it appears
   })
