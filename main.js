@@ -37,8 +37,39 @@ if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes(
 }
 let isShuttingDown = false;
 let hasShownCriticalError = false;
+
+// Helper function to update splash screen progress
+function updateSplashProgress(progress, message) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send('splash-progress', { progress, message });
+  }
+}
+
 function createWindow() {
+  // Create splash window first
+  splashWindow = new BrowserWindow({
+    width: 600,
+    height: 400,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    center: true,
+    resizable: false,
+    skipTaskbar: true,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  splashWindow.loadFile('renderer/splash.html');
+  splashWindow.show();
+
+  // Send initial progress
+  updateSplashProgress(0, 'Initializing');
+
   const windowState = configManager.getWindowState();
+  updateSplashProgress(10, 'Loading application');
   mainWindow = new BrowserWindow({
     width: windowState.width,
     height: windowState.height,
@@ -59,10 +90,25 @@ function createWindow() {
     mainWindow.maximize();
   }
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    mainWindow.focus();
+    // Minimum 3 second splash display
+    const minSplashTime = 3000;
+    const startTime = Date.now();
+    
+    updateSplashProgress(100, 'Ready');
+    
+    setTimeout(() => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    }, Math.max(0, minSplashTime - (Date.now() - startTime)));
   });
   mainWindow.setMenuBarVisibility(false);
+
+  updateSplashProgress(20, 'Loading interface');
+
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
     mainWindow.webContents.openDevTools();
@@ -119,6 +165,8 @@ function createWindow() {
     mainWindow = null;
   });
   mainWindow.webContents.once('did-finish-load', () => {
+    updateSplashProgress(40, 'Configuring settings');
+    
     // Send the current app settings to the renderer
     const appSettings = configManager.getAppSettings();
     sendToRenderer('app-settings', appSettings);
@@ -252,11 +300,14 @@ function initOscServer() {
       status: 'disabled', 
       port: serverConfig.legacyOscPort 
     });
+    updateSplashProgress(70, 'OSC disabled');
     return;
   }
+  updateSplashProgress(60, 'Starting OSC service');
   debug.info(`Initializing OSC service with port ${serverConfig.legacyOscPort}`);
   oscService = new OscService();
   oscService.on('ready', (config) => {
+    updateSplashProgress(80, 'OSC service ready');
     debug.logOscServiceReady(config);
     sendToRenderer('osc-server-status', { 
       status: 'connected', 
@@ -329,6 +380,7 @@ function initOscServer() {
 }
 async function initOscQueryService() {
   try {
+    updateSplashProgress(85, 'Starting OSC Query');
     // Reuse existing instance if available, otherwise create new one
     if (!oscQueryService) {
       oscQueryService = new OSCQueryService();
@@ -1307,13 +1359,15 @@ app.whenReady().then(() => {
         status: 'disabled', 
         port: serverConfig.legacyOscPort 
       });
+      updateSplashProgress(70, 'OSC disabled');
       
       // Inform user if autostart features are enabled but OSC is disabled
       if (needsOscForAutostart) {
         debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
       }
     }
-
+    
+    updateSplashProgress(90, 'Finishing up');
   }, 500); // Short delay to ensure window is ready
   setTimeout(() => {
     debug.connectionTimeout();
@@ -1383,6 +1437,15 @@ function cleanup(source = 'unknown') {
   if (global.saveWindowStateTimeout) {
     clearTimeout(global.saveWindowStateTimeout);
     global.saveWindowStateTimeout = null;
+  }
+  // Close splash window if still open
+  try {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.close();
+      splashWindow = null;
+    }
+  } catch (error) {
+    debug.error(`Error closing splash window: ${error.message}`);
   }
   try {
     if (oscService) {
