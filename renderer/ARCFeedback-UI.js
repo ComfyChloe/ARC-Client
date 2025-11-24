@@ -89,6 +89,7 @@ async function refreshFeedbackList() {
         const feedback = await window.electronAPI.getFeedbackList();
         feedbackList = feedback || [];
         filterFeedback();
+        await updateUserFeedbackStats();
         debugLog(`Loaded ${feedbackList.length} feedback items`, 'info');
     } catch (error) {
         console.error('Error loading feedback list:', error);
@@ -289,12 +290,31 @@ if (typeof window !== 'undefined' && window.electronAPI) {
                 filterFeedback();
                 debugLog(`Feedback ${data.feedbackId} updated`, 'info');
             }
+        } else if (data.action === 'type-change') {
+            // Update feedback type
+            const index = feedbackList.findIndex(f => f.id === data.feedbackId);
+            if (index !== -1) {
+                feedbackList[index].type = data.type;
+                filterFeedback();
+                // Refresh user stats since type changed
+                updateUserFeedbackStats();
+            }
         } else if (data.action === 'vote') {
             // Update vote count
             const index = feedbackList.findIndex(f => f.id === data.feedbackId);
             if (index !== -1) {
                 feedbackList[index].votes = data.votes;
                 filterFeedback();
+            }
+        } else if (data.action === 'deleted') {
+            // Remove feedback from list
+            const index = feedbackList.findIndex(f => f.id === data.feedbackId);
+            if (index !== -1) {
+                feedbackList.splice(index, 1);
+                filterFeedback();
+                // Refresh user stats since feedback was deleted
+                updateUserFeedbackStats();
+                debugLog('Feedback deleted', 'info');
             }
         }
     });
