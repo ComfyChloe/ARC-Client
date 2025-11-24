@@ -143,6 +143,9 @@ class WebSocketManager {
         this.socket.on('server-message', (data) => {
             this.emit('server-message', data);
         });
+        this.socket.on('feedback-update', (data) => {
+            this.emit('feedback-update', data);
+        });
     }
     disconnect() {
         if (this.socket) {
@@ -169,11 +172,42 @@ class WebSocketManager {
         return { success: true };
     }
     sendMessage(event, data) {
-        if (!this.isConnected || !this.socket) {
-            throw new Error('Not connected to server');
-        }
-        this.socket.emit(event, data);
-        return { success: true };
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected || !this.socket) {
+                reject(new Error('Not connected to server'));
+                return;
+            }
+            // Events that expect responses
+            const responseEvents = {
+                'submit-feedback': 'feedback-response',
+                'get-feedback-list': 'feedback-list-response',
+                'vote-feedback': 'vote-feedback-response',
+                'get-user-feedback-stats': 'user-feedback-stats-response'
+            };
+            if (responseEvents[event]) {
+                // Set up response listener
+                const responseHandler = (response) => {
+                    if (response.success !== false) {
+                        resolve(response);
+                    } else {
+                        reject(new Error(response.error || 'Request failed'));
+                    }
+                };
+                // Listen for response (one-time listener)
+                this.socket.once(responseEvents[event], responseHandler);
+                // Send the request
+                this.socket.emit(event, data);
+                // Set timeout for response
+                setTimeout(() => {
+                    this.socket.off(responseEvents[event], responseHandler);
+                    reject(new Error('Request timed out'));
+                }, 10000); // 10 second timeout
+            } else {
+                // Fire and forget for other events
+                this.socket.emit(event, data);
+                resolve({ success: true });
+            }
+        });
     }
     /**
      * Send VRChat account linking request to server

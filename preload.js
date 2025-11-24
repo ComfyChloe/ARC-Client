@@ -65,6 +65,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // VRChat account linking
   sendVRChatLink: (vrchatUserId, vrchatUsername) => ipcRenderer.invoke('send-vrchat-link', vrchatUserId, vrchatUsername),
   checkVRChatLink: () => ipcRenderer.invoke('check-vrchat-link'),
+  // Feedback API
+  sendFeedback: (feedbackData) => ipcRenderer.invoke('send-feedback', feedbackData),
+  getFeedbackList: () => ipcRenderer.invoke('get-feedback-list'),
+  voteFeedback: (feedbackId) => ipcRenderer.invoke('vote-feedback', feedbackId),
+  getUserFeedbackStats: () => ipcRenderer.invoke('get-user-feedback-stats'),
+  getClientVersion: () => ipcRenderer.invoke('get-client-version'),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
@@ -107,6 +113,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onHyperateUpdate: (callback) => {
     ipcRenderer.on('hyperate-update', (event, data) => callback(data));
+  },
+  onFeedbackUpdate: (callback) => {
+    ipcRenderer.on('feedback-update', (event, data) => callback(data));
   },
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);

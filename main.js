@@ -232,6 +232,10 @@ function initWebSocket() {
     wsManager.on('server-message', (data) => {
       sendToRenderer('websocket-server-message', data);
     });
+    wsManager.on('feedback-update', (data) => {
+      sendToRenderer('feedback-update', data);
+      debug.info(`Feedback update received: ${data.action} for feedback ${data.feedbackId || 'unknown'}`);
+    });
   }
 }
 
@@ -681,6 +685,63 @@ ipcMain.handle('check-vrchat-link', async (event) => {
     debug.error(`Failed to check VRChat link status: ${error.message}`);
     throw error;
   }
+});
+// Feedback System IPC Handlers
+ipcMain.handle('send-feedback', async (event, feedbackData) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    debug.info(`Submitting feedback: ${feedbackData.type} - ${feedbackData.title}`);
+    const response = await wsManager.sendMessage('submit-feedback', feedbackData);
+    debug.info(`Feedback submitted successfully`);
+    return response;
+  } catch (error) {
+    debug.error(`Failed to submit feedback: ${error.message}`);
+    throw error;
+  }
+});
+ipcMain.handle('get-feedback-list', async (event) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    const response = await wsManager.sendMessage('get-feedback-list', {});
+    return response.feedbackList || [];
+  } catch (error) {
+    debug.error(`Failed to get feedback list: ${error.message}`);
+    throw error;
+  }
+});
+ipcMain.handle('vote-feedback', async (event, feedbackId) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    debug.info(`Voting on feedback: ${feedbackId}`);
+    const response = await wsManager.sendMessage('vote-feedback', { feedbackId });
+    debug.info(`Vote submitted successfully`);
+    return response;
+  } catch (error) {
+    debug.error(`Failed to vote on feedback: ${error.message}`);
+    throw error;
+  }
+});
+ipcMain.handle('get-user-feedback-stats', async (event) => {
+  try {
+    if (!wsManager || !wsManager.isConnected) {
+      throw new Error('Not connected to ARC WebSocket server');
+    }
+    const response = await wsManager.sendMessage('get-user-feedback-stats', {});
+    return response.stats || { total: 0, feature: 0, bug: 0, improvement: 0, other: 0 };
+  } catch (error) {
+    debug.error(`Failed to get user feedback stats: ${error.message}`);
+    throw error;
+  }
+});
+ipcMain.handle('get-client-version', () => {
+  const packageJson = require('./package.json');
+  return packageJson.version;
 });
 ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
   try {
