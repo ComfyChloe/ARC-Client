@@ -65,11 +65,9 @@ function createWindow() {
   splashWindow.loadFile('renderer/splash.html');
   splashWindow.show();
 
-  // Send initial progress
   updateSplashProgress(0, 'Initializing');
 
   const windowState = configManager.getWindowState();
-  updateSplashProgress(10, 'Loading application');
   mainWindow = new BrowserWindow({
     width: windowState.width,
     height: windowState.height,
@@ -106,8 +104,6 @@ function createWindow() {
     }, Math.max(0, minSplashTime - (Date.now() - startTime)));
   });
   mainWindow.setMenuBarVisibility(false);
-
-  updateSplashProgress(20, 'Loading interface');
 
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
@@ -163,34 +159,6 @@ function createWindow() {
   });
   mainWindow.on('closed', () => {
     mainWindow = null;
-  });
-  mainWindow.webContents.once('did-finish-load', () => {
-    updateSplashProgress(40, 'Configuring settings');
-    
-    // Send the current app settings to the renderer
-    const appSettings = configManager.getAppSettings();
-    sendToRenderer('app-settings', appSettings);
-    if (oscEnabled && oscService) {
-      sendToRenderer('osc-server-status', { 
-        status: 'connected', 
-        port: serverConfig.legacyOscPort 
-      });
-    } else {
-      sendToRenderer('osc-server-status', { 
-        status: oscEnabled ? 'disconnected' : 'disabled', 
-        port: serverConfig.legacyOscPort 
-      });
-    }
-    sendToRenderer('websocket-status', {
-      status: 'disconnected'
-    });
-    // Trigger OSC Query mDNS discovery after UI is fully loaded (4-6 seconds)
-    setTimeout(() => {
-      if (oscQueryService && oscQueryService.isRunning) {
-        debug.info('Triggering OSC Query mDNS discovery for VRChat awareness...');
-        oscQueryService.triggerDiscovery();
-      }
-    }, 5000); // 5 seconds after UI loads
   });
   mainWindow.webContents.on('crashed', () => {
     if (hasShownCriticalError) {
@@ -300,10 +268,8 @@ function initOscServer() {
       status: 'disabled', 
       port: serverConfig.legacyOscPort 
     });
-    updateSplashProgress(70, 'OSC disabled');
     return;
   }
-  updateSplashProgress(60, 'Starting OSC service');
   debug.info(`Initializing OSC service with port ${serverConfig.legacyOscPort}`);
   oscService = new OscService();
   oscService.on('ready', (config) => {
@@ -380,7 +346,6 @@ function initOscServer() {
 }
 async function initOscQueryService() {
   try {
-    updateSplashProgress(85, 'Starting OSC Query');
     // Reuse existing instance if available, otherwise create new one
     if (!oscQueryService) {
       oscQueryService = new OSCQueryService();
@@ -1318,17 +1283,20 @@ ipcMain.handle('vrchatapi-get-stats', async () => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   debug.logAppStartup();
+  // Create splash window immediately after log cleanup
+  createWindow();
   // Load logger after app is ready
+  updateSplashProgress(10, 'Loading logger');
   logger = require('./utils/logger');
-  // Initialize HypeRate addon
+  // Initialize addons
+  updateSplashProgress(20, 'Initializing addons');
   hyperateAddon = new HyperateAddon();
-  // Initialize OSCLeash addon
   oscLeashAddon = new OSCLeashAddon();
-  // Initialize VRChat API container
   vrchatApiContainer = new VRChatAPIContainer();
   // Get app settings from config
+  updateSplashProgress(30, 'Loading configuration');
   const appSettings = configManager.getAppSettings();
   
   // Ensure serverConfig has appSettings
@@ -1338,37 +1306,56 @@ app.whenReady().then(() => {
     // Merge app settings to ensure all settings are available
     serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
-  // Initialize OSC server
+  
   // Check if OSC should be enabled for autostart features
   const needsOscForAutostart = appSettings.hyperateAutostart || appSettings.oscleashAutostart;
-  // Only enable OSC if user has previously enabled it AND autostart features need it
-  // Don't override client-wide OSC setting - autostart should work with user's OSC preference
-  
-  // Important: Window before initializing OSC service
-  createWindow();
-  // Set up periodic memory management
-  setupMemoryManagement();
-  // Initialize OSC after a short delay to ensure the window is ready
-  setTimeout(() => {
-    if (oscEnabled) {
-      debug.info('Starting OSC service...');
-      initOscServer();
-      initOscClient();
+  // Wait for main window to finish loading
+  updateSplashProgress(40, 'Loading interface');
+  await new Promise(resolve => {
+    if (mainWindow.webContents.isLoading()) {
+      mainWindow.webContents.once('did-finish-load', resolve);
     } else {
-      sendToRenderer('osc-server-status', { 
-        status: 'disabled', 
-        port: serverConfig.legacyOscPort 
-      });
-      updateSplashProgress(70, 'OSC disabled');
-      
-      // Inform user if autostart features are enabled but OSC is disabled
-      if (needsOscForAutostart) {
-        debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
-      }
+      resolve();
     }
-    
-    updateSplashProgress(90, 'Finishing up');
-  }, 500); // Short delay to ensure window is ready
+  });
+  // Send settings to renderer now that window is ready
+  updateSplashProgress(50, 'Configuring settings');
+  sendToRenderer('app-settings', appSettings);
+  sendToRenderer('osc-server-status', { 
+    status: 'disabled', 
+    port: serverConfig.legacyOscPort 
+  });
+  sendToRenderer('websocket-status', {
+    status: 'disconnected'
+  });
+  // Set up periodic memory management
+  updateSplashProgress(60, 'Setting up memory management');
+  setupMemoryManagement();
+  // Initialize OSC services
+  updateSplashProgress(70, 'Preparing services');
+  if (oscEnabled) {
+    debug.info('Starting OSC service...');
+    initOscServer();
+    initOscClient();
+    // Inform user if autostart features are enabled but OSC is disabled
+    if (needsOscForAutostart) {
+      debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
+    }
+  } else {
+    sendToRenderer('osc-server-status', { 
+      status: 'disabled', 
+      port: serverConfig.legacyOscPort 
+    });
+  }
+  
+  updateSplashProgress(90, 'Finishing up');
+  // Schedule mDNS discovery after UI is fully loaded
+  setTimeout(() => {
+    if (oscQueryService && oscQueryService.isRunning) {
+      debug.info('Triggering OSC Query mDNS discovery for VRChat awareness...');
+      oscQueryService.triggerDiscovery();
+    }
+  }, 5000);
   setTimeout(() => {
     debug.connectionTimeout();
   }, 30000); // Check after 30 seconds
