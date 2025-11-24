@@ -257,16 +257,18 @@
             </div>
 
             <!-- Submit Feedback Card -->
-            <div class="card">
+            <div class="card feedback-section">
                 <h3>Submit Feedback</h3>
                 <div class="form-group">
                     <label for="feedback-type">Feedback Type</label>
-                    <select id="feedback-type" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: white;">
-                        <option value="feature">Feature Request</option>
-                        <option value="bug">Bug Report</option>
-                        <option value="improvement">Improvement</option>
-                        <option value="other">Other</option>
-                    </select>
+                    <!-- Hidden input retains existing logic access -->
+                    <input type="hidden" id="feedback-type" value="feature">
+                    <div class="feedback-type-group" id="feedback-type-group">
+                        <button type="button" class="feedback-type-btn feature selected" data-type="feature" aria-pressed="true">Feature Request</button>
+                        <button type="button" class="feedback-type-btn bug" data-type="bug" aria-pressed="false">Bug Report</button>
+                        <button type="button" class="feedback-type-btn improvement" data-type="improvement" aria-pressed="false">Improvement</button>
+                        <button type="button" class="feedback-type-btn other" data-type="other" aria-pressed="false">Other</button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="feedback-title">Title</label>
@@ -275,15 +277,15 @@
                 </div>
                 <div class="form-group">
                     <label for="feedback-description">Description</label>
-                    <textarea id="feedback-description" placeholder="Provide detailed information about your feedback..." rows="6" maxlength="2000" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; font-family: inherit;"></textarea>
+                    <textarea id="feedback-description" class="feedback-textarea" placeholder="Provide detailed information about your feedback..." rows="6" maxlength="2000"></textarea>
                     <small style="color: #666;">Max 2000 characters - <span id="feedback-char-count">0</span>/2000</small>
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 15px;">
                     <button class="btn btn-primary" id="submit-feedback-btn" onclick="submitFeedback()">Submit Feedback</button>
                     <button class="btn btn-secondary" onclick="clearFeedbackForm()">Clear Form</button>
                 </div>
-                <div style="margin-top: 10px; padding: 10px; background-color: #e8f4fd; border-radius: 4px; border-left: 4px solid #3498db;">
-                    <small style="color: #2c3e50;">
+                <div class="feedback-note">
+                    <small>
                         <strong>Note:</strong> Your feedback will be visible to all users (without your username). Staff can update the status and respond to feedback items.
                     </small>
                 </div>

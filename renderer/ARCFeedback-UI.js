@@ -14,7 +14,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (descriptionField) {
         descriptionField.addEventListener('input', updateFeedbackCharCount);
     }
+    initFeedbackTypeButtons();
 });
+
+function initFeedbackTypeButtons() {
+    const hiddenInput = document.getElementById('feedback-type');
+    const group = document.getElementById('feedback-type-group');
+    if (!hiddenInput || !group) return;
+    const buttons = group.querySelectorAll('.feedback-type-btn');
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const type = btn.getAttribute('data-type');
+            hiddenInput.value = type;
+            buttons.forEach(b => {
+                b.classList.remove('selected');
+                b.setAttribute('aria-pressed', 'false');
+            });
+            btn.classList.add('selected');
+            btn.setAttribute('aria-pressed', 'true');
+        });
+    });
+}
 function updateFeedbackCharCount() {
     const description = document.getElementById('feedback-description').value;
     const charCount = document.getElementById('feedback-char-count');
@@ -79,7 +99,18 @@ async function submitFeedback() {
     }
 }
 function clearFeedbackForm() {
-    document.getElementById('feedback-type').value = 'feature';
+    const hiddenInput = document.getElementById('feedback-type');
+    hiddenInput.value = 'feature';
+    const buttons = document.querySelectorAll('.feedback-type-btn');
+    buttons.forEach(b => {
+        if (b.getAttribute('data-type') === 'feature') {
+            b.classList.add('selected');
+            b.setAttribute('aria-pressed', 'true');
+        } else {
+            b.classList.remove('selected');
+            b.setAttribute('aria-pressed', 'false');
+        }
+    });
     document.getElementById('feedback-title').value = '';
     document.getElementById('feedback-description').value = '';
     updateFeedbackCharCount();
@@ -134,18 +165,6 @@ function renderFeedbackList() {
     container.innerHTML = filteredFeedbackList.map(item => createFeedbackItemHTML(item)).join('');
 }
 function createFeedbackItemHTML(item) {
-    const typeColors = {
-        feature: '#3498db',
-        bug: '#e74c3c',
-        improvement: '#f1c40f',
-        other: '#9b59b6'
-    };
-    const statusColors = {
-        pending: '#95a5a6',
-        'in-progress': '#f39c12',
-        completed: '#27ae60',
-        rejected: '#c0392b'
-    };
     const statusLabels = {
         pending: 'Pending',
         'in-progress': 'In Progress',
@@ -160,42 +179,36 @@ function createFeedbackItemHTML(item) {
     };
     const userHasVoted = item.voters && item.voters.includes(currentUser?.username);
     const date = new Date(item.timestamp).toLocaleDateString();
-
+    const typeClass = `badge-${item.type}`;
+    const statusClass = `badge-status-${item.status}`;
     return `
-        <div class="feedback-item" data-id="${item.id}" style="margin-bottom: 15px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background: white;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                <div style="flex: 1;">
-                    <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
-                        <span style="padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; background: ${typeColors[item.type]}; color: white;">
-                            ${typeLabels[item.type]}
-                        </span>
-                        <span style="padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; background: ${statusColors[item.status]}; color: white;">
-                            ${statusLabels[item.status]}
-                        </span>
-                        ${item.clientVersion ? `<span style="padding: 4px 10px; border-radius: 4px; font-size: 11px; background: #ecf0f1; color: #7f8c8d;">v${item.clientVersion}</span>` : ''}
+        <div class="feedback-item" data-id="${item.id}">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:20px;">
+                <div style="flex:1;">
+                    <div class="feedback-item-badges">
+                        <span class="badge ${typeClass}">${typeLabels[item.type]}</span>
+                        <span class="badge ${statusClass}">${statusLabels[item.status]}</span>
+                        ${item.clientVersion ? `<span class="badge badge-version">v${item.clientVersion}</span>` : ''}
                     </div>
-                    <h4 style="margin: 0 0 8px 0; color: #2c3e50;">${escapeHtml(item.title)}</h4>
-                    <p style="margin: 0; color: #666; font-size: 14px; line-height: 1.5;">${escapeHtml(item.description)}</p>
-                    <div style="margin-top: 10px; font-size: 12px; color: #999;">
-                        Submitted ${date}${item.staffResponse ? ' • <strong style="color: #e74c3c;">Staff Response Available</strong>' : ''}
-                    </div>
+                    <h4 class="feedback-title">${escapeHtml(item.title)}</h4>
+                    <p class="feedback-description">${escapeHtml(item.description)}</p>
+                    <div class="feedback-meta">Submitted ${date}${item.staffResponse ? ' • <strong style="color: #e74c3c;">Staff Response Available</strong>' : ''}</div>
                 </div>
-                <div style="text-align: center; margin-left: 20px;">
+                <div style="text-align:center;">
                     <button 
-                        class="btn ${userHasVoted ? 'btn-success' : 'btn-secondary'}" 
+                        class="btn ${userHasVoted ? 'btn-success' : 'btn-secondary'} feedback-vote-btn" 
                         onclick="voteFeedback('${item.id}')" 
-                        ${userHasVoted ? 'disabled' : ''}
-                        style="padding: 8px 16px; min-width: 80px; display: flex; flex-direction: column; align-items: center; gap: 4px;">
-                        <span style="font-size: 18px;">▲</span>
-                        <span style="font-weight: bold;">${item.votes || 0}</span>
-                        <span style="font-size: 10px;">${userHasVoted ? 'VOTED' : 'VOTE'}</span>
+                        ${userHasVoted ? 'disabled' : ''}>
+                        <span class="vote-arrow">▲</span>
+                        <span class="vote-count">${item.votes || 0}</span>
+                        <span class="vote-label">${userHasVoted ? 'VOTED' : 'VOTE'}</span>
                     </button>
                 </div>
             </div>
             ${item.staffResponse ? `
-                <div style="margin-top: 15px; padding: 12px; background: #f8f9fa; border-left: 3px solid #3498db; border-radius: 4px;">
-                    <div style="font-size: 11px; font-weight: 600; color: #3498db; margin-bottom: 4px;">STAFF RESPONSE</div>
-                    <p style="margin: 0; color: #2c3e50; font-size: 13px;">${escapeHtml(item.staffResponse)}</p>
+                <div class="staff-response">
+                    <div class="staff-response-title">STAFF RESPONSE</div>
+                    <p class="feedback-description" style="margin:0;">${escapeHtml(item.staffResponse)}</p>
                 </div>
             ` : ''}
         </div>
@@ -314,7 +327,6 @@ if (typeof window !== 'undefined' && window.electronAPI) {
                 filterFeedback();
                 // Refresh user stats since feedback was deleted
                 updateUserFeedbackStats();
-                debugLog('Feedback deleted', 'info');
             }
         }
     });
