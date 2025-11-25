@@ -8,6 +8,19 @@ let userFeedbackStats = {
     improvement: 0,
     other: 0
 };
+
+// Error handler for this module
+window.addEventListener('error', (event) => {
+    if (event.filename && event.filename.includes('ARCFeedback-UI.js')) {
+        console.error('[ARCFeedback-UI Error]', {
+            message: event.message,
+            filename: event.filename,
+            line: event.lineno,
+            col: event.colno
+        });
+    }
+});
+
 // Initialize feedback character counter
 document.addEventListener('DOMContentLoaded', () => {
     const descriptionField = document.getElementById('feedback-description');

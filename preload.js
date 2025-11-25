@@ -71,6 +71,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   voteFeedback: (feedbackId) => ipcRenderer.invoke('vote-feedback', feedbackId),
   getUserFeedbackStats: () => ipcRenderer.invoke('get-user-feedback-stats'),
   getClientVersion: () => ipcRenderer.invoke('get-client-version'),
+  // Error logging
+  logRendererError: (error, context) => ipcRenderer.invoke('log-renderer-error', error, context),
+  logRendererConsoleError: (args, context) => ipcRenderer.invoke('log-renderer-console-error', args, context),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));

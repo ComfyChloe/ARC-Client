@@ -160,11 +160,18 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-  mainWindow.webContents.on('crashed', () => {
+  mainWindow.webContents.on('crashed', (event, killed) => {
     if (hasShownCriticalError) {
       return;
     }
     hasShownCriticalError = true;
+    // Log crash details before cleanup
+    debug.logRendererCrash({
+      reason: 'webContents crashed',
+      killed: killed,
+      timestamp: new Date().toISOString()
+    });
+    debug.logCriticalShutdown('Renderer process crashed', 'webContents.crashed');
     cleanup('renderer-crashed');
     dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
     process.exit(1);
@@ -174,6 +181,12 @@ function createWindow() {
       return;
     }
     hasShownCriticalError = true;
+    // Log unresponsive state before cleanup
+    debug.logRendererUnresponsive({
+      timestamp: new Date().toISOString(),
+      uptime: Math.round((Date.now() - debug.startTime) / 1000)
+    });
+    debug.logCriticalShutdown('Renderer process unresponsive', 'window.unresponsive');
     cleanup('renderer-unresponsive');
     dialog.showErrorBox('Application Unresponsive', 'The application is not responding and will now close.');
     process.exit(1);
@@ -759,6 +772,27 @@ ipcMain.handle('get-user-feedback-stats', async (event) => {
 ipcMain.handle('get-client-version', () => {
   const packageJson = require('./package.json');
   return packageJson.version;
+});
+
+// Error logging IPC handlers
+ipcMain.handle('log-renderer-error', (event, error, context) => {
+  try {
+    debug.logRendererError(error, context);
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to log renderer error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('log-renderer-console-error', (event, args, context) => {
+  try {
+    debug.logRendererConsoleError(args, context);
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to log renderer console error:', err);
+    return { success: false, error: err.message };
+  }
 });
 ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
   try {
@@ -1516,9 +1550,10 @@ process.on('uncaughtException', (error) => {
     return;
   }
   hasShownCriticalError = true;
-  // Use debug.error instead of logger.logError to avoid missing method issues
+  // Log comprehensive error details
   try {
-    debug.error(`Uncaught exception: ${error.message}`, { stack: error.stack });
+    debug.logUncaughtException(error, 'main');
+    debug.logCriticalShutdown('Uncaught exception', 'process.uncaughtException');
   } catch (debugError) {
     console.error('Failed to log error via debug:', debugError);
     console.error('Original error:', error);
@@ -1526,20 +1561,25 @@ process.on('uncaughtException', (error) => {
   try {
     cleanup('uncaught-exception');
   } catch (cleanupError) {
-    debug.error(`Error during cleanup: ${cleanupError.message}`);
+    try {
+      debug.error(`Error during cleanup: ${cleanupError.message}`);
+    } catch (e) {
+      console.error('Cleanup error:', cleanupError);
+    }
   }
   dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
   process.exit(1);
 });
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', (reason, promise) => {
   if (hasShownCriticalError) {
     process.exit(1);
     return;
   }
   hasShownCriticalError = true;
-  // Use debug.error instead of logger.logError to avoid missing method issues
+  // Log comprehensive rejection details
   try {
-    debug.error(`Unhandled rejection: ${reason}`, { stack: reason && reason.stack ? reason.stack : 'No stack trace' });
+    debug.logUnhandledRejection(reason, promise, 'main');
+    debug.logCriticalShutdown('Unhandled promise rejection', 'process.unhandledRejection');
   } catch (debugError) {
     console.error('Failed to log rejection via debug:', debugError);
     console.error('Original rejection:', reason);
@@ -1547,7 +1587,11 @@ process.on('unhandledRejection', (reason) => {
   try {
     cleanup('unhandled-rejection');
   } catch (cleanupError) {
-    debug.error(`Error during cleanup: ${cleanupError.message}`);
+    try {
+      debug.error(`Error during cleanup: ${cleanupError.message}`);
+    } catch (e) {
+      console.error('Cleanup error:', cleanupError);
+    }
   }
   dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
   process.exit(1);

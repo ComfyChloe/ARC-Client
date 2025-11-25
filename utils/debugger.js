@@ -194,5 +194,76 @@ class Debugger {
     });
     return { error: errorMessage };
   }
+  
+  // Crash and critical error logging
+  logRendererCrash(details) {
+    this.error('RENDERER PROCESS CRASHED', {
+      timestamp: new Date().toISOString(),
+      reason: details.reason || 'Unknown',
+      exitCode: details.exitCode,
+      signal: details.signal,
+      ...details
+    });
+  }
+  
+  logRendererUnresponsive(details) {
+    this.error('RENDERER PROCESS UNRESPONSIVE', {
+      timestamp: new Date().toISOString(),
+      duration: details.duration || 'Unknown',
+      ...details
+    });
+  }
+  
+  logUncaughtException(error, source = 'main') {
+    this.error(`UNCAUGHT EXCEPTION (${source})`, {
+      timestamp: new Date().toISOString(),
+      message: error.message || String(error),
+      stack: error.stack || 'No stack trace',
+      name: error.name,
+      code: error.code,
+      source
+    });
+  }
+  
+  logUnhandledRejection(reason, promise, source = 'main') {
+    this.error(`UNHANDLED PROMISE REJECTION (${source})`, {
+      timestamp: new Date().toISOString(),
+      reason: reason && reason.message ? reason.message : String(reason),
+      stack: reason && reason.stack ? reason.stack : 'No stack trace',
+      source
+    });
+  }
+  
+  logRendererError(error, context = {}) {
+    this.error('RENDERER ERROR', {
+      timestamp: new Date().toISOString(),
+      message: error.message || String(error),
+      stack: error.stack || 'No stack trace',
+      filename: error.filename,
+      lineno: error.lineno,
+      colno: error.colno,
+      url: context.url,
+      userAgent: context.userAgent,
+      ...context
+    });
+  }
+  
+  logRendererConsoleError(args, context = {}) {
+    this.error('RENDERER CONSOLE ERROR', {
+      timestamp: new Date().toISOString(),
+      arguments: args,
+      location: context.location,
+      ...context
+    });
+  }
+  
+  logCriticalShutdown(reason, source) {
+    this.error('CRITICAL SHUTDOWN INITIATED', {
+      timestamp: new Date().toISOString(),
+      reason,
+      source,
+      uptime: Math.round((Date.now() - this.startTime) / 1000) + 's'
+    });
+  }
 }
 module.exports = new Debugger();

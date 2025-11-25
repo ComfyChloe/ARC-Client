@@ -52,6 +52,117 @@ let lastFloatLogTimes = new Map(); // Track last log time per address
 let pendingFloatTimeouts = new Map(); // Track pending timeouts for float logging
 let lastFloatValues = new Map(); // Store latest values for delayed logging
 // Websocket connection states end
+
+// Global error handlers for renderer process
+window.addEventListener('error', (event) => {
+    try {
+        const errorInfo = {
+            message: event.message,
+            filename: event.filename,
+            lineno: event.lineno,
+            colno: event.colno,
+            stack: event.error ? event.error.stack : 'No stack trace',
+            timestamp: new Date().toISOString()
+        };
+        
+        const context = {
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+            oscEnabled,
+            isConnected,
+            isAuthenticated
+        };
+        
+        // Send to main process for logging
+        if (window.electronAPI && window.electronAPI.logRendererError) {
+            window.electronAPI.logRendererError(errorInfo, context);
+        }
+        
+        // Also log to console for development
+        console.error('[RENDERER ERROR CAPTURED]', errorInfo);
+    } catch (err) {
+        console.error('Failed to log renderer error:', err);
+    }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    try {
+        const reason = event.reason;
+        const errorInfo = {
+            message: reason && reason.message ? reason.message : String(reason),
+            stack: reason && reason.stack ? reason.stack : 'No stack trace',
+            type: 'unhandledrejection',
+            timestamp: new Date().toISOString()
+        };
+        
+        const context = {
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+            oscEnabled,
+            isConnected,
+            isAuthenticated
+        };
+        
+        // Send to main process for logging
+        if (window.electronAPI && window.electronAPI.logRendererError) {
+            window.electronAPI.logRendererError(errorInfo, context);
+        }
+        
+        // Also log to console for development
+        console.error('[RENDERER UNHANDLED REJECTION CAPTURED]', errorInfo);
+    } catch (err) {
+        console.error('Failed to log unhandled rejection:', err);
+    }
+});
+
+// Override console.error to capture and forward errors
+const originalConsoleError = console.error;
+console.error = function(...args) {
+    // Call original console.error
+    originalConsoleError.apply(console, args);
+    
+    try {
+        // Skip if this is our own error logging to prevent recursion
+        if (args[0] && typeof args[0] === 'string' && args[0].includes('[RENDERER')) {
+            return;
+        }
+        
+        const context = {
+            location: window.location.href,
+            timestamp: new Date().toISOString(),
+            oscEnabled,
+            isConnected,
+            isAuthenticated
+        };
+        
+        // Convert args to serializable format
+        const serializedArgs = args.map(arg => {
+            if (arg instanceof Error) {
+                return {
+                    message: arg.message,
+                    stack: arg.stack,
+                    name: arg.name
+                };
+            }
+            if (typeof arg === 'object') {
+                try {
+                    return JSON.stringify(arg);
+                } catch (e) {
+                    return String(arg);
+                }
+            }
+            return String(arg);
+        });
+        
+        // Send to main process for logging
+        if (window.electronAPI && window.electronAPI.logRendererConsoleError) {
+            window.electronAPI.logRendererConsoleError(serializedArgs, context);
+        }
+    } catch (err) {
+        originalConsoleError('Failed to log console error:', err);
+    }
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     await loadAppSettings();
