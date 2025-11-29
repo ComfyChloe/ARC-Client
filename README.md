@@ -3,63 +3,58 @@
 This is currently available for closed beta testers currently, This client is for the source to be public so users know what they are using.
 I would like this client to remain transparent for user privacy.
 
-Please note facetracking users you may experience High-load from usage of this app, I am working to improve this functionally to reduce load.
+# ARC-OSC Client
 
-## Overview
-The ARC-OSC Client is a standalone Electron application that provides a dedicated interface for sending OSC data to your ARC-OSC server via WebSocket. This solves the multi-user conflict issue by giving each user their own isolated session.
+Fast, transparent Electron client for ARC
 
 ## Features
-- **User Authentication**: Secure login using your ARC-OSC server credentials
-- **Role-Based Access**: Different permission levels (Admin, Moderator, User)
-- **User Isolation**: Each user maintains their own avatar state and parameters
-- **Real-time OSC**: Bidirectional OSC communication with VRChat
-- **Parameter Monitoring**: Live view of avatar parameters
-- **Manual OSC Sending**: Direct OSC message transmission
+- **ARC WebSocket Bridge**: Authenticate and sync avatar parameters with ARC.
+- **Multi-Connection OSC**: Add and manage multiple incoming/outgoing OSC endpoints (up to 20).
+- **OSC-Query Discovery**: Auto-discover services via mDNS and subscribe to paths with per-path ignore controls.
+- **Live Parameter Monitor**: Real-time view of avatar parameters and OSC traffic.
+- **Hyperate Integration**: Stream heart rate into VRChat parameters with muilt-ID support.
+- **VRChat API Login**: Optional VRChat API.
+- **OSC Leash Tools**: PhysBone leash input mapping (vertical/horizontal/run) with autostart options.
 
 ## Installation
 
 ### Prerequisites
-- Node.js 18+ installed
-- Your ARC-OSC server running and accessible
+- Node.js 24 LTS installed
+- The ARC-OSC server running and accessible
 
 ### Client Installation
 
-1. **Navigate to the client directory:**
-   ```bash
-   cd osc-client
-   ```
-
-2. **Install dependencies:**
+1. **Install dependencies:**
    ```bash
    npm install
    ```
-
-3. **Start the client in development mode:**
+   - Node.js 24 LTS (compatible with Electron runtime)
+   - An accessible ARC-OSC server (Live/Beta)
    ```bash
-   npm run dev
-   ```
+   ### Client Installation
 
-4. **Or build for production:**
-   ```bash
-   npm run build
-   ```
+   1. **Install dependencies:**
+      ```powershell
+      npm install
+      ```
 
-### VRChat Configuration
+   2. **Start in development:**
+      ```powershell
+      npm run dev
+      ```
 
-Configure VRChat to send OSC data to the client:
-
-1. **In VRChat**, go to Settings → OSC
-2. **Configure OSC ports** to match the client settings
-3. **Enable OSC**
-
-### Client Configuration
-
-1. **Server URL**: Point to your ARC-OSC server (e.g., `ws://localhost:3000`)
+   3. **Build for production:**
+      ```powershell
+      npm run build
+      ```
 2. **Local OSC Port**: Port for receiving from VRChat (default: 9001)
-3. **Target OSC Port**: Port for sending to VRChat (default: 9000)
-4. **Target Address**: VRChat's IP address (usually 127.0.0.1)
+   ### Client Configuration
 
-## Usage
+   - **Server URL**: Choose Live, Beta, or set a custom dev URL.
+   - **Local OSC Port**: Default `9001` (incoming from VRChat).
+   - **Target OSC Port**: Default `9000` (outgoing to VRChat).
+   - **Target Address**: Default `127.0.0.1`.
+   - **Secrets**: Place API keys (e.g., Hyperate) in `secrets.json` (template provided).
 
 ### Initial Setup
 
