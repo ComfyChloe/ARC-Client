@@ -61,28 +61,35 @@ Fast, transparent Electron client for ARC
 1. **Launch the client**
 2. **Configure connection settings** in the sidebar
 3. **Enter your ARC-OSC server credentials**
-4. **Click "Connect & Login"**
+4. **Click "Connect & Login"**            
 
 ## Gallery
+<details>
 
-Main view
-<img width="1184" height="845" alt="image" src="https://github.com/user-attachments/assets/3ce343e9-e791-4c0c-83d0-645718087484" />
+## OSC
+<img width="1243" height="2160" alt="image" src="https://github.com/user-attachments/assets/38d8da14-1d7a-49aa-9ac2-8cd96278ad6b" />
+
+## Logs
+
+<img width="930" height="1608" alt="image" src="https://github.com/user-attachments/assets/e4f0959a-4989-4b02-b715-efa0b172634b" />
+
+## Extras
+
+## Custom in-house feedback with responses
+
+<img width="1243" height="1618" alt="image" src="https://github.com/user-attachments/assets/ef324212-f9ea-4265-b191-10ed664fe089" />
+
+## Hyperate
+
+<img width="1241" height="922" alt="image" src="https://github.com/user-attachments/assets/5847ac32-91ca-4d5d-8f8a-01fd0e9ea9c2" />
+
+## OSC Leash
+
+<img width="924" height="1888" alt="image" src="https://github.com/user-attachments/assets/2bf73594-4b40-4a5c-978c-b533096909a7" />
+
+## Settings - Live Only
+
+<img width="935" height="686" alt="image" src="https://github.com/user-attachments/assets/80ea74a4-1ba7-4ccb-93b0-a391da495c5a" />
 
 
-OSC Page with 20 additional connections with soft handling
-
-<img width="1184" height="918" alt="image" src="https://github.com/user-attachments/assets/0c4c1f6a-17b2-490b-8ab2-29408c73a654" />
-<img width="846" height="630" alt="image" src="https://github.com/user-attachments/assets/b4a0cc73-9b79-461e-a1e7-74e13fd94851" />
-
-Logs view - WIP, Currently working on improvements for future debugging
-
-<img width="1184" height="761" alt="image" src="https://github.com/user-attachments/assets/90af03c9-1569-4c54-b7ed-e6be26291476" />
-
-Settings - Basic with no additions
-
-<img width="1184" height="761" alt="image" src="https://github.com/user-attachments/assets/fdddcfa7-e368-46e1-8381-0502934444da" />
-
-
-
-
-
+</details>
