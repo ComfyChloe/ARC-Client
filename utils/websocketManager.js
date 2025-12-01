@@ -38,9 +38,12 @@ class WebSocketManager {
             if (!username || !password) {
                 throw new Error('Username and password are required');
             }
+            // Get client version
+            const { app } = require('electron');
+            const clientVersion = app.getVersion();
             const socketUrl = this.connectionConfig.serverUrl;
             this.socket = io(socketUrl, {
-                query: { username, password },
+                query: { username, password, clientVersion },
                 transports: ['websocket'],
                 autoConnect: false,
                 reconnection: this.connectionConfig.autoReconnect,
