@@ -32,7 +32,7 @@ let oscLeashAddon;
 let vrchatApiContainer;
 // On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
 if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
-  serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
+  serverConfig.websocketServerUrl = 'wss://arcosc.app:48255';
   debug.info('Custom WebSocket URL detected on startup, reset to live server');
 }
 let isShuttingDown = false;

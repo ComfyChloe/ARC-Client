@@ -295,7 +295,7 @@ async function loadConfig() {
         // Set WebSocket server URL
         const serverUrlInput = document.getElementById('server-url-settings');
         if (serverUrlInput) {
-            serverUrlInput.value = config.websocketServerUrl || 'wss://avatar.comfychloe.uk:48255';
+            serverUrlInput.value = config.websocketServerUrl || 'wss://arcosc.app:48255';
             // Detect and update the current server status
             detectCurrentServer();
         }
@@ -595,11 +595,11 @@ async function switchToServer(serverType) {
         
         switch (serverType) {
             case 'live':
-                serverUrl = 'wss://avatar.comfychloe.uk:48255';
+                serverUrl = 'wss://arcosc.app:48255';
                 serverName = 'ARC-Live';
                 break;
             case 'beta':
-                serverUrl = 'wss://beta.avatar.comfychloe.uk:48255';
+                serverUrl = 'wss://arcosc.app:48255';
                 serverName = 'ARC-Beta';
                 break;
             case 'custom':
@@ -707,10 +707,10 @@ function updateServerButtonStates(activeServerType) {
 function detectCurrentServer() {
     const serverUrl = document.getElementById('server-url-settings').value;
     
-    if (serverUrl.includes('beta.avatar.comfychloe.uk')) {
-        updateCurrentServerStatus('ARC-Beta', 'beta');
-    } else if (serverUrl.includes('127.0.0.1')) {
+    if (serverUrl.includes('127.0.0.1')) {
         updateCurrentServerStatus('Custom (Dev)', 'custom');
+    } else if (serverUrl.includes('arcosc.app')) {
+        updateCurrentServerStatus('ARC-Live', 'live');
     } else {
         updateCurrentServerStatus('ARC-Live', 'live');
     }
