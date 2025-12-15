@@ -599,7 +599,7 @@ async function switchToServer(serverType) {
                 serverName = 'ARC-Live';
                 break;
             case 'beta':
-                serverUrl = 'wss://arcosc.app:48255';
+                serverUrl = 'wss://beta.avatar.comfychloe.uk:48255';
                 serverName = 'ARC-Beta';
                 break;
             case 'custom':
@@ -707,10 +707,10 @@ function updateServerButtonStates(activeServerType) {
 function detectCurrentServer() {
     const serverUrl = document.getElementById('server-url-settings').value;
     
-    if (serverUrl.includes('127.0.0.1')) {
+    if (serverUrl.includes('beta.avatar.comfychloe.uk')) {
+        updateCurrentServerStatus('ARC-Beta', 'beta');
+    } else if (serverUrl.includes('127.0.0.1')) {
         updateCurrentServerStatus('Custom (Dev)', 'custom');
-    } else if (serverUrl.includes('arcosc.app')) {
-        updateCurrentServerStatus('ARC-Live', 'live');
     } else {
         updateCurrentServerStatus('ARC-Live', 'live');
     }
