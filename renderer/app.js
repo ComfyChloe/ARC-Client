@@ -17,7 +17,6 @@ let runtimeInterval = null;
 // OSC message rate limiting
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
-let oscReceivedDisplayEnabled = true; // Controls if OSC received logs are displayed and processed
 const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
 const MAX_LOG_ENTRIES = 10000; // Maximum log entries to keep in DOM
@@ -255,11 +254,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(() => {
         // Clear float rate limiting data periodically
         clearFloatRateLimitingData();
-        // More aggressive cleanup when OSC received display is disabled
-        if (!oscReceivedDisplayEnabled) {
-            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
-            if (window.gc) window.gc();
-        }
         // If OSC received logs are getting too large, rotate them
         const receivedContainer = document.getElementById('osc-received-log-container');
         if (receivedContainer && receivedContainer.children.length > MAX_LOG_ENTRIES/2) {
@@ -1004,8 +998,6 @@ function isFloatValue(value) {
 }
 // Handle float OSC messages with rate limiting (similar to server implementation)
 function handleFloatOscLog(type, address, value, connectionId) {
-    // Skip processing received logs if display is disabled
-    if (type === 'received' && !oscReceivedDisplayEnabled) return;
     const key = `${type}-${address}`;
     const now = Date.now();
     const lastLogTime = lastFloatLogTimes.get(key) || 0;
@@ -1085,8 +1077,6 @@ function rotateLogContainers() {
     //debugLog('OSC received log container rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
-    // Skip processing if OSC received display is disabled
-    if (!oscReceivedDisplayEnabled) return;
     // Check if this is a float value and apply rate limiting
     if (isFloatValue(value)) {
         handleFloatOscLog('received', address, value, connectionId);
@@ -1836,9 +1826,6 @@ async function loadAppSettings() {
         if (logLevelSelect) {
             logLevelSelect.value = settings.logLevel || 'info';
         }
-        // Set OSC received display state
-        oscReceivedDisplayEnabled = settings.oscReceivedDisplayEnabled !== false; // Default to true for backward compatibility
-        updateOscReceivedDisplayStatus();
         // Apply theme from settings
         currentTheme = settings.theme || 'light';
         applyTheme(currentTheme);
@@ -3114,46 +3101,6 @@ async function removeOscQuerySubscription(pattern) {
     debugLog('Function deprecated - use unsubscription management instead', 'info');
 }
 
-function updateOscReceivedDisplayStatus() {
-    const statusElement = document.getElementById('osc-received-display-status');
-    const toggleBtn = document.getElementById('osc-received-display-toggle-btn');
-    if (statusElement) {
-        statusElement.textContent = oscReceivedDisplayEnabled ? 'Enabled' : 'Disabled';
-        statusElement.className = oscReceivedDisplayEnabled ? 'status-value' : 'status-value disabled';
-    }
-    if (toggleBtn) {
-        toggleBtn.textContent = oscReceivedDisplayEnabled ? 'Hide OSC Received' : 'Show OSC Received';
-        toggleBtn.className = oscReceivedDisplayEnabled ? 'btn btn-warning' : 'btn btn-success';
-    }
-}
-async function toggleOscReceivedDisplay() {
-    try {
-        oscReceivedDisplayEnabled = !oscReceivedDisplayEnabled;
-        // Immediate and complete cleanup when disabling
-        if (!oscReceivedDisplayEnabled) {
-            // Remove all received messages from buffer
-            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
-            clearFloatRateLimitingData();
-            document.getElementById('osc-received-log-container').innerHTML = 'OSC Received Display Disabled<br>';
-            // Force immediate garbage collection
-            if (window.gc) window.gc();
-        }
-        // Save the state to backend settings
-        const currentSettings = await window.electronAPI.getAppSettings();
-        currentSettings.oscReceivedDisplayEnabled = oscReceivedDisplayEnabled;
-        await window.electronAPI.setAppSettings(currentSettings);
-        // Update the UI
-        updateOscReceivedDisplayStatus();
-        // Clear existing OSC received log buffer when disabling
-        if (!oscReceivedDisplayEnabled) {
-            debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing load reduced`);
-        } else {
-            debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing resumed`);
-        }
-    } catch (error) {
-        debugLog(`Error toggling OSC received display: ${error.message}`, 'error');
-    }
-}
 async function loadTheme() {
     try {
         const settings = await window.electronAPI.getAppSettings();
