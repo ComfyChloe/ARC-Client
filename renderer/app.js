@@ -1387,8 +1387,6 @@ function showLogsView() {
         requestAnimationFrame(() => {
             logsView.style.opacity = '1';
         });
-        // Update OSC received display status when logs view is shown
-        updateOscReceivedDisplayStatus();
     }, 300);
     // Reset all navigation buttons
     [navMain, navOsc, navSettings].forEach(nav => {
