@@ -19,6 +19,16 @@ class VRChatAPIContainer {
     this.reconnectDelay = 60000; // 60 seconds
     this.backoffDelay = 180000; // 3 minutes for 500 errors
     this.isReconnecting = false;
+    // WebSocket Pipeline constants
+    this.PIPELINE_RECONNECT_INTERVAL_MS = 90000; // 90 seconds
+    this.PIPELINE_QUICK_RECONNECT_MS = 10000; // 10 seconds
+    this.PIPELINE_500_BACKOFF_MS = 180000; // 3 minutes
+    // Pipeline state
+    this.pipelineConnected = false;
+    this.pipelineReconnecting = false;
+    this.pipelineReconnectTimeout = null;
+    this.pipelineBackoffUntil = 0;
+    this.pipelineListenersSetup = false;
     // Initialize VRChat API client with proper application info and user agent
     this.initializeClient();
     debug.info('VRChat API container initialized');
@@ -181,7 +191,8 @@ class VRChatAPIContainer {
         displayName: this.currentUser.displayName,
         username: this.currentUser.username
       } : null,
-      hasSavedSession: !!(this.config?.authToken || this.config?.twoFactorToken)
+      hasSavedSession: !!(this.config?.authToken || this.config?.twoFactorToken),
+      pipelineConnected: this.pipelineConnected
     };
   }
 
@@ -254,6 +265,9 @@ class VRChatAPIContainer {
     this.reconnectAttempts = 0;
 
     this.startKeepalive();
+    this.connectPipeline().catch(error => {
+      debug.warn(`Failed to connect pipeline after login: ${error.message}`);
+    });
     await new Promise(resolve => setTimeout(resolve, 100));
     this.saveConfig();
 
@@ -307,6 +321,7 @@ class VRChatAPIContainer {
    */
   async logout() {
     this.stopKeepalive();
+    this.clearPipelineReconnectTimeout();
 
     if (this.apiClient && this.authenticated) {
       try {
@@ -345,6 +360,9 @@ class VRChatAPIContainer {
         this.currentUser = result.data;
         this.authenticated = true;
         this.startKeepalive();
+        this.connectPipeline().catch(error => {
+          debug.warn(`Failed to connect pipeline after restore: ${error.message}`);
+        });
 
         debug.info(`Successfully restored VRChat API session for user: ${result.data.displayName}`);
         return {
@@ -491,6 +509,196 @@ class VRChatAPIContainer {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Connect to VRChat WebSocket pipeline for real-time events.
+   */
+  async connectPipeline() {
+    if (!this.apiClient) {
+      return;
+    }
+
+    try {
+      // Extract auth token from cookie store or config
+      let authToken = null;
+
+      // Try cookie store first
+      if (this.cookieStore?.has('keyv:cookies')) {
+        const cookieData = this.cookieStore.get('keyv:cookies');
+        const cookieArray = this.parseCookieData(cookieData);
+        const authCookie = cookieArray?.find(c => c.name === 'auth');
+        if (authCookie?.value) {
+          authToken = authCookie.value;
+        }
+      }
+
+      // Fallback to config's encrypted token
+      if (!authToken && this.config?.authToken) {
+        authToken = decryptData(this.config.authToken);
+      }
+
+      if (!authToken) {
+        debug.warn('No auth token available for pipeline connection');
+        return;
+      }
+
+      // Connect the WebSocket pipeline
+      await this.apiClient.pipeline.authenticate(authToken);
+      this.pipelineConnected = this.apiClient.pipeline.connected;
+      debug.info('WebSocket pipeline connected successfully');
+
+      // Set up event listeners for real-time updates
+      this.setupPipelineListeners();
+    } catch (error) {
+      this.pipelineConnected = false;
+      debug.error(`Failed to connect WebSocket pipeline: ${error.message}`);
+      throw error; // Re-throw so reconnection logic can handle it
+    }
+  }
+
+  /**
+   * Set up WebSocket pipeline event listeners.
+   */
+  setupPipelineListeners() {
+    if (!this.apiClient || this.pipelineListenersSetup) {
+      return;
+    }
+
+    // Listen for friend online events
+    this.apiClient.on('friend-online', (data) => {
+      debug.info(`Pipeline: Friend online - ${data.userId}`);
+      // Emit event that main.js can forward to renderer
+      if (this.onPipelineEvent) {
+        this.onPipelineEvent('friend-online', data);
+      }
+    });
+
+    // Listen for friend offline events
+    this.apiClient.on('friend-offline', (data) => {
+      debug.info(`Pipeline: Friend offline - ${data.userId}`);
+      if (this.onPipelineEvent) {
+        this.onPipelineEvent('friend-offline', data);
+      }
+    });
+
+    // Listen for notifications
+    this.apiClient.on('notification', (data) => {
+      debug.info(`Pipeline: Notification - ${data.type}`);
+      if (this.onPipelineEvent) {
+        this.onPipelineEvent('notification', data);
+      }
+    });
+
+    // Listen for user updates
+    this.apiClient.on('user-update', (data) => {
+      debug.info(`Pipeline: User update - ${data.userId}`);
+      if (this.onPipelineEvent) {
+        this.onPipelineEvent('user-update', data);
+      }
+    });
+
+    // Start pipeline health monitoring
+    this.startPipelineHealthCheck();
+
+    this.pipelineListenersSetup = true;
+    debug.info('WebSocket pipeline event listeners configured');
+  }
+
+  /**
+   * Monitor pipeline connection and reconnect if needed.
+   */
+  startPipelineHealthCheck() {
+    const checkHealth = () => {
+      if (!this.authenticated) {
+        return;
+      }
+      if (this.apiClient && !this.apiClient.pipeline.connected) {
+        this.pipelineConnected = false;
+        debug.warn('Pipeline health check: disconnected, scheduling reconnect');
+        this.schedulePipelineReconnect(this.PIPELINE_QUICK_RECONNECT_MS);
+      } else {
+        this.pipelineConnected = this.apiClient?.pipeline.connected || false;
+        // Schedule next health check
+        this.pipelineReconnectTimeout = setTimeout(checkHealth, this.PIPELINE_RECONNECT_INTERVAL_MS);
+      }
+    };
+    // Start the first health check after the normal interval
+    this.pipelineReconnectTimeout = setTimeout(checkHealth, this.PIPELINE_RECONNECT_INTERVAL_MS);
+  }
+
+  /**
+   * Schedule a pipeline reconnection attempt.
+   */
+  schedulePipelineReconnect(delayMs = this.PIPELINE_RECONNECT_INTERVAL_MS) {
+    this.clearPipelineReconnectTimeout();
+    if (this.pipelineReconnecting) return;
+    this.pipelineReconnectTimeout = setTimeout(() => {
+      this.attemptPipelineReconnect().catch(error => {
+        debug.error(`Pipeline reconnect error: ${error.message}`);
+      });
+    }, delayMs);
+    debug.info(`Pipeline reconnect scheduled in ${delayMs / 1000}s`);
+  }
+
+  /**
+   * Clear pipeline reconnection timeout.
+   */
+  clearPipelineReconnectTimeout() {
+    if (this.pipelineReconnectTimeout) {
+      clearTimeout(this.pipelineReconnectTimeout);
+      this.pipelineReconnectTimeout = null;
+    }
+  }
+
+  /**
+   * Attempt to reconnect the pipeline.
+   */
+  async attemptPipelineReconnect() {
+    if (!this.apiClient || !this.authenticated) {
+      debug.warn('Cannot reconnect pipeline: not authenticated');
+      return;
+    }
+    // Check if we're in a backoff period (e.g., after 500 error)
+    if (this.pipelineBackoffUntil && Date.now() < this.pipelineBackoffUntil) {
+      const remaining = Math.ceil((this.pipelineBackoffUntil - Date.now()) / 1000);
+      debug.info(`Pipeline in backoff, ${remaining}s remaining`);
+      this.schedulePipelineReconnect(remaining * 1000);
+      return;
+    }
+    if (this.apiClient.pipeline.connected) {
+      this.pipelineConnected = true;
+      debug.info('Pipeline already connected');
+      return;
+    }
+    this.pipelineReconnecting = true;
+    try {
+      await this.connectPipeline();
+      this.pipelineConnected = true;
+      debug.info('Pipeline reconnected successfully');
+    } catch (error) {
+      this.pipelineConnected = false;
+      debug.error(`Pipeline reconnection failed: ${error.message}`);
+      // Handle 500 errors with extended backoff
+      const is500Error = error?.status === 500 || error?.response?.status === 500;
+      if (is500Error) {
+        this.pipelineBackoffUntil = Date.now() + this.PIPELINE_500_BACKOFF_MS;
+        debug.warn(`500 error, backing off for ${this.PIPELINE_500_BACKOFF_MS / 1000}s`);
+        this.schedulePipelineReconnect(this.PIPELINE_500_BACKOFF_MS);
+      } else {
+        // General error - quick retry
+        this.schedulePipelineReconnect(this.PIPELINE_QUICK_RECONNECT_MS);
+      }
+    } finally {
+      this.pipelineReconnecting = false;
+    }
+  }
+
+  /**
+   * Set callback for pipeline events (called by main.js).
+   */
+  setPipelineEventCallback(callback) {
+    this.onPipelineEvent = callback;
   }
 
   /**

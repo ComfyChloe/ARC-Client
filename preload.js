@@ -120,6 +120,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onFeedbackUpdate: (callback) => {
     ipcRenderer.on('feedback-update', (event, data) => callback(data));
   },
+  onVRChatPipelineEvent: (callback) => {
+    ipcRenderer.on('vrchatapi-pipeline-event', (event, data) => callback(data));
+  },
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);
   }

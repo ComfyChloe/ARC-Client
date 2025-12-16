@@ -1329,6 +1329,14 @@ app.whenReady().then(async () => {
   hyperateAddon = new HyperateAddon();
   oscLeashAddon = new OSCLeashAddon();
   vrchatApiContainer = new VRChatAPIContainer();
+  
+  // Set up pipeline event forwarding
+  vrchatApiContainer.setPipelineEventCallback((event, data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vrchatapi-pipeline-event', { event, data });
+    }
+  });
+  
   // Get app settings from config
   updateSplashProgress(30, 'Loading configuration');
   const appSettings = configManager.getAppSettings();

@@ -8,11 +8,41 @@ let vrchatApiStatus = {
     authenticated: false,
     currentUser: null,
     pending2FA: false,
-    twoFactorMethods: []
+    twoFactorMethods: [],
+    pipelineConnected: false
 };
 
 // Track if auto-login has been attempted to prevent repeated attempts
 let vrchatApiAutoLoginAttempted = false;
+
+// Set up pipeline event listener
+if (window.electronAPI && window.electronAPI.onVRChatPipelineEvent) {
+    window.electronAPI.onVRChatPipelineEvent(({ event, data }) => {
+        handleVRChatPipelineEvent(event, data);
+    });
+}
+
+/**
+ * Handle VRChat WebSocket pipeline events
+ */
+function handleVRChatPipelineEvent(event, data) {
+    debugLog(`Pipeline event: ${event}`, 'info');
+    
+    switch (event) {
+        case 'friend-online':
+            showNotification(`Friend Online: ${data.user?.displayName || data.userId}`, 'info');
+            break;
+        case 'friend-offline':
+            showNotification(`Friend Offline: ${data.user?.displayName || data.userId}`, 'info');
+            break;
+        case 'notification':
+            showNotification(`VRChat: ${data.message || data.type}`, 'info');
+            break;
+        case 'user-update':
+            debugLog(`User update: ${data.userId}`, 'info');
+            break;
+    }
+}
 
 /**
  * Load VRChat API status on page load and when view is shown
@@ -82,7 +112,8 @@ function updateVRChatApiUI() {
     if (vrchatApiStatus.authenticated && vrchatApiStatus.currentUser) {
         // Authenticated state
         if (statusIndicator) statusIndicator.className = 'status-indicator status-connected';
-        if (statusText) statusText.textContent = 'Authenticated';
+        const statusMsg = vrchatApiStatus.pipelineConnected ? 'Authenticated (Pipeline Connected)' : 'Authenticated';
+        if (statusText) statusText.textContent = statusMsg;
         if (userInfo) userInfo.style.display = 'block';
         if (userDisplay) userDisplay.textContent = `${vrchatApiStatus.currentUser.displayName} (@${vrchatApiStatus.currentUser.username})`;
         if (userIdEl) {
