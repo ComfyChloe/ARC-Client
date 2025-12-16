@@ -479,7 +479,6 @@ class VRChatAPIContainer {
 
     // Listen for friend online events
     this.apiClient.on('friend-online', (data) => {
-      debug.info(`Pipeline: Friend online - ${data.userId}`);
       // Emit event that main.js can forward to renderer
       if (this.onPipelineEvent) {
         this.onPipelineEvent('friend-online', data);
@@ -488,7 +487,6 @@ class VRChatAPIContainer {
 
     // Listen for friend offline events
     this.apiClient.on('friend-offline', (data) => {
-      debug.info(`Pipeline: Friend offline - ${data.userId}`);
       if (this.onPipelineEvent) {
         this.onPipelineEvent('friend-offline', data);
       }
