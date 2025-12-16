@@ -286,6 +286,7 @@ async function loadConfig() {
         document.getElementById('local-port-settings').value = config.localOscPort;
         document.getElementById('target-port-settings').value = config.targetOscPort;
         document.getElementById('target-address-settings').value = config.targetOscAddress;
+        document.getElementById('oscquery-bind-address-settings').value = config.oscQueryBindAddress || '0.0.0.0';
         // Set WebSocket server URL
         const serverUrlInput = document.getElementById('server-url-settings');
         if (serverUrlInput) {
@@ -709,17 +710,65 @@ function detectCurrentServer() {
         updateCurrentServerStatus('ARC-Live', 'live');
     }
 }
+
+/**
+ * Validate IPv4 address format
+ * @param {string} ip - IP address to validate
+ * @returns {boolean} - True if valid IPv4 address
+ */
+function isValidIPv4(ip) {
+    const ipv4Regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    return ipv4Regex.test(ip);
+}
+
+/**
+ * Validate port number
+ * @param {number} port - Port number to validate
+ * @returns {boolean} - True if valid port (1-65535)
+ */
+function isValidPort(port) {
+    const portNum = parseInt(port);
+    return !isNaN(portNum) && portNum >= 1 && portNum <= 65535;
+}
+
 async function updateOscPorts() {
     try {
+        // Get values
+        const localPort = parseInt(document.getElementById('local-port-settings').value);
+        const targetPort = parseInt(document.getElementById('target-port-settings').value);
+        const targetAddress = document.getElementById('target-address-settings').value.trim();
+        const oscQueryBindAddress = document.getElementById('oscquery-bind-address-settings').value.trim();
+
+        // Validate ports
+        if (!isValidPort(localPort)) {
+            debugLog('Invalid legacy incoming OSC port. Must be between 1 and 65535.', 'error');
+            return;
+        }
+        if (!isValidPort(targetPort)) {
+            debugLog('Invalid target OSC port. Must be between 1 and 65535.', 'error');
+            return;
+        }
+
+        // Validate IP addresses
+        if (!isValidIPv4(targetAddress)) {
+            debugLog('Invalid target IP address. Must be a valid IPv4 address (e.g., 127.0.0.1).', 'error');
+            return;
+        }
+        if (!isValidIPv4(oscQueryBindAddress)) {
+            debugLog('Invalid OSC-Query bind address. Must be a valid IPv4 address (e.g., 0.0.0.0 or 127.0.0.1).', 'error');
+            return;
+        }
+
         const config = {
-            localOscPort: parseInt(document.getElementById('local-port-settings').value),
-            targetOscPort: parseInt(document.getElementById('target-port-settings').value),
-            targetOscAddress: document.getElementById('target-address-settings').value
+            localOscPort: localPort,
+            targetOscPort: targetPort,
+            targetOscAddress: targetAddress,
+            oscQueryBindAddress: oscQueryBindAddress
         };
         await window.electronAPI.setConfig(config);
-        debugLog('Primary OSC configuration updated - OSC services will restart');
+        debugLog('OSC configuration updated - OSC services will restart');
     } catch (error) {
-        debugLog(`Error updating primary OSC configuration: ${error.message}`, 'error');
+        debugLog(`Error updating OSC configuration: ${error.message}`, 'error');
     }
 }
 

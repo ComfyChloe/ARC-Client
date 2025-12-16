@@ -10,6 +10,7 @@ class ConfigManager {
       legacyOscPort: 9001,
       targetOscPort: 9000,
       targetOscAddress: '127.0.0.1',
+      oscQueryBindAddress: '0.0.0.0',
       additionalOscConnections: [],
       websocketServerUrl: 'wss://avatar.comfychloe.uk:48255',
       logLevel: 'info',

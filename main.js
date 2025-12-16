@@ -426,7 +426,12 @@ async function initOscQueryService() {
       debug.info('Reusing existing OSC Query service instance');
     }
     // Initialize with legacy port (not actually used - OSC Query auto-assigns ports)
-    await oscQueryService.initialize(serverConfig.legacyOscPort);
+    // Pass bindAddress from config (defaults to 0.0.0.0 in configManager)
+    await oscQueryService.initialize(
+      serverConfig.legacyOscPort,
+      null, // httpPort (auto-assigned)
+      serverConfig.oscQueryBindAddress || '0.0.0.0'
+    );
     
     // Load and set unsubscriptions from config
     const unsubscriptions = serverConfig.oscQueryUnsubscriptions || [];
@@ -506,8 +511,18 @@ ipcMain.handle('set-config', (event, newConfig) => {
   const portsChanged = (oldConfig.legacyOscPort !== serverConfig.legacyOscPort) ||
                        (oldConfig.targetOscPort !== serverConfig.targetOscPort) ||
                        (oldConfig.targetOscAddress !== serverConfig.targetOscAddress);
+
+  const oscQueryBindAddressChanged = (oldConfig.oscQueryBindAddress !== serverConfig.oscQueryBindAddress);
+
   const additionalConnectionsChanged = JSON.stringify(oldConfig.additionalOscConnections || []) !== 
                                        JSON.stringify(serverConfig.additionalOscConnections || []);
+
+  // Restart OSC-Query if bind address changed
+  if (oscQueryBindAddressChanged) {
+    debug.info('OSC-Query bind address changed, restarting OSC-Query service');
+    initOscQueryService();
+  }
+
   if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
     // Only additional connections changed, update them efficiently
     debug.info('Only additional connections changed, updating without restarting OSC service');

@@ -784,19 +784,39 @@
 
             <div class="card">
                 <h3>OSC Configuration</h3>
-                <div class="form-group">
-                    <label for="local-port-settings">Primary Incoming OSC Port</label>
-                    <input type="number" id="local-port-settings" value="9001" placeholder="Local OSC Port (Incoming)">
+                
+                <!-- Legacy OSC Configuration -->
+                <div style="margin-bottom: 10px;">
+                    <h4 style="margin: 5px 0; color: #666; font-size: 1em;">Legacy OSC (for non-OSC-Query apps)</h4>
+                    <div class="form-group">
+                        <label for="local-port-settings">Legacy Incoming OSC Port</label>
+                        <input type="number" id="local-port-settings" value="9001" placeholder="9001" min="1" max="65535">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="target-port-settings">Primary Outgoing OSC Port</label>
-                    <input type="number" id="target-port-settings" value="9000" placeholder="Target OSC Port (Outgoing)">
+
+                <!-- Outgoing OSC Target -->
+                <div style="margin-bottom: 10px;">
+                    <h4 style="margin: 5px 0; color: #666; font-size: 1em;">Outgoing OSC Target</h4>
+                    <div class="form-group">
+                        <label for="target-address-settings">Target IP Address</label>
+                        <input type="text" id="target-address-settings" value="127.0.0.1" placeholder="127.0.0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="target-port-settings">Target Port</label>
+                        <input type="number" id="target-port-settings" value="9000" placeholder="9000" min="1" max="65535">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="target-address-settings">Local OSC IP Address</label>
-                    <input type="text" id="target-address-settings" value="127.0.0.1">
+
+                <!-- OSC-Query Binding -->
+                <div style="margin-bottom: 10px;">
+                    <h4 style="margin: 5px 0; color: #666; font-size: 1em;">OSC-Query Binding</h4>
+                    <div class="form-group">
+                        <label for="oscquery-bind-address-settings">Bind Address <small style="color: #888;">(0.0.0.0 = all interfaces)</small></label>
+                        <input type="text" id="oscquery-bind-address-settings" value="0.0.0.0" placeholder="0.0.0.0">
+                    </div>
                 </div>
-                <button class="btn btn-primary" onclick="updateOscPortsFromSettings()" style="margin-top: 15px;">Update Primary OSC Configuration</button>
+
+                <button class="btn btn-primary" onclick="updateOscPortsFromSettings()">Update OSC Configuration</button>
             </div>
 
             <div class="card">
