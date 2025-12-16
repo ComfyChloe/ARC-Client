@@ -995,16 +995,15 @@ async function sendOscMessage() {
             value: parsedValue,
             type
         };
-        // Send via WebSocket if authenticated, otherwise use local OSC
-        if (isAuthenticated && isConnected) {
-            await window.electronAPI.sendOsc(oscData);
-            debugLog(`OSC Sent via WebSocket: ${address} = ${parsedValue} (${type})`);
+
+        // Send directly to VRChat via local OSC service (same as WebSocket forwarding does)
+        const result = await window.electronAPI.sendOscLocal(oscData);
+        
+        if (result.success) {
+            debugLog(`OSC message sent to VRChat: ${address} = ${parsedValue} (${type})`);
         } else {
-            await window.electronAPI.sendOsc(oscData);
-            debugLog(`OSC Sent locally: ${address} = ${parsedValue} (${type})`);
+            throw new Error(result.error || 'Failed to send OSC message');
         }
-        document.getElementById('osc-address').value = '';
-        document.getElementById('osc-value').value = '';
     } catch (error) {
         debugLog(`Error sending OSC: ${error.message}`, 'error');
     }

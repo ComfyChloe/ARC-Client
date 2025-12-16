@@ -651,6 +651,35 @@ ipcMain.handle('websocket-send-osc', (event, data) => {
     return { success: false, error: error.message };
   }
 });
+
+// Local OSC send handler
+ipcMain.handle('osc-send-local', (event, data) => {
+  try {
+    if (!oscService) {
+      throw new Error('OSC service not initialized');
+    }
+    if (!oscEnabled) {
+      throw new Error('OSC service is disabled. Please enable OSC first.');
+    }
+    const status = oscService.getStatus();
+    if (!status.isListening) {
+      throw new Error('OSC service is not running');
+    }
+    
+    debug.info(`Manual OSC send locally: ${data.address} = ${data.value} (${data.type})`);
+    const success = oscService.sendMessage(data.address, data.value, data.type);
+    
+    if (success) {
+      return { success: true };
+    } else {
+      throw new Error('Failed to send OSC message');
+    }
+  } catch (error) {
+    debug.error(`Local OSC send failed: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
 // Add test method
 ipcMain.handle('websocket-test-send', () => {
   try {

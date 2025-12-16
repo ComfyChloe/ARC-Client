@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   disconnectServer: () => ipcRenderer.invoke('websocket-disconnect'),
   authenticate: (credentials) => ipcRenderer.invoke('websocket-connect', credentials),
   sendOsc: (data) => ipcRenderer.invoke('websocket-send-osc', data),
+  sendOscLocal: (data) => ipcRenderer.invoke('osc-send-local', data),
   testWebSocketSend: () => ipcRenderer.invoke('websocket-test-send'),
   sendWebSocketMessage: (event, data) => ipcRenderer.invoke('websocket-send-message', event, data),
   getWebSocketStatus: () => ipcRenderer.invoke('websocket-get-status'),
