@@ -12,13 +12,6 @@ class VRChatAPIContainer {
     this.config = this.loadConfig();
     this.twoFactorResolver = null; // Resolver for 2FA promise
     this.loginPromise = null; // Track ongoing login attempt
-    // Keepalive and reconnection
-    this.keepaliveInterval = null;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.reconnectDelay = 60000; // 60 seconds
-    this.backoffDelay = 180000; // 3 minutes for 500 errors
-    this.isReconnecting = false;
     // WebSocket Pipeline constants
     this.PIPELINE_RECONNECT_INTERVAL_MS = 90000; // 90 seconds
     this.PIPELINE_QUICK_RECONNECT_MS = 10000; // 10 seconds
@@ -262,9 +255,7 @@ class VRChatAPIContainer {
     this.currentUser = userData;
     this.enabled = true;
     this.twoFactorResolver = null;
-    this.reconnectAttempts = 0;
 
-    this.startKeepalive();
     this.connectPipeline().catch(error => {
       debug.warn(`Failed to connect pipeline after login: ${error.message}`);
     });
@@ -312,7 +303,7 @@ class VRChatAPIContainer {
    * Stops the container without clearing session.
    */
   stop() {
-    this.stopKeepalive();
+    this.clearPipelineReconnectTimeout();
     debug.info('VRChat API container stopped');
   }
 
@@ -320,7 +311,6 @@ class VRChatAPIContainer {
    * Logs out and clears session.
    */
   async logout() {
-    this.stopKeepalive();
     this.clearPipelineReconnectTimeout();
 
     if (this.apiClient && this.authenticated) {
@@ -335,8 +325,6 @@ class VRChatAPIContainer {
     this.currentUser = null;
     this.twoFactorResolver = null;
     this.loginPromise = null;
-    this.reconnectAttempts = 0;
-    this.isReconnecting = false;
 
     this.clearCookies();
     this.initializeClient();
@@ -359,7 +347,6 @@ class VRChatAPIContainer {
       if (result.data?.id) {
         this.currentUser = result.data;
         this.authenticated = true;
-        this.startKeepalive();
         this.connectPipeline().catch(error => {
           debug.warn(`Failed to connect pipeline after restore: ${error.message}`);
         });
@@ -389,81 +376,6 @@ class VRChatAPIContainer {
       }
 
       return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Starts keepalive timer (checks session every 5 minutes).
-   */
-  startKeepalive() {
-    this.stopKeepalive();
-    this.keepaliveInterval = setInterval(() => this.verifySession(), 300000);
-  }
-
-  /**
-   * Stops keepalive timer.
-   */
-  stopKeepalive() {
-    if (this.keepaliveInterval) {
-      clearInterval(this.keepaliveInterval);
-      this.keepaliveInterval = null;
-    }
-  }
-
-  /**
-   * Verifies session is still valid and attempts reconnection if needed.
-   */
-  async verifySession() {
-    if (!this.authenticated || !this.apiClient) return;
-
-    try {
-      const result = await this.apiClient.getCurrentUser();
-
-      if (result.data) {
-        this.currentUser = result.data;
-        this.reconnectAttempts = 0;
-      } else {
-        await this.attemptReconnect();
-      }
-    } catch (error) {
-      const is500Error = error.response?.status === 500;
-      await this.attemptReconnect(is500Error);
-    }
-  }
-
-  /**
-   * Attempts to reconnect with exponential backoff.
-   */
-  async attemptReconnect(is500Error = false) {
-    if (this.isReconnecting || this.reconnectAttempts >= this.maxReconnectAttempts) {
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        this.authenticated = false;
-        this.stopKeepalive();
-      }
-      return;
-    }
-
-    this.isReconnecting = true;
-    this.reconnectAttempts++;
-
-    const delay = is500Error ? this.backoffDelay : this.reconnectDelay;
-    await new Promise(resolve => setTimeout(resolve, delay));
-
-    try {
-      if (this.cookieStore.size > 0) {
-        const result = await this.restoreSession();
-        if (result.success) {
-          this.reconnectAttempts = 0;
-        } else {
-          this.authenticated = false;
-          this.stopKeepalive();
-        }
-      } else {
-        this.authenticated = false;
-        this.stopKeepalive();
-      }
-    } finally {
-      this.isReconnecting = false;
     }
   }
 
