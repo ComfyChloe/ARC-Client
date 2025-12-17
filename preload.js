@@ -118,6 +118,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOSCLeashMovement: (callback) => {
     ipcRenderer.on('oscleash-movement-data', (event, data) => callback(data));
   },
+  onOSCLeashStatusUpdate: (callback) => {
+    ipcRenderer.on('oscleash-status-update', (event, data) => callback(data));
+  },
   onHyperateUpdate: (callback) => {
     ipcRenderer.on('hyperate-update', (event, data) => callback(data));
   },

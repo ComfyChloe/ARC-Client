@@ -8,7 +8,11 @@ let hyperateStatus = {
     enabled: false,
     connected: false,
     stopping: false,
-    hasApiKey: false
+    hasApiKey: false,
+    lastError: null,
+    reconnecting: false,
+    reconnectAttempts: 0,
+    maxReconnectAttempts: 5
 };
 
 let hyperateStatusInterval = null;
@@ -265,6 +269,22 @@ function updateHyperateUI() {
         statusText.textContent = 'Stopping...';
         toggleBtn.textContent = 'Stopping...';
         toggleBtn.disabled = true;
+    } else if (hyperateStatus.enabled && hyperateStatus.reconnecting) {
+        // Show reconnecting status with attempt count and error
+        statusIndicator.className = 'status-indicator status-error';
+        let statusMessage = `Reconnecting (${hyperateStatus.reconnectAttempts}/${hyperateStatus.maxReconnectAttempts})...`;
+        if (hyperateStatus.lastError) {
+            statusMessage += ` - ${hyperateStatus.lastError}`;
+        }
+        statusText.textContent = statusMessage;
+        toggleBtn.textContent = 'Stop HypeRate';
+        toggleBtn.disabled = false;
+    } else if (hyperateStatus.enabled && hyperateStatus.lastError) {
+        // Show error state
+        statusIndicator.className = 'status-indicator status-error';
+        statusText.textContent = `Error: ${hyperateStatus.lastError}`;
+        toggleBtn.textContent = 'Stop HypeRate';
+        toggleBtn.disabled = false;
     } else if (hyperateStatus.enabled) {
         statusIndicator.className = 'status-indicator status-connecting';
         statusText.textContent = 'Connecting...';
@@ -418,6 +438,10 @@ function handleHyperateUpdate(data) {
             connected: data.connected,
             hasApiKey: data.hasApiKey,
             lastHeartRate: data.lastHeartRate || hyperateStatus.lastHeartRate,
+            lastError: data.lastError || null,
+            reconnecting: data.reconnecting || false,
+            reconnectAttempts: data.reconnectAttempts || 0,
+            maxReconnectAttempts: data.maxReconnectAttempts || 5,
             stopping: false
         };
         updateHyperateUI();

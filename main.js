@@ -1389,6 +1389,18 @@ app.whenReady().then(async () => {
     }
   });
   
+  // Set up OSCLeash status and movement callbacks to update renderer in real-time
+  oscLeashAddon.setStatusChangeCallback((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('oscleash-status-update', status);
+    }
+  });
+  oscLeashAddon.setMovementCallback((data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('oscleash-movement-data', data);
+    }
+  });
+  
   // Set up pipeline event forwarding
   vrchatApiContainer.setPipelineEventCallback((event, data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {

@@ -233,8 +233,9 @@ class OSCPackageController {
  * OSC Leash Program - Main processing logic
  */
 class OSCLeashProgram {
-  constructor(oscService) {
+  constructor(oscService, addonInstance = null) {
     this.oscService = oscService;
+    this.addonInstance = addonInstance;
     this.running = false;
     this.activeIntervals = new Map(); // Track active polling intervals
   }
@@ -337,9 +338,9 @@ class OSCLeashProgram {
   }
 
   notifyMovementUpdate(leash, vertical, horizontal, run) {
-    // Send movement data to renderer process for real-time display
-    if (global.mainWindow && global.mainWindow.webContents) {
-      global.mainWindow.webContents.send('oscleash-movement-data', {
+    // Send movement data via callback for real-time display
+    if (typeof this.addonInstance?.onMovementUpdate === 'function') {
+      this.addonInstance.onMovementUpdate({
         vertical: vertical,
         horizontal: horizontal,
         run: run,
@@ -394,8 +395,32 @@ class OSCLeashAddon {
     this.discoveredLeashes = new Set(); // Track which leashes have been detected
     this.packageController = null;
     this.program = null;
+    this.onStatusChange = null; // Callback for status changes
+    this.onMovementUpdate = null; // Callback for movement updates
     
     debug.info('OSCLeash addon initialized');
+  }
+  /**
+   * Set callback for status changes (enabled/disabled)
+   * @param {Function} callback - Called with status object
+   */
+  setStatusChangeCallback(callback) {
+    this.onStatusChange = callback;
+  }
+  /**
+   * Set callback for movement updates
+   * @param {Function} callback - Called with movement data
+   */
+  setMovementCallback(callback) {
+    this.onMovementUpdate = callback;
+  }
+  /**
+   * Notify listeners of status change
+   */
+  notifyStatusChange() {
+    if (typeof this.onStatusChange === 'function') {
+      this.onStatusChange(this.getStatus());
+    }
   }
 
   loadConfig() {
@@ -454,7 +479,7 @@ class OSCLeashAddon {
       }
 
       // Create program
-      this.program = new OSCLeashProgram(this.oscService);
+      this.program = new OSCLeashProgram(this.oscService, this);
 
       // Create package controller
       this.packageController = new OSCPackageController(this.leashes, this.oscService, this);
@@ -472,10 +497,12 @@ class OSCLeashAddon {
       debug.info('OSCLeash initialized - all leashes in idle state, waiting for grab detection...');
       this.settings.printInfo();
       debug.info('OSCLeash addon started, awaiting input...');
+      this.notifyStatusChange(); // Notify UI of status change
       return true;
     } catch (error) {
       debug.logError(`Failed to start OSCLeash: ${error.message}`);
       this.enabled = false;
+      this.notifyStatusChange(); // Notify UI of failure
       return false;
     }
   }
@@ -515,6 +542,7 @@ class OSCLeashAddon {
     this.discoveredLeashes.clear(); // Clear discovered leashes when stopping
 
     debug.info('OSCLeash addon stopped');
+    this.notifyStatusChange(); // Notify UI of status change
   }
 
   updateConfig(newConfig) {
