@@ -20,7 +20,31 @@ class HyperateAddon {
     this.primaryTracker = this.config.primaryTracker || null;
     this.trackerNames = this.config.trackerNames || {};
     this.trackerStates = this.config.trackerStates || {}; // Store enabled/disabled state
+    this.onStatusChange = null; // Callback for status changes
+    this.onHeartRateUpdate = null; // Callback for heart rate updates
     debug.info('HypeRate addon initialized');
+  }
+  /**
+   * Set callback for status changes (connected/disconnected)
+   * @param {Function} callback - Called with status object
+   */
+  setStatusChangeCallback(callback) {
+    this.onStatusChange = callback;
+  }
+  /**
+   * Set callback for heart rate updates
+   * @param {Function} callback - Called with { heartRate, deviceId }
+   */
+  setHeartRateCallback(callback) {
+    this.onHeartRateUpdate = callback;
+  }
+  /**
+   * Notify listeners of status change
+   */
+  notifyStatusChange() {
+    if (typeof this.onStatusChange === 'function') {
+      this.onStatusChange(this.getStatus());
+    }
   }
   loadSecrets() {
     try {
@@ -91,6 +115,7 @@ class HyperateAddon {
     }
     this.enabled = true;
     this.oscService = oscService; // OSC service is optional
+    this.notifyStatusChange(); // Notify UI of state change immediately
     this.connect();
     debug.info('HypeRate addon started');
     return true;
@@ -101,6 +126,7 @@ class HyperateAddon {
     }
     this.enabled = false;
     this.disconnect();
+    this.notifyStatusChange(); // Notify UI of state change immediately
     debug.info('HypeRate addon stopped');
   }
   connect() {
@@ -117,10 +143,12 @@ class HyperateAddon {
         debug.info('Connected to HypeRate WebSocket');
         this.setupHeartbeat();
         this.loadSavedTrackers();
+        this.notifyStatusChange();
       });
       this.ws.on('close', () => {
         debug.info('HypeRate connection closed');
         this.cleanup();
+        this.notifyStatusChange();
         if (this.enabled) {
           this.scheduleReconnect();
         }
@@ -128,6 +156,7 @@ class HyperateAddon {
       this.ws.on('error', (error) => {
         debug.logError(`HypeRate connection error: ${error.message}`);
         this.cleanup();
+        this.notifyStatusChange();
         if (this.enabled) {
           this.scheduleReconnect();
         }
@@ -273,6 +302,10 @@ class HyperateAddon {
       if (deviceId === this.primaryTracker) {
         this.lastHeartRate = heartRate;
         this.sendHeartRateToVRChat(heartRate);
+        // Notify renderer of heart rate update
+        if (typeof this.onHeartRateUpdate === 'function') {
+          this.onHeartRateUpdate({ heartRate, deviceId });
+        }
       }
     } catch (error) {
       debug.logError(`Error handling heart rate update: ${error.message}`);

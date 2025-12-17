@@ -1377,6 +1377,18 @@ app.whenReady().then(async () => {
   oscLeashAddon = new OSCLeashAddon();
   vrchatApiContainer = new VRChatAPIContainer();
   
+  // Set up HypeRate status and heart rate callbacks to update renderer in real-time
+  hyperateAddon.setStatusChangeCallback((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('hyperate-update', { type: 'status', ...status });
+    }
+  });
+  hyperateAddon.setHeartRateCallback((data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('hyperate-update', data);
+    }
+  });
+  
   // Set up pipeline event forwarding
   vrchatApiContainer.setPipelineEventCallback((event, data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {

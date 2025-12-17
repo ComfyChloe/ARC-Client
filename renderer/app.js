@@ -3289,8 +3289,8 @@ const originalShowHyperateView = showHyperateView;
 showHyperateView = function() {
     try {
         // Stop any existing status updates first
-        if (window.HyperateUI && typeof window.HyperateUI.stopStatusUpdates === 'function') {
-            window.HyperateUI.stopStatusUpdates();
+        if (window.HyperateUI && typeof window.HyperateUI.stopHyperateStatusUpdates === 'function') {
+            window.HyperateUI.stopHyperateStatusUpdates();
         }
         
         // Call the original function
@@ -3302,8 +3302,8 @@ showHyperateView = function() {
                 if (window.HyperateUI) {
                     await window.HyperateUI.refreshHyperateStatus();
                     await window.HyperateUI.refreshHyperateTrackers();
-                    if (typeof window.HyperateUI.startStatusUpdates === 'function') {
-                        window.HyperateUI.startStatusUpdates();
+                    if (typeof window.HyperateUI.startHyperateStatusUpdates === 'function') {
+                        window.HyperateUI.startHyperateStatusUpdates();
                     }
                 }
             } catch (error) {

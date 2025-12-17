@@ -408,9 +408,25 @@ async function editTrackerName(deviceId, currentName) {
 }
 
 /**
- * Handle heart rate updates from main process
+ * Handle updates from main process (heart rate and status changes)
  */
 function handleHyperateUpdate(data) {
+    // Handle status change updates
+    if (data.type === 'status') {
+        hyperateStatus = {
+            enabled: data.enabled,
+            connected: data.connected,
+            hasApiKey: data.hasApiKey,
+            lastHeartRate: data.lastHeartRate || hyperateStatus.lastHeartRate,
+            stopping: false
+        };
+        updateHyperateUI();
+        // Refresh trackers list on connection state change
+        if (document.getElementById('Hyperate-view').style.display !== 'none') {
+            refreshHyperateTrackers();
+        }
+    }
+    // Handle heart rate updates
     if (data.heartRate) {
         updateHeartRateDisplay(data.heartRate);
         hyperateStatus.lastHeartRate = data.heartRate;
