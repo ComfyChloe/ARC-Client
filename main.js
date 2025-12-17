@@ -261,6 +261,9 @@ function initWebSocket() {
     wsManager.on('server-message', (data) => {
       sendToRenderer('websocket-server-message', data);
     });
+    wsManager.on('panel-connections-update', (data) => {
+      sendToRenderer('websocket-panel-connections-update', data);
+    });
     wsManager.on('feedback-update', (data) => {
       sendToRenderer('feedback-update', data);
       debug.info(`Feedback update received: ${data.action} for feedback ${data.feedbackId || 'unknown'}`);

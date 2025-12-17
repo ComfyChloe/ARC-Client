@@ -11,6 +11,8 @@ let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
 let currentTheme = 'light';
+let panelConnectionsData = {};
+let panelUpdateInterval = null;
 // Runtime timer
 let startTime = Date.now();
 let runtimeInterval = null;
@@ -425,6 +427,13 @@ function setupEventListeners() {
     });
     window.electronAPI.onWebSocketServerMessage((data) => {
         debugLog(`Server message: ${data.message || JSON.stringify(data)}`);
+    });
+    window.electronAPI.onWebSocketPanelConnectionsUpdate((data) => {
+        console.log('Panel connections update received:', data);
+        console.log('Number of panels received:', Object.keys(data).length);
+        console.log('Panel IDs:', Object.keys(data));
+        panelConnectionsData = data;
+        renderPanelDashboard();
     });
 }
 function updateOscStatus(status, port) {
@@ -1909,6 +1918,7 @@ window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('websocket-avatar-change');
     window.electronAPI.removeAllListeners('websocket-parameter-update');
     window.electronAPI.removeAllListeners('websocket-server-message');
+    window.electronAPI.removeAllListeners('websocket-panel-connections-update');
     window.electronAPI.removeAllListeners('app-settings');
 });
 async function addOscConnection(type) {
@@ -3386,3 +3396,94 @@ window.showVRChatAPIView = function() {
         originalShowVRChatAPIView.call(this);
     }
 };
+
+// ============================================
+// Panel Dashboard Functions
+// ============================================
+
+function renderPanelDashboard() {
+    const container = document.getElementById('panels-grid');
+    if (!container) return;
+    
+    if (!panelConnectionsData || Object.keys(panelConnectionsData).length === 0) {
+        container.innerHTML = '<p class="panels-loading">No panels found. Create panels in the ARC dashboard.</p>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    const now = Date.now();
+    
+    Object.entries(panelConnectionsData).forEach(([panelId, panelInfo]) => {
+        const card = document.createElement('div');
+        card.className = 'panel-card';
+        
+        const statusClass = panelInfo.isActive ? 'active' : 'inactive';
+        const statusText = panelInfo.isActive ? 'Active' : 'Inactive';
+        
+        // Calculate connection time display (will update every 30s)
+        const connectionTime = panelInfo.connectionCount > 0 ? 
+            '<div class="panel-connection-time" data-panel-id="' + escapeHtml(panelId) + '">Viewing now</div>' :
+            '';
+        
+        card.innerHTML = `
+            <div class="panel-card-header">
+                <h4 class="panel-name">${escapeHtml(panelInfo.panelName)}</h4>
+                <span class="panel-status-badge ${statusClass}">${statusText}</span>
+            </div>
+            <div class="panel-stats">
+                <div class="panel-stat">
+                    <span class="panel-stat-value">${panelInfo.connectionCount}</span>
+                    <span class="panel-stat-label">Connections</span>
+                </div>
+            </div>
+            ${connectionTime}
+        `;
+        
+        container.appendChild(card);
+    });
+    
+    // Start/restart the 30-second update interval for connection times
+    startPanelUpdateInterval();
+}
+
+function startPanelUpdateInterval() {
+    // Clear existing interval if any
+    if (panelUpdateInterval) {
+        clearInterval(panelUpdateInterval);
+    }
+    
+    // Update connection times every 30 seconds
+    panelUpdateInterval = setInterval(() => {
+        updatePanelConnectionTimes();
+    }, 30000);
+}
+
+function updatePanelConnectionTimes() {
+    const timeElements = document.querySelectorAll('.panel-connection-time');
+    timeElements.forEach(el => {
+        const panelId = el.getAttribute('data-panel-id');
+        if (panelId && panelConnectionsData[panelId] && panelConnectionsData[panelId].connectionCount > 0) {
+            el.textContent = 'Viewing now';
+        }
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Clear panel update interval on disconnect
+const originalDisconnect = disconnect;
+disconnect = function() {
+    if (panelUpdateInterval) {
+        clearInterval(panelUpdateInterval);
+        panelUpdateInterval = null;
+    }
+    panelConnectionsData = {};
+    if (originalDisconnect) {
+        return originalDisconnect();
+    }
+};
+

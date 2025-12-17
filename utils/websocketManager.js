@@ -146,6 +146,9 @@ class WebSocketManager {
         this.socket.on('server-message', (data) => {
             this.emit('server-message', data);
         });
+        this.socket.on('panel-connections-update', (data) => {
+            this.emit('panel-connections-update', data);
+        });
         this.socket.on('feedback-update', (data) => {
             this.emit('feedback-update', data);
         });

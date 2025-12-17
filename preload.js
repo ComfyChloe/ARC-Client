@@ -109,6 +109,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWebSocketServerMessage: (callback) => {
     ipcRenderer.on('websocket-server-message', (event, data) => callback(data));
   },
+  onWebSocketPanelConnectionsUpdate: (callback) => {
+    ipcRenderer.on('websocket-panel-connections-update', (event, data) => callback(data));
+  },
   onAppSettings: (callback) => {
     ipcRenderer.on('app-settings', (event, data) => callback(data));
   },
