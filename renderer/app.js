@@ -3420,6 +3420,46 @@ function renderPanelDashboard() {
         const statusClass = panelInfo.isActive ? 'active' : 'inactive';
         const statusText = panelInfo.isActive ? 'Active' : 'Inactive';
         
+        // Panel lock status
+        const lockClass = panelInfo.panelEnabled ? 'unlocked' : 'locked';
+        const lockText = panelInfo.panelEnabled ? 'Unlocked' : 'Locked';
+        
+        // Safety bubbles HTML
+        const safetyStatuses = [
+            panelInfo.safetyEnabled,
+            panelInfo.safety2Enabled,
+            panelInfo.safety3Enabled,
+            panelInfo.safety4Enabled,
+            panelInfo.safety5Enabled
+        ];
+        const safetyBubblesHtml = safetyStatuses.map((enabled, index) => {
+            const statusClass = enabled ? 'enabled' : 'disabled';
+            return `<span class="safety-bubble ${statusClass}">${index + 1}</span>`;
+        }).join('');
+        
+        // Access indicators HTML
+        // Visibility: Private (red) or Public (green) - mutually exclusive
+        const visibilityClass = panelInfo.isPublic ? 'public' : 'private';
+        const visibilityText = panelInfo.isPublic ? 'Public' : 'Private';
+        // Password protection
+        const passClass = panelInfo.hasPassword ? 'active' : 'inactive';
+        // Panel-level friend sharing (yellow when enabled)
+        const friendsClass = panelInfo.allowFriends ? 'friends' : 'inactive';
+        // Links with breakdown: L:N (F:X P:Y)
+        const linkCount = panelInfo.activeLinkCount || 0;
+        const friendLinkCount = panelInfo.friendLinkCount || 0;
+        const publicLinkCount = panelInfo.publicLinkCount || 0;
+        let linksHtml = '';
+        if (linkCount > 0) {
+            let breakdown = [];
+            if (friendLinkCount > 0) breakdown.push(`F:${friendLinkCount}`);
+            if (publicLinkCount > 0) breakdown.push(`P:${publicLinkCount}`);
+            const breakdownText = breakdown.length > 0 ? ` (${breakdown.join(' ')})` : '';
+            linksHtml = `<span class="access-indicator links">L:${linkCount}${breakdownText}</span>`;
+        } else {
+            linksHtml = `<span class="access-indicator inactive">Links</span>`;
+        }
+        
         // Calculate connection time display (will update every 30s)
         const connectionTime = panelInfo.connectionCount > 0 ? 
             '<div class="panel-connection-time" data-panel-id="' + escapeHtml(panelId) + '">Viewing now</div>' :
@@ -3428,13 +3468,28 @@ function renderPanelDashboard() {
         card.innerHTML = `
             <div class="panel-card-header">
                 <h4 class="panel-name">${escapeHtml(panelInfo.panelName)}</h4>
-                <span class="panel-status-badge ${statusClass}">${statusText}</span>
+                <div style="display: flex; gap: 6px;">
+                    <span class="panel-lock-badge ${lockClass}">${lockText}</span>
+                    <span class="panel-status-badge ${statusClass}">${statusText}</span>
+                </div>
             </div>
             <div class="panel-stats">
                 <div class="panel-stat">
                     <span class="panel-stat-value">${panelInfo.connectionCount}</span>
                     <span class="panel-stat-label">Connections</span>
                 </div>
+            </div>
+            <div class="safety-bubbles-row">
+                <span class="safety-label">Safety</span>
+                <div class="safety-bubbles">
+                    ${safetyBubblesHtml}
+                </div>
+            </div>
+            <div class="access-indicators-row">
+                <span class="access-indicator ${visibilityClass}">${visibilityText}</span>
+                <span class="access-indicator ${passClass}">Pass</span>
+                <span class="access-indicator ${friendsClass}">Friends</span>
+                ${linksHtml}
             </div>
             ${connectionTime}
         `;

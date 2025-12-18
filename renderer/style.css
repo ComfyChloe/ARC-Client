@@ -1456,3 +1456,189 @@ body.dark-theme .panel-connection-time {
 body.dark-theme .panels-loading {
     color: #95a5a6;
 }
+
+/* Panel Lock Badge */
+.panel-lock-badge {
+    padding: 4px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-left: 8px;
+}
+
+.panel-lock-badge.unlocked {
+    background: #d5f4e6;
+    color: #27ae60;
+}
+
+.panel-lock-badge.locked {
+    background: #f8d7da;
+    color: #c0392b;
+}
+
+body.dark-theme .panel-lock-badge.unlocked {
+    background: rgba(39, 174, 96, 0.2);
+    color: #58d68d;
+}
+
+body.dark-theme .panel-lock-badge.locked {
+    background: rgba(192, 57, 43, 0.2);
+    color: #e74c3c;
+}
+
+/* Safety Bubbles Row */
+.safety-bubbles-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    justify-content: center;
+}
+
+.safety-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-right: 4px;
+}
+
+.safety-bubbles {
+    display: flex;
+    gap: 4px;
+}
+
+.safety-bubble {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+}
+
+.safety-bubble.enabled {
+    background: #27ae60;
+    color: white;
+    box-shadow: 0 0 6px rgba(39, 174, 96, 0.4);
+}
+
+.safety-bubble.disabled {
+    background: #c0392b;
+    color: white;
+    opacity: 0.7;
+}
+
+body.dark-theme .safety-bubbles-row {
+    background: #2c3e50;
+}
+
+body.dark-theme .safety-label {
+    color: #95a5a6;
+}
+
+body.dark-theme .safety-bubble.enabled {
+    background: #27ae60;
+    box-shadow: 0 0 8px rgba(39, 174, 96, 0.5);
+}
+
+body.dark-theme .safety-bubble.disabled {
+    background: #c0392b;
+    opacity: 0.6;
+}
+
+/* Access Indicators Row */
+.access-indicators-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.access-indicator {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    transition: all 0.2s ease;
+}
+
+.access-indicator.active {
+    background: #27ae60;
+    color: white;
+}
+
+.access-indicator.inactive {
+    background: #bdc3c7;
+    color: #7f8c8d;
+    opacity: 0.6;
+}
+
+/* Visibility: Public (green) / Private (red) */
+.access-indicator.public {
+    background: #27ae60;
+    color: white;
+}
+
+.access-indicator.private {
+    background: #c0392b;
+    color: white;
+}
+
+/* Friends sharing (green) */
+.access-indicator.friends {
+    background: #27ae60;
+    color: white;
+}
+
+/* Links (blue) */
+.access-indicator.links {
+    background: #3498db;
+    color: white;
+}
+
+body.dark-theme .access-indicators-row {
+    background: #2c3e50;
+}
+
+body.dark-theme .access-indicator.active {
+    background: #27ae60;
+    color: white;
+}
+
+body.dark-theme .access-indicator.inactive {
+    background: #34495e;
+    color: #7f8c8d;
+    opacity: 0.5;
+}
+
+body.dark-theme .access-indicator.public {
+    background: #27ae60;
+}
+
+body.dark-theme .access-indicator.private {
+    background: #c0392b;
+}
+
+body.dark-theme .access-indicator.friends {
+    background: #27ae60;
+}
+
+body.dark-theme .access-indicator.links {
+    background: #3498db;
+}
