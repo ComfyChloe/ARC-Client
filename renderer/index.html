@@ -132,8 +132,10 @@
                     <div class="tree-content">
                         <div class="tree-items">
                             <button class="tree-child" id="nav-arcfeedback" onclick="showARCFeedbackView()">ARC Feedback</button>
+                            <button class="tree-child" id="nav-arclink" onclick="showARCLinkView()">ARC Link</button>
                             <button class="tree-child" id="nav-chatbox" onclick="showChatboxView()">Chatbox</button>
                             <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
+                            <button class="tree-child" id="nav-openshock" onclick="showOpenShockView()">OpenShock</button>
                             <button class="tree-child" id="nav-osc-leash" onclick="showOSCLeashView()">OSC Leash</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
                             <div class="tree-item" style="margin-top: 5px;">
@@ -145,6 +147,8 @@
                                     <div class="tree-items">
                                         <button class="tree-child" id="nav-vrchatapi" onclick="showVRChatAPIView()">Account Info</button>
                                         <button class="tree-child" id="nav-auto-inviter" onclick="showAutoInviterView()">Auto-Inviter</button>
+                                        <button class="tree-child" id="nav-auto-status" onclick="showAutoStatusView()">Auto-Status</button>
+                                        <button class="tree-child" id="nav-calendar" onclick="showCalendarView()">Calendar Viewing</button>
                                     </div>
                                 </div>
                             </div>
@@ -241,6 +245,58 @@
             <div class="header">
                 <h1>VOSK Voice Recognition</h1>
                 <p>Coming soon - Voice recognition for Universal control</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="arclink-view" style="display: none;">
+            <div class="header">
+                <h1>ARC Link</h1>
+                <p>Coming soon - Connect friends' avatar parameters together</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="openshock-view" style="display: none;">
+            <div class="header">
+                <h1>OpenShock Integration</h1>
+                <p>Coming soon - OpenShock API integration</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="auto-status-view" style="display: none;">
+            <div class="header">
+                <h1>Auto-Status</h1>
+                <p>Coming soon - Automatic VRChat status management</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="calendar-view" style="display: none;">
+            <div class="header">
+                <h1>Calendar</h1>
+                <p>Coming soon - View VRChat events and schedules</p>
             </div>
             <div class="card">
                 <h3>Feature Not Available</h3>
@@ -917,10 +973,14 @@
     </div>
 
     <!-- UI Modules - Load before app.js -->
+    <script src="ARCFeedback-UI.js"></script>
+    <script src="ARCLink-UI.js"></script>
+    <script src="AutoStatus-UI.js"></script>
+    <script src="Calendar-UI.js"></script>
     <script src="Hyperate-UI.js"></script>
+    <script src="OpenShock-UI.js"></script>
     <script src="OSCLeash-UI.js"></script>
     <script src="VRC-API-UI.js"></script>
-    <script src="ARCFeedback-UI.js"></script>
     
     <!-- Main Application -->
     <script src="app.js"></script>
