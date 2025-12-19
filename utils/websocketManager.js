@@ -37,6 +37,8 @@ class WebSocketManager {
             const { app } = require('electron');
             const clientVersion = app.getVersion();
             const socketUrl = this.connectionConfig.serverUrl;
+            // In dev mode (non-official servers), ignore SSL certificate validation
+            const isDevMode = !socketUrl.includes('arcosc.app') && !socketUrl.includes('beta.avatar.comfychloe.uk');
             this.socket = io(socketUrl, {
                 query: { username, password, clientVersion },
                 transports: ['websocket'],
@@ -45,9 +47,8 @@ class WebSocketManager {
                 reconnectionDelay: this.connectionConfig.reconnectDelay,
                 reconnectionAttempts: this.connectionConfig.maxReconnectAttempts,
                 secure: socketUrl.startsWith('wss://'),
-                rejectUnauthorized: true,
+                rejectUnauthorized: !isDevMode,
                 forceNew: true
-                // For development with self-signed certificates, pass rejectUnauthorized: false in connectionConfig
             });
             await this.setupEventHandlers();
             return new Promise((resolve, reject) => {
