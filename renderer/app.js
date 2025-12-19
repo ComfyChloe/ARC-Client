@@ -2111,6 +2111,9 @@ async function loadAppSettings() {
         // Apply theme from settings
         currentTheme = settings.theme || 'light';
         applyTheme(currentTheme);
+        
+        // Apply snow setting (default to true)
+        applySnowSetting(settings.snowEnabled !== false);
         // Initialize WebSocket forwarding status from settings
         wsForwardingEnabled = settings.enableWebSocketForwarding || false;
         updateWebSocketForwardingStatus(wsForwardingEnabled);
@@ -3416,6 +3419,49 @@ async function toggleTheme() {
         debugLog(`Theme switched to ${newTheme} mode`);
     } catch (error) {
         debugLog(`Error toggling theme: ${error.message}`, 'error');
+    }
+}
+
+// Snow overlay toggle
+let snowEnabled = true;
+
+async function toggleSnow() {
+    try {
+        snowEnabled = !snowEnabled;
+        const snowOverlay = document.getElementById('snow-overlay');
+        const snowButton = document.getElementById('snow-toggle');
+        
+        if (snowEnabled) {
+            snowOverlay.classList.remove('hidden');
+            snowButton.classList.remove('disabled');
+        } else {
+            snowOverlay.classList.add('hidden');
+            snowButton.classList.add('disabled');
+        }
+        
+        // Save the setting
+        const currentSettings = await window.electronAPI.getAppSettings();
+        currentSettings.snowEnabled = snowEnabled;
+        await window.electronAPI.setAppSettings(currentSettings);
+        debugLog(`Snow overlay ${snowEnabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+        debugLog(`Error toggling snow: ${error.message}`, 'error');
+    }
+}
+
+function applySnowSetting(enabled) {
+    snowEnabled = enabled !== false; // Default to true if undefined
+    const snowOverlay = document.getElementById('snow-overlay');
+    const snowButton = document.getElementById('snow-toggle');
+    
+    if (snowOverlay && snowButton) {
+        if (snowEnabled) {
+            snowOverlay.classList.remove('hidden');
+            snowButton.classList.remove('disabled');
+        } else {
+            snowOverlay.classList.add('hidden');
+            snowButton.classList.add('disabled');
+        }
     }
 }
 // Password saving functionality

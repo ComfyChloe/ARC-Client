@@ -20,7 +20,8 @@ class ConfigManager {
         oscleashAutostart: false,
         theme: 'light',
         lastUsername: '',
-        savedPassword: ''
+        savedPassword: '',
+        snowEnabled: true
       },
       oscQueryUnsubscriptions: [],
       windowState: {

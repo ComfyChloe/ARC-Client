@@ -92,10 +92,13 @@
             <div class="sidebar-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h3>Connection Status</h3>
-                    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
-                        <span class="theme-toggle-sun">☀</span>
-                        <span class="theme-toggle-moon">🌙</span>
-                    </button>
+                    <div style="display: flex; align-items: center;">
+                        <button class="snow-toggle" id="snow-toggle" onclick="toggleSnow()" title="Toggle Snow Overlay">❄️</button>
+                        <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                            <span class="theme-toggle-sun">☀</span>
+                            <span class="theme-toggle-moon">🌙</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="runtime-timer" style="text-align: center; margin-bottom: 15px;">
                     <span style="font-size: 0.85em; opacity: 0.8;">Runtime:</span>
@@ -985,5 +988,17 @@
     
     <!-- Main Application -->
     <script src="app.js"></script>
+    <div class="snow-overlay" id="snow-overlay">
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+    </div>
 </body>
 </html>
