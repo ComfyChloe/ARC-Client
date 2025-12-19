@@ -132,5 +132,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);
-  }
+  },
+  // Shell and clipboard API for VRC Timeline
+  openExternal: (url) => ipcRenderer.invoke('shell-open-external', url),
+  clipboardWriteText: (text) => ipcRenderer.invoke('clipboard-write-text', text)
 });

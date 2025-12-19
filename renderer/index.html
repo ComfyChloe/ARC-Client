@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data:;">
     <title>ARC-OSC Client</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
@@ -51,6 +52,19 @@
             <div style="display: flex; gap: 10px; justify-content: flex-end;">
                 <button class="btn btn-secondary" onclick="closeVRChatLinkModal()">Cancel</button>
                 <button class="btn btn-primary" onclick="confirmVRChatLink()">Link Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VRC Timeline Link Modal -->
+    <div id="vrc-timeline-link-modal" class="modal-fade" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; opacity: 0; transition: opacity 0.3s ease;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 450px; width: 90%;">
+            <h3 style="margin-top: 0; color: #fff;">🔗 Open Link</h3>
+            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px; line-height: 1.5; word-break: break-all;" id="vrc-timeline-link-url"></p>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeVRCTimelineLinkModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="copyVRCTimelineLink()">📋 Copy Link</button>
+                <button class="btn btn-primary" onclick="openVRCTimelineLinkInBrowser()">🌐 Open in Browser</button>
             </div>
         </div>
     </div>
@@ -141,6 +155,7 @@
                             <button class="tree-child" id="nav-openshock" onclick="showOpenShockView()">OpenShock</button>
                             <button class="tree-child" id="nav-osc-leash" onclick="showOSCLeashView()">OSC Leash</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
+                            <button class="tree-child" id="nav-vrc-timeline" onclick="showVRCTimelineView()">VRC Timeline</button>
                             <div class="tree-item" style="margin-top: 5px;">
                                 <button class="tree-toggle" id="nav-vrchatapi-toggle" style="width: 100%; display: flex; align-items: center;">
                                     <span class="arrow">▶</span>
@@ -255,6 +270,24 @@
                 <p style="color: #666; text-align: center; padding: 20px;">
                     This feature is planned for development and will be available in the future.
                 </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="vrc-timeline-view" style="display: none;">
+            <div class="header">
+                <h1>VRC Timeline</h1>
+                <p>Browse VRChat community events and activities</p>
+                <p>Click the Timeline Logo on top left to load the Page</p>
+                <p><b>Note: <U></U>Please note this feature is experimental in client, It might break.</U></b></p>
+            </div>
+            <div class="card" style="padding: 0; height: calc(100vh - 200px); overflow: hidden;">
+                <webview 
+                    id="vrc-timeline-webview"
+                    src="https://vrc.tl/" 
+                    style="width: 100%; height: 100%; display: inline-flex;"
+                    partition="persist:vrc-timeline"
+                    webpreferences="nodeIntegration=no,contextIsolation=yes">
+                </webview>
             </div>
         </div>
 

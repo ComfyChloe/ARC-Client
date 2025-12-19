@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { encryptData, decryptData } = require('./utils/encryption');
@@ -77,6 +77,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
+      webviewTag: true,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, 'Assets', 'ARC.ico'),
@@ -104,6 +105,36 @@ function createWindow() {
     }, Math.max(0, minSplashTime - (Date.now() - startTime)));
   });
   mainWindow.setMenuBarVisibility(false);
+
+  // Add security for VRC Timeline webview
+  mainWindow.webContents.on('did-attach-webview', (event, webContents) => {
+    // Set secure CSP for the webview
+    webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self' https://vrc.tl https://*.vrc.tl; " +
+            "script-src 'self' https://vrc.tl https://*.vrc.tl 'unsafe-inline'; " +
+            "style-src 'self' https://vrc.tl https://*.vrc.tl 'unsafe-inline'; " +
+            "img-src 'self' https: data:; " +
+            "font-src 'self' https://vrc.tl https://*.vrc.tl data:; " +
+            "connect-src 'self' https://vrc.tl https://*.vrc.tl wss://*.vrc.tl; " +
+            "frame-src 'self' https://vrc.tl https://*.vrc.tl; " +
+            "object-src 'none'; " +
+            "base-uri 'self';"
+          ]
+        }
+      });
+    });
+
+    // Disable nodeIntegration and enable security features
+    webContents.on('will-navigate', (event, url) => {
+      if (!url.startsWith('https://vrc.tl')) {
+        event.preventDefault();
+      }
+    });
+  });
 
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
@@ -472,6 +503,16 @@ ipcMain.handle('get-config', () => {
 ipcMain.handle('get-server-config', () => {
   return serverConfig;
 });
+
+// Shell and clipboard handlers for VRC Timeline
+ipcMain.handle('shell-open-external', async (event, url) => {
+  await shell.openExternal(url);
+});
+
+ipcMain.handle('clipboard-write-text', (event, text) => {
+  clipboard.writeText(text);
+});
+
 ipcMain.handle('set-config', (event, newConfig) => {
   const oldConfig = { ...serverConfig };
   serverConfig = { ...serverConfig, ...newConfig };
@@ -1367,6 +1408,7 @@ ipcMain.handle('vrchatapi-get-stats', async () => {
 
 app.whenReady().then(async () => {
   debug.logAppStartup();
+  
   // Create splash window immediately after log cleanup
   createWindow();
   // Load logger after app is ready

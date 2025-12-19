@@ -1323,7 +1323,8 @@ function showMainView() {
     const openshockView = document.getElementById('openshock-view');
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
-    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView].forEach(view => {
+    const vrcTimelineView = document.getElementById('vrc-timeline-view');
+    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1367,13 +1368,14 @@ function showOscView() {
     const openshockView = document.getElementById('openshock-view');
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
+    const vrcTimelineView = document.getElementById('vrc-timeline-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
+    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1423,9 +1425,10 @@ function showSettingsView() {
     const openshockView = document.getElementById('openshock-view');
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
+    const vrcTimelineView = document.getElementById('vrc-timeline-view');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView].forEach(view => {
+    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1469,13 +1472,14 @@ function showLogsView() {
     const openshockView = document.getElementById('openshock-view');
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
+    const vrcTimelineView = document.getElementById('vrc-timeline-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView].forEach(view => {
+    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1502,6 +1506,15 @@ function showLogsView() {
     navLogs.classList.add('active');
     navLogs.disabled = true;
     debugLog('Switched to logs view');
+}
+function cleanupVRCTimelineWebview() {
+    const timelineView = document.getElementById('vrc-timeline-view');
+    if (timelineView) {
+        const webview = timelineView.querySelector('webview');
+        if (webview && webview.isDevToolsOpened && webview.isDevToolsOpened()) {
+            webview.closeDevTools();
+        }
+    }
 }
 function setupExtrasDropdown() {
     const treeToggle = document.getElementById('nav-extras');
@@ -1546,7 +1559,8 @@ function setupVRChatApiDropdown() {
     });
 }
 function showVOSKView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    cleanupVRCTimelineWebview();
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
 
     views.forEach(view => {
@@ -1596,9 +1610,293 @@ function showVOSKView() {
     }
     debugLog('Switched to VOSK view');
 }
+function showVRCTimelineView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const timelineView = document.getElementById('vrc-timeline-view');
+        if (timelineView) {
+            timelineView.style.display = 'block';
+            timelineView.style.opacity = '0';
+            
+            // Initialize webview if it exists and hasn't been initialized
+            const webview = timelineView.querySelector('webview');
+            if (webview && !webview.dataset.initialized) {
+                webview.dataset.initialized = 'true';
+                
+                // Force webview to load by setting src attribute
+                // This ensures the webview loads when the view becomes visible
+                const currentSrc = webview.getAttribute('src');
+                if (currentSrc && !webview.src) {
+                    webview.src = currentSrc;
+                }
+                
+                webview.addEventListener('dom-ready', () => {
+                    webview.executeJavaScript(`
+                        if (typeof dragEvent === 'undefined') {
+                            window.dragEvent = null;
+                        }
+                        
+                        if (!Set.prototype.symmetricDifference) {
+                            Set.prototype.symmetricDifference = function(other) {
+                                const result = new Set(this);
+                                for (const elem of other) {
+                                    if (result.has(elem)) {
+                                        result.delete(elem);
+                                    } else {
+                                        result.add(elem);
+                                    }
+                                }
+                                return result;
+                            };
+                        }
+                        
+                        if (!Set.prototype.intersection) {
+                            Set.prototype.intersection = function(other) {
+                                const result = new Set();
+                                for (const elem of this) {
+                                    if (other.has(elem)) {
+                                        result.add(elem);
+                                    }
+                                }
+                                return result;
+                            };
+                        }
+                        
+                        if (!Set.prototype.union) {
+                            Set.prototype.union = function(other) {
+                                const result = new Set(this);
+                                for (const elem of other) {
+                                    result.add(elem);
+                                }
+                                return result;
+                            };
+                        }
+                        
+                        if (!Set.prototype.difference) {
+                            Set.prototype.difference = function(other) {
+                                const result = new Set(this);
+                                for (const elem of other) {
+                                    result.delete(elem);
+                                }
+                                return result;
+                            };
+                        }
+                        
+                        if (!Set.prototype.isSubsetOf) {
+                            Set.prototype.isSubsetOf = function(other) {
+                                for (const elem of this) {
+                                    if (!other.has(elem)) {
+                                        return false;
+                                    }
+                                }
+                                return true;
+                            };
+                        }
+                    `).catch(() => {});
+                });
+                
+                webview.addEventListener('console-message', (e) => {
+                    if (e.level > 1) {
+                        const levelStr = e.level === 2 ? 'warning' : 'error';
+                        debugLog(`VRC Timeline ${levelStr}: ${e.message}`, levelStr);
+                    }
+                });
+                
+                // Intercept new window/popup attempts (link clicks)
+                webview.addEventListener('new-window', (e) => {
+                    e.preventDefault();
+                    showVRCTimelineLinkModal(e.url);
+                });
+                
+                // Enable context menu (right-click) - simplified HTML menu
+                let contextMenuVisible = false;
+                let currentContextMenuOverlay = null;
+                let currentContextMenu = null;
+                
+                webview.addEventListener('context-menu', (e) => {
+                    e.preventDefault();
+                    e.params = e.params || {};
+                    
+                    // Remove existing context menu if any
+                    if (currentContextMenu) {
+                        currentContextMenu.remove();
+                        currentContextMenu = null;
+                    }
+                    if (currentContextMenuOverlay) {
+                        currentContextMenuOverlay.remove();
+                        currentContextMenuOverlay = null;
+                    }
+                    
+                    // Create transparent overlay to catch outside clicks
+                    const overlay = document.createElement('div');
+                    overlay.id = 'vrc-timeline-context-overlay';
+                    overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999; background: transparent;';
+                    currentContextMenuOverlay = overlay;
+                    
+                    // Create context menu
+                    const menu = document.createElement('div');
+                    menu.id = 'vrc-timeline-context-menu';
+                    menu.style.cssText = 'position: fixed; background: #2c2c2c; border: 1px solid #444; border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 100000; min-width: 180px;';
+                    currentContextMenu = menu;
+                    
+                    const closeContextMenu = () => {
+                        if (currentContextMenu) {
+                            currentContextMenu.remove();
+                            currentContextMenu = null;
+                        }
+                        if (currentContextMenuOverlay) {
+                            currentContextMenuOverlay.remove();
+                            currentContextMenuOverlay = null;
+                        }
+                        contextMenuVisible = false;
+                    };
+                    
+                    const addMenuItem = (label, onClick, enabled = true) => {
+                        const item = document.createElement('div');
+                        item.textContent = label;
+                        item.style.cssText = `padding: 8px 16px; cursor: ${enabled ? 'pointer' : 'not-allowed'}; color: ${enabled ? '#fff' : '#666'}; font-size: 13px;`;
+                        if (enabled) {
+                            item.onmouseover = () => item.style.background = '#444';
+                            item.onmouseout = () => item.style.background = 'transparent';
+                            item.onclick = (e) => {
+                                e.stopPropagation();
+                                onClick();
+                                closeContextMenu();
+                            };
+                        }
+                        menu.appendChild(item);
+                    };
+                    
+                    const addSeparator = () => {
+                        const sep = document.createElement('div');
+                        sep.style.cssText = 'height: 1px; background: #444; margin: 4px 0;';
+                        menu.appendChild(sep);
+                    };
+                    
+                    if (e.params.linkURL) {
+                        addMenuItem('🌐 Open Link in Browser', () => window.electronAPI.openExternal(e.params.linkURL));
+                        addMenuItem('📋 Copy Link', () => window.electronAPI.clipboardWriteText(e.params.linkURL));
+                        addSeparator();
+                    }
+                    
+                    if (e.params.hasImageContents) {
+                        addMenuItem('🖼️ Copy Image', () => webview.copyImageAt(e.params.x, e.params.y));
+                        addSeparator();
+                    }
+                    
+                    addMenuItem('← Back', () => webview.goBack(), webview.canGoBack());
+                    addMenuItem('→ Forward', () => webview.goForward(), webview.canGoForward());
+                    addMenuItem('🔄 Reload', () => webview.reload());
+                    
+                    // Add to DOM first to measure dimensions
+                    menu.style.visibility = 'hidden';
+                    document.body.appendChild(overlay);
+                    document.body.appendChild(menu);
+                    
+                    // Get menu dimensions and viewport size
+                    const menuRect = menu.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
+                    
+                    // Calculate position (prefer showing upward and to the left if near edges)
+                    let left = e.params.x;
+                    let top = e.params.y;
+                    
+                    // Check if menu would extend beyond bottom of viewport
+                    if (top + menuRect.height > viewportHeight) {
+                        // Position menu above cursor instead
+                        top = e.params.y - menuRect.height;
+                    }
+                    
+                    // Check if menu would extend beyond right edge
+                    if (left + menuRect.width > viewportWidth) {
+                        left = viewportWidth - menuRect.width - 5;
+                    }
+                    
+                    // Ensure menu stays within top boundary
+                    if (top < 0) {
+                        top = 5;
+                    }
+                    
+                    // Ensure menu stays within left boundary
+                    if (left < 0) {
+                        left = 5;
+                    }
+                    
+                    // Apply final position and make visible
+                    menu.style.left = left + 'px';
+                    menu.style.top = top + 'px';
+                    menu.style.visibility = 'visible';
+                    
+                    contextMenuVisible = true;
+                    
+                    // Close menu when clicking on overlay
+                    overlay.onclick = closeContextMenu;
+                    overlay.oncontextmenu = (e) => {
+                        e.preventDefault();
+                        closeContextMenu();
+                    };
+                    
+                    // Also close on Escape key
+                    const closeOnEscape = (event) => {
+                        if (event.key === 'Escape') {
+                            closeContextMenu();
+                            document.removeEventListener('keydown', closeOnEscape);
+                        }
+                    };
+                    document.addEventListener('keydown', closeOnEscape);
+                });
+            }
+            
+            // Always animate opacity when showing the view
+            requestAnimationFrame(() => {
+                timelineView.style.opacity = '1';
+            });
+        }
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set VRC Timeline as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navTimeline = document.getElementById('nav-vrc-timeline');
+    if (navTimeline) {
+        navTimeline.classList.add('active');
+        navTimeline.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to VRC Timeline view');
+}
 function showHyperateView() {
     debugLog('showHyperateView called');
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1654,7 +1952,7 @@ function showHyperateView() {
     debugLog('Switched to Hyperate view');
 }
 function showARCFeedbackView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1704,7 +2002,7 @@ function showARCFeedbackView() {
     debugLog('Switched to ARC Feedback view');
 }
 function showChatboxView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1754,7 +2052,7 @@ function showChatboxView() {
     debugLog('Switched to Chatbox view');
 }
 function showVRChatAPIView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1805,7 +2103,7 @@ function showVRChatAPIView() {
 }
 
 function showOSCLeashView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1856,7 +2154,7 @@ function showOSCLeashView() {
 }
 
 function showAutoInviterView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1906,7 +2204,7 @@ function showAutoInviterView() {
     debugLog('Switched to Auto-Inviter view');
 }
 function showARCLinkView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });
@@ -1952,7 +2250,7 @@ function showARCLinkView() {
     debugLog('Switched to ARC Link view');
 }
 function showOpenShockView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });
@@ -1998,7 +2296,7 @@ function showOpenShockView() {
     debugLog('Switched to OpenShock view');
 }
 function showAutoStatusView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });
@@ -2044,7 +2342,7 @@ function showAutoStatusView() {
     debugLog('Switched to Auto-Status view');
 }
 function showCalendarView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });
@@ -3815,3 +4113,47 @@ disconnect = function() {
     }
 };
 
+// =============================================
+// VRC Timeline Link Modal Functions
+// =============================================
+let vrcTimelineLinkUrl = '';
+
+window.showVRCTimelineLinkModal = function showVRCTimelineLinkModal(url) {
+    vrcTimelineLinkUrl = url;
+    const modal = document.getElementById('vrc-timeline-link-modal');
+    const urlDisplay = document.getElementById('vrc-timeline-link-url');
+    if (modal && urlDisplay) {
+        urlDisplay.textContent = url;
+        modal.style.display = 'block';
+        requestAnimationFrame(() => {
+            modal.style.opacity = '1';
+        });
+    }
+};
+
+window.closeVRCTimelineLinkModal = function closeVRCTimelineLinkModal() {
+    const modal = document.getElementById('vrc-timeline-link-modal');
+    if (modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => {
+            modal.style.display = 'none';
+            vrcTimelineLinkUrl = '';
+        }, 300);
+    }
+};
+
+window.copyVRCTimelineLink = function copyVRCTimelineLink() {
+    if (vrcTimelineLinkUrl) {
+        window.electronAPI.clipboardWriteText(vrcTimelineLinkUrl);
+        debugLog(`Copied link to clipboard: ${vrcTimelineLinkUrl}`);
+        closeVRCTimelineLinkModal();
+    }
+};
+
+window.openVRCTimelineLinkInBrowser = function openVRCTimelineLinkInBrowser() {
+    if (vrcTimelineLinkUrl) {
+        window.electronAPI.openExternal(vrcTimelineLinkUrl);
+        debugLog(`Opening link in browser: ${vrcTimelineLinkUrl}`);
+        closeVRCTimelineLinkModal();
+    }
+};
