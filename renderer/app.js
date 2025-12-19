@@ -567,8 +567,8 @@ async function updateConfigFromSettings() {
     try {
         const serverUrl = document.getElementById('server-url-settings').value;
         
-        // Only allow updating custom/dev URLs manually
-        if (!serverUrl.includes('127.0.0.1') && !serverUrl.includes('localhost')) {
+        // Block official server URLs - use the Quick Server Selection buttons for those
+        if (serverUrl.includes('arcosc.app') || serverUrl.includes('beta.avatar.comfychloe.uk')) {
             debugLog('Use Quick Server Selection buttons for Live/Beta servers', 'warning');
             return;
         }
@@ -648,14 +648,12 @@ async function switchToServer(serverType) {
             websocketServerUrl: serverUrl
         };
         
-        // For custom server, don't persist the configuration
-        if (serverType !== 'custom') {
-            await window.electronAPI.setConfig(config);
+        // Save configuration for all server types (including custom)
+        await window.electronAPI.setConfig(config);
+        if (serverType === 'custom') {
             debugLog(`Switched to ${serverName} (${serverUrl}) - configuration saved`);
         } else {
-            // Just update the WebSocket manager configuration without saving to file
-            await window.electronAPI.setConfig(config);
-            debugLog(`Switched to ${serverName} (${serverUrl}) - configuration NOT saved (dev mode)`);
+            debugLog(`Switched to ${serverName} (${serverUrl}) - configuration saved`);
         }
         
         // Auto-reconnect if we were previously connected
@@ -740,10 +738,11 @@ function detectCurrentServer() {
     
     if (serverUrl.includes('beta.avatar.comfychloe.uk')) {
         updateCurrentServerStatus('ARC-Beta', 'beta');
-    } else if (serverUrl.includes('127.0.0.1')) {
-        updateCurrentServerStatus('Custom (Dev)', 'custom');
-    } else {
+    } else if (serverUrl.includes('arcosc.app')) {
         updateCurrentServerStatus('ARC-Live', 'live');
+    } else {
+        // Any other URL is treated as custom
+        updateCurrentServerStatus('Custom (Dev)', 'custom');
     }
 }
 

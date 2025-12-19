@@ -30,11 +30,7 @@ let serverConfig = configManager.getServerConfig();
 let hyperateAddon;
 let oscLeashAddon;
 let vrchatApiContainer;
-// On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
-if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
-  serverConfig.websocketServerUrl = 'wss://arcosc.app:48255';
-  debug.info('Custom WebSocket URL detected on startup, reset to live server');
-}
+// Custom WebSocket URLs are now persisted across restarts
 let isShuttingDown = false;
 let hasShownCriticalError = false;
 
@@ -523,17 +519,10 @@ ipcMain.handle('set-config', (event, newConfig) => {
     debug.logConnectionCountChange(oldConnections.length, newConnections.length, newConnections);
   }
   debug.logConfigUpdate(oldConfig, newConfig, serverConfig);
-  // Check if this is a custom/dev URL that shouldn't persist
-  const isCustomUrl = newConfig.websocketServerUrl && newConfig.websocketServerUrl.includes('127.0.0.1');
-  // Save the updated config to file (excluding custom URLs)
-  if (!isCustomUrl) {
-    configManager.updateConfig(serverConfig);
-  } else {
-    // For custom URLs, save everything except the websocket URL
-    const configToSave = { ...serverConfig };
-    delete configToSave.websocketServerUrl;
-    configManager.updateConfig(configToSave);
-    debug.info('Custom/dev WebSocket URL not persisted to config file');
+  // Save the updated config to file (including custom URLs)
+  configManager.updateConfig(serverConfig);
+  if (newConfig.websocketServerUrl && (newConfig.websocketServerUrl.includes('127.0.0.1') || newConfig.websocketServerUrl.includes('localhost'))) {
+    debug.info('Custom/dev WebSocket URL persisted to config file');
   }
   // Update WebSocket configuration if URL changed
   if (newConfig.websocketServerUrl && oldConfig.websocketServerUrl !== newConfig.websocketServerUrl) {
