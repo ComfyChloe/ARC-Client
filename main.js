@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { encryptData, decryptData } = require('./utils/encryption');
@@ -32,7 +32,7 @@ let oscLeashAddon;
 let vrchatApiContainer;
 // On startup, if websocketServerUrl is a custom/dev URL, reset it to default (live)
 if (serverConfig.websocketServerUrl && serverConfig.websocketServerUrl.includes('127.0.0.1')) {
-  serverConfig.websocketServerUrl = 'wss://avatar.comfychloe.uk:48255';
+  serverConfig.websocketServerUrl = 'wss://arcosc.app:48255';
   debug.info('Custom WebSocket URL detected on startup, reset to live server');
 }
 let isShuttingDown = false;
@@ -77,6 +77,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
+      webviewTag: true,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, 'Assets', 'ARC.ico'),
@@ -104,6 +105,36 @@ function createWindow() {
     }, Math.max(0, minSplashTime - (Date.now() - startTime)));
   });
   mainWindow.setMenuBarVisibility(false);
+
+  // Add security for VRC Timeline webview
+  mainWindow.webContents.on('did-attach-webview', (event, webContents) => {
+    // Set secure CSP for the webview
+    webContents.session.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self' https://vrc.tl https://*.vrc.tl; " +
+            "script-src 'self' https://vrc.tl https://*.vrc.tl 'unsafe-inline'; " +
+            "style-src 'self' https://vrc.tl https://*.vrc.tl 'unsafe-inline'; " +
+            "img-src 'self' https: data:; " +
+            "font-src 'self' https://vrc.tl https://*.vrc.tl data:; " +
+            "connect-src 'self' https://vrc.tl https://*.vrc.tl wss://*.vrc.tl; " +
+            "frame-src 'self' https://vrc.tl https://*.vrc.tl; " +
+            "object-src 'none'; " +
+            "base-uri 'self';"
+          ]
+        }
+      });
+    });
+
+    // Disable nodeIntegration and enable security features
+    webContents.on('will-navigate', (event, url) => {
+      if (!url.startsWith('https://vrc.tl')) {
+        event.preventDefault();
+      }
+    });
+  });
 
   if (process.argv.includes('--dev')) {
     mainWindow.loadFile('renderer/index.html');
@@ -160,11 +191,18 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-  mainWindow.webContents.on('crashed', () => {
+  mainWindow.webContents.on('crashed', (event, killed) => {
     if (hasShownCriticalError) {
       return;
     }
     hasShownCriticalError = true;
+    // Log crash details before cleanup
+    debug.logRendererCrash({
+      reason: 'webContents crashed',
+      killed: killed,
+      timestamp: new Date().toISOString()
+    });
+    debug.logCriticalShutdown('Renderer process crashed', 'webContents.crashed');
     cleanup('renderer-crashed');
     dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
     process.exit(1);
@@ -174,6 +212,12 @@ function createWindow() {
       return;
     }
     hasShownCriticalError = true;
+    // Log unresponsive state before cleanup
+    debug.logRendererUnresponsive({
+      timestamp: new Date().toISOString(),
+      uptime: Math.round((Date.now() - debug.startTime) / 1000)
+    });
+    debug.logCriticalShutdown('Renderer process unresponsive', 'window.unresponsive');
     cleanup('renderer-unresponsive');
     dialog.showErrorBox('Application Unresponsive', 'The application is not responding and will now close.');
     process.exit(1);
@@ -247,6 +291,9 @@ function initWebSocket() {
     });
     wsManager.on('server-message', (data) => {
       sendToRenderer('websocket-server-message', data);
+    });
+    wsManager.on('panel-connections-update', (data) => {
+      sendToRenderer('websocket-panel-connections-update', data);
     });
     wsManager.on('feedback-update', (data) => {
       sendToRenderer('feedback-update', data);
@@ -413,7 +460,12 @@ async function initOscQueryService() {
       debug.info('Reusing existing OSC Query service instance');
     }
     // Initialize with legacy port (not actually used - OSC Query auto-assigns ports)
-    await oscQueryService.initialize(serverConfig.legacyOscPort);
+    // Pass bindAddress from config (defaults to 0.0.0.0 in configManager)
+    await oscQueryService.initialize(
+      serverConfig.legacyOscPort,
+      null, // httpPort (auto-assigned)
+      serverConfig.oscQueryBindAddress || '0.0.0.0'
+    );
     
     // Load and set unsubscriptions from config
     const unsubscriptions = serverConfig.oscQueryUnsubscriptions || [];
@@ -451,6 +503,16 @@ ipcMain.handle('get-config', () => {
 ipcMain.handle('get-server-config', () => {
   return serverConfig;
 });
+
+// Shell and clipboard handlers for VRC Timeline
+ipcMain.handle('shell-open-external', async (event, url) => {
+  await shell.openExternal(url);
+});
+
+ipcMain.handle('clipboard-write-text', (event, text) => {
+  clipboard.writeText(text);
+});
+
 ipcMain.handle('set-config', (event, newConfig) => {
   const oldConfig = { ...serverConfig };
   serverConfig = { ...serverConfig, ...newConfig };
@@ -493,8 +555,18 @@ ipcMain.handle('set-config', (event, newConfig) => {
   const portsChanged = (oldConfig.legacyOscPort !== serverConfig.legacyOscPort) ||
                        (oldConfig.targetOscPort !== serverConfig.targetOscPort) ||
                        (oldConfig.targetOscAddress !== serverConfig.targetOscAddress);
+
+  const oscQueryBindAddressChanged = (oldConfig.oscQueryBindAddress !== serverConfig.oscQueryBindAddress);
+
   const additionalConnectionsChanged = JSON.stringify(oldConfig.additionalOscConnections || []) !== 
                                        JSON.stringify(serverConfig.additionalOscConnections || []);
+
+  // Restart OSC-Query if bind address changed
+  if (oscQueryBindAddressChanged) {
+    debug.info('OSC-Query bind address changed, restarting OSC-Query service');
+    initOscQueryService();
+  }
+
   if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
     // Only additional connections changed, update them efficiently
     debug.info('Only additional connections changed, updating without restarting OSC service');
@@ -604,6 +676,7 @@ ipcMain.handle('websocket-disconnect', () => {
   try {
     if (wsManager) {
       const result = wsManager.disconnect();
+      wsManager = null; // Force re-initialization on reconnect to re-register event handlers
       return result;
     }
     return { success: true, message: 'Already disconnected' };
@@ -623,6 +696,35 @@ ipcMain.handle('websocket-send-osc', (event, data) => {
     return { success: false, error: error.message };
   }
 });
+
+// Local OSC send handler
+ipcMain.handle('osc-send-local', (event, data) => {
+  try {
+    if (!oscService) {
+      throw new Error('OSC service not initialized');
+    }
+    if (!oscEnabled) {
+      throw new Error('OSC service is disabled. Please enable OSC first.');
+    }
+    const status = oscService.getStatus();
+    if (!status.isListening) {
+      throw new Error('OSC service is not running');
+    }
+    
+    debug.info(`Manual OSC send locally: ${data.address} = ${data.value} (${data.type})`);
+    const success = oscService.sendMessage(data.address, data.value, data.type);
+    
+    if (success) {
+      return { success: true };
+    } else {
+      throw new Error('Failed to send OSC message');
+    }
+  } catch (error) {
+    debug.error(`Local OSC send failed: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
 // Add test method
 ipcMain.handle('websocket-test-send', () => {
   try {
@@ -759,6 +861,27 @@ ipcMain.handle('get-user-feedback-stats', async (event) => {
 ipcMain.handle('get-client-version', () => {
   const packageJson = require('./package.json');
   return packageJson.version;
+});
+
+// Error logging IPC handlers
+ipcMain.handle('log-renderer-error', (event, error, context) => {
+  try {
+    debug.logRendererError(error, context);
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to log renderer error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('log-renderer-console-error', (event, args, context) => {
+  try {
+    debug.logRendererConsoleError(args, context);
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to log renderer console error:', err);
+    return { success: false, error: err.message };
+  }
 });
 ipcMain.handle('websocket-set-forwarding', (event, enabled) => {
   try {
@@ -1285,6 +1408,7 @@ ipcMain.handle('vrchatapi-get-stats', async () => {
 
 app.whenReady().then(async () => {
   debug.logAppStartup();
+  
   // Create splash window immediately after log cleanup
   createWindow();
   // Load logger after app is ready
@@ -1295,6 +1419,38 @@ app.whenReady().then(async () => {
   hyperateAddon = new HyperateAddon();
   oscLeashAddon = new OSCLeashAddon();
   vrchatApiContainer = new VRChatAPIContainer();
+  
+  // Set up HypeRate status and heart rate callbacks to update renderer in real-time
+  hyperateAddon.setStatusChangeCallback((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('hyperate-update', { type: 'status', ...status });
+    }
+  });
+  hyperateAddon.setHeartRateCallback((data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('hyperate-update', data);
+    }
+  });
+  
+  // Set up OSCLeash status and movement callbacks to update renderer in real-time
+  oscLeashAddon.setStatusChangeCallback((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('oscleash-status-update', status);
+    }
+  });
+  oscLeashAddon.setMovementCallback((data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('oscleash-movement-data', data);
+    }
+  });
+  
+  // Set up pipeline event forwarding
+  vrchatApiContainer.setPipelineEventCallback((event, data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vrchatapi-pipeline-event', { event, data });
+    }
+  });
+  
   // Get app settings from config
   updateSplashProgress(30, 'Loading configuration');
   const appSettings = configManager.getAppSettings();
@@ -1516,9 +1672,10 @@ process.on('uncaughtException', (error) => {
     return;
   }
   hasShownCriticalError = true;
-  // Use debug.error instead of logger.logError to avoid missing method issues
+  // Log comprehensive error details
   try {
-    debug.error(`Uncaught exception: ${error.message}`, { stack: error.stack });
+    debug.logUncaughtException(error, 'main');
+    debug.logCriticalShutdown('Uncaught exception', 'process.uncaughtException');
   } catch (debugError) {
     console.error('Failed to log error via debug:', debugError);
     console.error('Original error:', error);
@@ -1526,20 +1683,25 @@ process.on('uncaughtException', (error) => {
   try {
     cleanup('uncaught-exception');
   } catch (cleanupError) {
-    debug.error(`Error during cleanup: ${cleanupError.message}`);
+    try {
+      debug.error(`Error during cleanup: ${cleanupError.message}`);
+    } catch (e) {
+      console.error('Cleanup error:', cleanupError);
+    }
   }
   dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
   process.exit(1);
 });
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', (reason, promise) => {
   if (hasShownCriticalError) {
     process.exit(1);
     return;
   }
   hasShownCriticalError = true;
-  // Use debug.error instead of logger.logError to avoid missing method issues
+  // Log comprehensive rejection details
   try {
-    debug.error(`Unhandled rejection: ${reason}`, { stack: reason && reason.stack ? reason.stack : 'No stack trace' });
+    debug.logUnhandledRejection(reason, promise, 'main');
+    debug.logCriticalShutdown('Unhandled promise rejection', 'process.unhandledRejection');
   } catch (debugError) {
     console.error('Failed to log rejection via debug:', debugError);
     console.error('Original rejection:', reason);
@@ -1547,7 +1709,11 @@ process.on('unhandledRejection', (reason) => {
   try {
     cleanup('unhandled-rejection');
   } catch (cleanupError) {
-    debug.error(`Error during cleanup: ${cleanupError.message}`);
+    try {
+      debug.error(`Error during cleanup: ${cleanupError.message}`);
+    } catch (e) {
+      console.error('Cleanup error:', cleanupError);
+    }
   }
   dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
   process.exit(1);

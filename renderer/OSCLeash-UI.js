@@ -602,11 +602,23 @@ function handleOSCLeashMovement(data) {
 }
 
 /**
+ * Handle OSCLeash status updates from main process
+ */
+function handleOSCLeashStatusUpdate(status) {
+    oscLeashStatus = status;
+    updateOSCLeashUI();
+    updateLeashesDisplay();
+}
+
+/**
  * Initialize OSCLeash event listeners
  */
 function initializeOSCLeashListeners() {
     window.electronAPI.onOSCLeashMovement?.((data) => {
         handleOSCLeashMovement(data);
+    });
+    window.electronAPI.onOSCLeashStatusUpdate?.((status) => {
+        handleOSCLeashStatusUpdate(status);
     });
 }
 
@@ -627,5 +639,7 @@ window.OSCLeashUI = {
     resetOSCLeashConfig,
     toggleOSCLeashAutostart,
     loadOSCLeashAutostartStatus,
-    updateSliderDisplays
+    updateSliderDisplays,
+    updateMovementDisplay,
+    updatePhysboneInputsDisplay
 };

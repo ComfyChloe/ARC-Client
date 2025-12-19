@@ -83,8 +83,9 @@ class OSCQueryService extends EventEmitter {
      * Initialize the OSC Query service
      * @param {number} legacyPort - Legacy OSC port (not used, kept for compatibility)
      * @param {number} httpPort - Optional HTTP port (auto-detected if not provided)
+     * @param {string} bindAddress - IP address to bind to (default: '0.0.0.0' for all interfaces)
      */
-    async initialize(legacyPort = null, httpPort = null) {
+    async initialize(legacyPort = null, httpPort = null, bindAddress = '0.0.0.0') {
         // Reuse previously assigned ports if they exist (for persistent VRChat connection)
         // Otherwise, assign new random ports on first initialization
         if (this.assignedOscPort === null) {
@@ -107,7 +108,12 @@ class OSCQueryService extends EventEmitter {
             this.httpPort = httpPort;
             this.assignedHttpPort = httpPort; // Store explicitly provided port
         }
-        console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}`);
+
+        // Store bind address for use during start
+        this.bindAddress = bindAddress || '0.0.0.0';
+
+        console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}, Bind Address: ${this.bindAddress}`);
+
         // Setup OSC Query endpoints
         this._setupEndpoints();
     }
@@ -383,15 +389,15 @@ class OSCQueryService extends EventEmitter {
             this.httpServer = http.createServer(this._handleRequest.bind(this));
             // Start HTTP server
             await new Promise((resolve, reject) => {
-                this.httpServer.listen(this.httpPort, '0.0.0.0', (err) => {
+                this.httpServer.listen(this.httpPort, this.bindAddress, (err) => {
                     if (err) reject(err);
                     else resolve();
                 });
             });
-            console.log(`[OSCQuery] HTTP Server started on port ${this.httpPort}`);
+            console.log(`[OSCQuery] HTTP Server started on ${this.bindAddress}:${this.httpPort}`);
             // Create OSC UDP listener on the configured OSC port
             this.oscUdpPort = new osc.UDPPort({
-                localAddress: '0.0.0.0',
+                localAddress: this.bindAddress,
                 localPort: this.oscPort,
                 metadata: true
             });

@@ -11,13 +11,14 @@ let currentAvatar = null;
 let parameters = {};
 let appSettings = {};
 let currentTheme = 'light';
+let panelConnectionsData = {};
+let panelUpdateInterval = null;
 // Runtime timer
 let startTime = Date.now();
 let runtimeInterval = null;
 // OSC message rate limiting
 let oscLogBuffer = [];
 let lastOscLogFlush = 0;
-let oscReceivedDisplayEnabled = true; // Controls if OSC received logs are displayed and processed
 const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
 const MAX_LOG_ENTRIES = 10000; // Maximum log entries to keep in DOM
@@ -52,6 +53,117 @@ let lastFloatLogTimes = new Map(); // Track last log time per address
 let pendingFloatTimeouts = new Map(); // Track pending timeouts for float logging
 let lastFloatValues = new Map(); // Store latest values for delayed logging
 // Websocket connection states end
+
+// Global error handlers for renderer process
+window.addEventListener('error', (event) => {
+    try {
+        const errorInfo = {
+            message: event.message,
+            filename: event.filename,
+            lineno: event.lineno,
+            colno: event.colno,
+            stack: event.error ? event.error.stack : 'No stack trace',
+            timestamp: new Date().toISOString()
+        };
+        
+        const context = {
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+            oscEnabled,
+            isConnected,
+            isAuthenticated
+        };
+        
+        // Send to main process for logging
+        if (window.electronAPI && window.electronAPI.logRendererError) {
+            window.electronAPI.logRendererError(errorInfo, context);
+        }
+        
+        // Also log to console for development
+        console.error('[RENDERER ERROR CAPTURED]', errorInfo);
+    } catch (err) {
+        console.error('Failed to log renderer error:', err);
+    }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    try {
+        const reason = event.reason;
+        const errorInfo = {
+            message: reason && reason.message ? reason.message : String(reason),
+            stack: reason && reason.stack ? reason.stack : 'No stack trace',
+            type: 'unhandledrejection',
+            timestamp: new Date().toISOString()
+        };
+        
+        const context = {
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+            oscEnabled,
+            isConnected,
+            isAuthenticated
+        };
+        
+        // Send to main process for logging
+        if (window.electronAPI && window.electronAPI.logRendererError) {
+            window.electronAPI.logRendererError(errorInfo, context);
+        }
+        
+        // Also log to console for development
+        console.error('[RENDERER UNHANDLED REJECTION CAPTURED]', errorInfo);
+    } catch (err) {
+        console.error('Failed to log unhandled rejection:', err);
+    }
+});
+
+// Override console.error to capture and forward errors
+const originalConsoleError = console.error;
+console.error = function(...args) {
+    // Call original console.error
+    originalConsoleError.apply(console, args);
+    
+    try {
+        // Skip if this is our own error logging to prevent recursion
+        if (args[0] && typeof args[0] === 'string' && args[0].includes('[RENDERER')) {
+            return;
+        }
+        
+        const context = {
+            location: window.location.href,
+            timestamp: new Date().toISOString(),
+            oscEnabled,
+            isConnected,
+            isAuthenticated
+        };
+        
+        // Convert args to serializable format
+        const serializedArgs = args.map(arg => {
+            if (arg instanceof Error) {
+                return {
+                    message: arg.message,
+                    stack: arg.stack,
+                    name: arg.name
+                };
+            }
+            if (typeof arg === 'object') {
+                try {
+                    return JSON.stringify(arg);
+                } catch (e) {
+                    return String(arg);
+                }
+            }
+            return String(arg);
+        });
+        
+        // Send to main process for logging
+        if (window.electronAPI && window.electronAPI.logRendererConsoleError) {
+            window.electronAPI.logRendererConsoleError(serializedArgs, context);
+        }
+    } catch (err) {
+        originalConsoleError('Failed to log console error:', err);
+    }
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     await loadAppSettings();
@@ -144,11 +256,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(() => {
         // Clear float rate limiting data periodically
         clearFloatRateLimitingData();
-        // More aggressive cleanup when OSC received display is disabled
-        if (!oscReceivedDisplayEnabled) {
-            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
-            if (window.gc) window.gc();
-        }
         // If OSC received logs are getting too large, rotate them
         const receivedContainer = document.getElementById('osc-received-log-container');
         if (receivedContainer && receivedContainer.children.length > MAX_LOG_ENTRIES/2) {
@@ -181,10 +288,11 @@ async function loadConfig() {
         document.getElementById('local-port-settings').value = config.localOscPort;
         document.getElementById('target-port-settings').value = config.targetOscPort;
         document.getElementById('target-address-settings').value = config.targetOscAddress;
+        document.getElementById('oscquery-bind-address-settings').value = config.oscQueryBindAddress || '0.0.0.0';
         // Set WebSocket server URL
         const serverUrlInput = document.getElementById('server-url-settings');
         if (serverUrlInput) {
-            serverUrlInput.value = config.websocketServerUrl || 'wss://avatar.comfychloe.uk:48255';
+            serverUrlInput.value = config.websocketServerUrl || 'wss://arcosc.app:48255';
             // Detect and update the current server status
             detectCurrentServer();
         }
@@ -320,6 +428,13 @@ function setupEventListeners() {
     window.electronAPI.onWebSocketServerMessage((data) => {
         debugLog(`Server message: ${data.message || JSON.stringify(data)}`);
     });
+    window.electronAPI.onWebSocketPanelConnectionsUpdate((data) => {
+        console.log('Panel connections update received:', data);
+        console.log('Number of panels received:', Object.keys(data).length);
+        console.log('Panel IDs:', Object.keys(data));
+        panelConnectionsData = data;
+        renderPanelDashboard();
+    });
 }
 function updateOscStatus(status, port) {
     const indicator = document.getElementById('osc-status');
@@ -450,13 +565,27 @@ async function updateConfig() {
 }
 async function updateConfigFromSettings() {
     try {
+        const serverUrl = document.getElementById('server-url-settings').value;
+        
+        // Only allow updating custom/dev URLs manually
+        if (!serverUrl.includes('127.0.0.1') && !serverUrl.includes('localhost')) {
+            debugLog('Use Quick Server Selection buttons for Live/Beta servers', 'warning');
+            return;
+        }
+        
         const config = {
-            websocketServerUrl: document.getElementById('server-url-settings').value
+            websocketServerUrl: serverUrl
         };
+        
+        // Disconnect if currently connected
+        if (isConnected) {
+            debugLog('Disconnecting to apply custom server URL...');
+            await window.electronAPI.disconnectServer();
+        }
+        
         await window.electronAPI.setConfig(config);
-        // Update the current server status after configuration update
         detectCurrentServer();
-        debugLog('Server configuration updated');
+        debugLog('Custom server URL updated');
     } catch (error) {
         debugLog(`Error updating server config: ${error.message}`, 'error');
     }
@@ -484,7 +613,7 @@ async function switchToServer(serverType) {
         
         switch (serverType) {
             case 'live':
-                serverUrl = 'wss://avatar.comfychloe.uk:48255';
+                serverUrl = 'wss://arcosc.app:48255';
                 serverName = 'ARC-Live';
                 break;
             case 'beta':
@@ -509,7 +638,9 @@ async function switchToServer(serverType) {
         const wasConnected = isConnected;
         if (wasConnected) {
             debugLog(`Disconnecting from current server to switch to ${serverName}...`);
-            await window.electronAPI.websocketDisconnect();
+            await window.electronAPI.disconnectServer();
+            // Small delay to ensure disconnect event is fully processed
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         
         // Update the configuration
@@ -528,20 +659,31 @@ async function switchToServer(serverType) {
         }
         
         // Auto-reconnect if we were previously connected
-        if (wasConnected && currentUser) {
+        if (wasConnected) {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
+            debugLog(`Auto-reconnect check: wasConnected=${wasConnected}, username=${username ? 'present' : 'missing'}, password=${password ? 'present' : 'missing'}`);
             if (username && password) {
-                debugLog(`Auto-reconnecting to ${serverName}...`);
+                debugLog(`Scheduling auto-reconnect to ${serverName}...`);
                 setTimeout(async () => {
-                    try {
-                        await authenticate();
-                        debugLog(`Successfully reconnected to ${serverName}`);
-                    } catch (error) {
-                        debugLog(`Failed to reconnect to ${serverName}: ${error.message}`, 'error');
+                    // Check if we're still not connected after the server switch
+                    if (!isConnected) {
+                        try {
+                            debugLog(`Auto-reconnecting to ${serverName}...`);
+                            await authenticate();
+                            debugLog(`Successfully reconnected to ${serverName}`);
+                        } catch (error) {
+                            debugLog(`Failed to reconnect to ${serverName}: ${error.message}`, 'error');
+                        }
+                    } else {
+                        debugLog('Already connected, skipping auto-reconnect');
                     }
                 }, 1000);
+            } else {
+                debugLog('Auto-reconnect skipped: missing credentials', 'warning');
             }
+        } else {
+            debugLog('Auto-reconnect skipped: was not previously connected');
         }
         
     } catch (error) {
@@ -604,17 +746,65 @@ function detectCurrentServer() {
         updateCurrentServerStatus('ARC-Live', 'live');
     }
 }
+
+/**
+ * Validate IPv4 address format
+ * @param {string} ip - IP address to validate
+ * @returns {boolean} - True if valid IPv4 address
+ */
+function isValidIPv4(ip) {
+    const ipv4Regex = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    return ipv4Regex.test(ip);
+}
+
+/**
+ * Validate port number
+ * @param {number} port - Port number to validate
+ * @returns {boolean} - True if valid port (1-65535)
+ */
+function isValidPort(port) {
+    const portNum = parseInt(port);
+    return !isNaN(portNum) && portNum >= 1 && portNum <= 65535;
+}
+
 async function updateOscPorts() {
     try {
+        // Get values
+        const localPort = parseInt(document.getElementById('local-port-settings').value);
+        const targetPort = parseInt(document.getElementById('target-port-settings').value);
+        const targetAddress = document.getElementById('target-address-settings').value.trim();
+        const oscQueryBindAddress = document.getElementById('oscquery-bind-address-settings').value.trim();
+
+        // Validate ports
+        if (!isValidPort(localPort)) {
+            debugLog('Invalid legacy incoming OSC port. Must be between 1 and 65535.', 'error');
+            return;
+        }
+        if (!isValidPort(targetPort)) {
+            debugLog('Invalid target OSC port. Must be between 1 and 65535.', 'error');
+            return;
+        }
+
+        // Validate IP addresses
+        if (!isValidIPv4(targetAddress)) {
+            debugLog('Invalid target IP address. Must be a valid IPv4 address (e.g., 127.0.0.1).', 'error');
+            return;
+        }
+        if (!isValidIPv4(oscQueryBindAddress)) {
+            debugLog('Invalid OSC-Query bind address. Must be a valid IPv4 address (e.g., 0.0.0.0 or 127.0.0.1).', 'error');
+            return;
+        }
+
         const config = {
-            localOscPort: parseInt(document.getElementById('local-port-settings').value),
-            targetOscPort: parseInt(document.getElementById('target-port-settings').value),
-            targetOscAddress: document.getElementById('target-address-settings').value
+            localOscPort: localPort,
+            targetOscPort: targetPort,
+            targetOscAddress: targetAddress,
+            oscQueryBindAddress: oscQueryBindAddress
         };
         await window.electronAPI.setConfig(config);
-        debugLog('Primary OSC configuration updated - OSC services will restart');
+        debugLog('OSC configuration updated - OSC services will restart');
     } catch (error) {
-        debugLog(`Error updating primary OSC configuration: ${error.message}`, 'error');
+        debugLog(`Error updating OSC configuration: ${error.message}`, 'error');
     }
 }
 
@@ -841,16 +1031,15 @@ async function sendOscMessage() {
             value: parsedValue,
             type
         };
-        // Send via WebSocket if authenticated, otherwise use local OSC
-        if (isAuthenticated && isConnected) {
-            await window.electronAPI.sendOsc(oscData);
-            debugLog(`OSC Sent via WebSocket: ${address} = ${parsedValue} (${type})`);
+
+        // Send directly to VRChat via local OSC service (same as WebSocket forwarding does)
+        const result = await window.electronAPI.sendOscLocal(oscData);
+        
+        if (result.success) {
+            debugLog(`OSC message sent to VRChat: ${address} = ${parsedValue} (${type})`);
         } else {
-            await window.electronAPI.sendOsc(oscData);
-            debugLog(`OSC Sent locally: ${address} = ${parsedValue} (${type})`);
+            throw new Error(result.error || 'Failed to send OSC message');
         }
-        document.getElementById('osc-address').value = '';
-        document.getElementById('osc-value').value = '';
     } catch (error) {
         debugLog(`Error sending OSC: ${error.message}`, 'error');
     }
@@ -893,8 +1082,6 @@ function isFloatValue(value) {
 }
 // Handle float OSC messages with rate limiting (similar to server implementation)
 function handleFloatOscLog(type, address, value, connectionId) {
-    // Skip processing received logs if display is disabled
-    if (type === 'received' && !oscReceivedDisplayEnabled) return;
     const key = `${type}-${address}`;
     const now = Date.now();
     const lastLogTime = lastFloatLogTimes.get(key) || 0;
@@ -974,8 +1161,6 @@ function rotateLogContainers() {
     //debugLog('OSC received log container rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
-    // Skip processing if OSC received display is disabled
-    if (!oscReceivedDisplayEnabled) return;
     // Check if this is a float value and apply rate limiting
     if (isFloatValue(value)) {
         handleFloatOscLog('received', address, value, connectionId);
@@ -1134,7 +1319,12 @@ function showMainView() {
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
+    const arclinkView = document.getElementById('arclink-view');
+    const openshockView = document.getElementById('openshock-view');
+    const autoStatusView = document.getElementById('auto-status-view');
+    const calendarView = document.getElementById('calendar-view');
+    const vrcTimelineView = document.getElementById('vrc-timeline-view');
+    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1174,13 +1364,18 @@ function showOscView() {
     const vrchatapiView = document.getElementById('vrchatapi-view');
     const oscLeashView = document.getElementById('osc-leash-view');
     const autoInviterView = document.getElementById('auto-inviter-view');
+    const arclinkView = document.getElementById('arclink-view');
+    const openshockView = document.getElementById('openshock-view');
+    const autoStatusView = document.getElementById('auto-status-view');
+    const calendarView = document.getElementById('calendar-view');
+    const vrcTimelineView = document.getElementById('vrc-timeline-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
+    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1226,9 +1421,14 @@ function showSettingsView() {
     const vrchatapiView = document.getElementById('vrchatapi-view');
     const oscLeashView = document.getElementById('osc-leash-view');
     const autoInviterView = document.getElementById('auto-inviter-view');
+    const arclinkView = document.getElementById('arclink-view');
+    const openshockView = document.getElementById('openshock-view');
+    const autoStatusView = document.getElementById('auto-status-view');
+    const calendarView = document.getElementById('calendar-view');
+    const vrcTimelineView = document.getElementById('vrc-timeline-view');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
+    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1268,13 +1468,18 @@ function showLogsView() {
     const vrchatapiView = document.getElementById('vrchatapi-view');
     const oscLeashView = document.getElementById('osc-leash-view');
     const autoInviterView = document.getElementById('auto-inviter-view');
+    const arclinkView = document.getElementById('arclink-view');
+    const openshockView = document.getElementById('openshock-view');
+    const autoStatusView = document.getElementById('auto-status-view');
+    const calendarView = document.getElementById('calendar-view');
+    const vrcTimelineView = document.getElementById('vrc-timeline-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView].forEach(view => {
+    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1286,8 +1491,6 @@ function showLogsView() {
         requestAnimationFrame(() => {
             logsView.style.opacity = '1';
         });
-        // Update OSC received display status when logs view is shown
-        updateOscReceivedDisplayStatus();
     }, 300);
     // Reset all navigation buttons
     [navMain, navOsc, navSettings].forEach(nav => {
@@ -1303,6 +1506,15 @@ function showLogsView() {
     navLogs.classList.add('active');
     navLogs.disabled = true;
     debugLog('Switched to logs view');
+}
+function cleanupVRCTimelineWebview() {
+    const timelineView = document.getElementById('vrc-timeline-view');
+    if (timelineView) {
+        const webview = timelineView.querySelector('webview');
+        if (webview && webview.isDevToolsOpened && webview.isDevToolsOpened()) {
+            webview.closeDevTools();
+        }
+    }
 }
 function setupExtrasDropdown() {
     const treeToggle = document.getElementById('nav-extras');
@@ -1347,7 +1559,8 @@ function setupVRChatApiDropdown() {
     });
 }
 function showVOSKView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    cleanupVRCTimelineWebview();
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
 
     views.forEach(view => {
@@ -1397,9 +1610,295 @@ function showVOSKView() {
     }
     debugLog('Switched to VOSK view');
 }
+function showVRCTimelineView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const timelineView = document.getElementById('vrc-timeline-view');
+        if (timelineView) {
+            timelineView.style.display = 'block';
+            timelineView.style.opacity = '0';
+            
+            // Initialize webview if it exists and hasn't been initialized
+            const webview = timelineView.querySelector('webview');
+            if (webview && !webview.dataset.initialized) {
+                webview.dataset.initialized = 'true';
+                
+                // Force webview to load by setting src attribute
+                // This ensures the webview loads when the view becomes visible
+                const currentSrc = webview.getAttribute('src');
+                if (currentSrc && !webview.src) {
+                    webview.src = currentSrc;
+                }
+                
+                webview.addEventListener('dom-ready', () => {
+                    webview.executeJavaScript(`
+                        (function() {
+                            if (typeof dragEvent === 'undefined') {
+                                window.dragEvent = null;
+                            }
+                            
+                            if (!Set.prototype.symmetricDifference) {
+                                Set.prototype.symmetricDifference = function(other) {
+                                    const result = new Set(this);
+                                    for (const elem of other) {
+                                        if (result.has(elem)) {
+                                            result.delete(elem);
+                                        } else {
+                                            result.add(elem);
+                                        }
+                                    }
+                                    return result;
+                                };
+                            }
+                            
+                            if (!Set.prototype.intersection) {
+                                Set.prototype.intersection = function(other) {
+                                    const result = new Set();
+                                    for (const elem of this) {
+                                        if (other.has(elem)) {
+                                            result.add(elem);
+                                        }
+                                    }
+                                    return result;
+                                };
+                            }
+                            
+                            if (!Set.prototype.union) {
+                                Set.prototype.union = function(other) {
+                                    const result = new Set(this);
+                                    for (const elem of other) {
+                                        result.add(elem);
+                                    }
+                                    return result;
+                                };
+                            }
+                            
+                            if (!Set.prototype.difference) {
+                                Set.prototype.difference = function(other) {
+                                    const result = new Set(this);
+                                    for (const elem of other) {
+                                        result.delete(elem);
+                                    }
+                                    return result;
+                                };
+                            }
+                            
+                            if (!Set.prototype.isSubsetOf) {
+                                Set.prototype.isSubsetOf = function(other) {
+                                    for (const elem of this) {
+                                        if (!other.has(elem)) {
+                                            return false;
+                                        }
+                                    }
+                                    return true;
+                                };
+                            }
+                        })();
+                    `).catch(() => {});
+                });
+                
+                webview.addEventListener('console-message', (e) => {
+                    if (e.level > 1) {
+                        const levelStr = e.level === 2 ? 'warning' : 'error';
+                        debugLog(`VRC Timeline ${levelStr}: ${e.message}`, levelStr);
+                    }
+                });
+                
+                // Intercept new window/popup attempts (link clicks)
+                webview.addEventListener('new-window', (e) => {
+                    e.preventDefault();
+                    showVRCTimelineLinkModal(e.url);
+                });
+                
+                // Enable context menu (right-click) - simplified HTML menu
+                let contextMenuVisible = false;
+                let currentContextMenuOverlay = null;
+                let currentContextMenu = null;
+                
+                webview.addEventListener('context-menu', (e) => {
+                    e.preventDefault();
+                    e.params = e.params || {};
+                    
+                    // Remove existing context menu if any
+                    if (currentContextMenu) {
+                        currentContextMenu.remove();
+                        currentContextMenu = null;
+                    }
+                    if (currentContextMenuOverlay) {
+                        currentContextMenuOverlay.remove();
+                        currentContextMenuOverlay = null;
+                    }
+                    
+                    // Create transparent overlay to catch outside clicks
+                    const overlay = document.createElement('div');
+                    overlay.id = 'vrc-timeline-context-overlay';
+                    overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99999; background: transparent;';
+                    currentContextMenuOverlay = overlay;
+                    
+                    // Create context menu
+                    const menu = document.createElement('div');
+                    menu.id = 'vrc-timeline-context-menu';
+                    menu.style.cssText = 'position: fixed; background: #2c2c2c; border: 1px solid #444; border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 100000; min-width: 180px;';
+                    currentContextMenu = menu;
+                    
+                    const closeContextMenu = () => {
+                        if (currentContextMenu) {
+                            currentContextMenu.remove();
+                            currentContextMenu = null;
+                        }
+                        if (currentContextMenuOverlay) {
+                            currentContextMenuOverlay.remove();
+                            currentContextMenuOverlay = null;
+                        }
+                        contextMenuVisible = false;
+                    };
+                    
+                    const addMenuItem = (label, onClick, enabled = true) => {
+                        const item = document.createElement('div');
+                        item.textContent = label;
+                        item.style.cssText = `padding: 8px 16px; cursor: ${enabled ? 'pointer' : 'not-allowed'}; color: ${enabled ? '#fff' : '#666'}; font-size: 13px;`;
+                        if (enabled) {
+                            item.onmouseover = () => item.style.background = '#444';
+                            item.onmouseout = () => item.style.background = 'transparent';
+                            item.onclick = (e) => {
+                                e.stopPropagation();
+                                onClick();
+                                closeContextMenu();
+                            };
+                        }
+                        menu.appendChild(item);
+                    };
+                    
+                    const addSeparator = () => {
+                        const sep = document.createElement('div');
+                        sep.style.cssText = 'height: 1px; background: #444; margin: 4px 0;';
+                        menu.appendChild(sep);
+                    };
+                    
+                    if (e.params.linkURL) {
+                        addMenuItem('🌐 Open Link in Browser', () => window.electronAPI.openExternal(e.params.linkURL));
+                        addMenuItem('📋 Copy Link', () => window.electronAPI.clipboardWriteText(e.params.linkURL));
+                        addSeparator();
+                    }
+                    
+                    if (e.params.hasImageContents) {
+                        addMenuItem('🖼️ Copy Image', () => webview.copyImageAt(e.params.x, e.params.y));
+                        addSeparator();
+                    }
+                    
+                    addMenuItem('← Back', () => webview.goBack(), webview.canGoBack());
+                    addMenuItem('→ Forward', () => webview.goForward(), webview.canGoForward());
+                    addMenuItem('🔄 Reload', () => webview.reload());
+                    
+                    // Add to DOM first to measure dimensions
+                    menu.style.visibility = 'hidden';
+                    document.body.appendChild(overlay);
+                    document.body.appendChild(menu);
+                    
+                    // Get menu dimensions and viewport size
+                    const menuRect = menu.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
+                    
+                    // Calculate position (prefer showing upward and to the left if near edges)
+                    let left = e.params.x;
+                    let top = e.params.y;
+                    
+                    // Check if menu would extend beyond bottom of viewport
+                    if (top + menuRect.height > viewportHeight) {
+                        // Position menu above cursor instead
+                        top = e.params.y - menuRect.height;
+                    }
+                    
+                    // Check if menu would extend beyond right edge
+                    if (left + menuRect.width > viewportWidth) {
+                        left = viewportWidth - menuRect.width - 5;
+                    }
+                    
+                    // Ensure menu stays within top boundary
+                    if (top < 0) {
+                        top = 5;
+                    }
+                    
+                    // Ensure menu stays within left boundary
+                    if (left < 0) {
+                        left = 5;
+                    }
+                    
+                    // Apply final position and make visible
+                    menu.style.left = left + 'px';
+                    menu.style.top = top + 'px';
+                    menu.style.visibility = 'visible';
+                    
+                    contextMenuVisible = true;
+                    
+                    // Close menu when clicking on overlay
+                    overlay.onclick = closeContextMenu;
+                    overlay.oncontextmenu = (e) => {
+                        e.preventDefault();
+                        closeContextMenu();
+                    };
+                    
+                    // Also close on Escape key
+                    const closeOnEscape = (event) => {
+                        if (event.key === 'Escape') {
+                            closeContextMenu();
+                            document.removeEventListener('keydown', closeOnEscape);
+                        }
+                    };
+                    document.addEventListener('keydown', closeOnEscape);
+                });
+            }
+            
+            // Always animate opacity when showing the view
+            requestAnimationFrame(() => {
+                timelineView.style.opacity = '1';
+            });
+        }
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set VRC Timeline as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navTimeline = document.getElementById('nav-vrc-timeline');
+    if (navTimeline) {
+        navTimeline.classList.add('active');
+        navTimeline.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to VRC Timeline view');
+}
 function showHyperateView() {
     debugLog('showHyperateView called');
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1455,7 +1954,7 @@ function showHyperateView() {
     debugLog('Switched to Hyperate view');
 }
 function showARCFeedbackView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1505,7 +2004,7 @@ function showARCFeedbackView() {
     debugLog('Switched to ARC Feedback view');
 }
 function showChatboxView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1555,7 +2054,7 @@ function showChatboxView() {
     debugLog('Switched to Chatbox view');
 }
 function showVRChatAPIView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1606,7 +2105,7 @@ function showVRChatAPIView() {
 }
 
 function showOSCLeashView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1657,7 +2156,7 @@ function showOSCLeashView() {
 }
 
 function showAutoInviterView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1706,6 +2205,190 @@ function showAutoInviterView() {
     }
     debugLog('Switched to Auto-Inviter view');
 }
+function showARCLinkView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const arclinkView = document.getElementById('arclink-view');
+        arclinkView.style.display = 'block';
+        arclinkView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            arclinkView.style.opacity = '1';
+        });
+    }, 300);
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navARCLink = document.getElementById('nav-arclink');
+    if (navARCLink) {
+        navARCLink.classList.add('active');
+        navARCLink.disabled = true;
+    }
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to ARC Link view');
+}
+function showOpenShockView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const openshockView = document.getElementById('openshock-view');
+        openshockView.style.display = 'block';
+        openshockView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            openshockView.style.opacity = '1';
+        });
+    }, 300);
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navOpenShock = document.getElementById('nav-openshock');
+    if (navOpenShock) {
+        navOpenShock.classList.add('active');
+        navOpenShock.disabled = true;
+    }
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to OpenShock view');
+}
+function showAutoStatusView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const autoStatusView = document.getElementById('auto-status-view');
+        autoStatusView.style.display = 'block';
+        autoStatusView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            autoStatusView.style.opacity = '1';
+        });
+    }, 300);
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navAutoStatus = document.getElementById('nav-auto-status');
+    if (navAutoStatus) {
+        navAutoStatus.classList.add('active');
+        navAutoStatus.disabled = true;
+    }
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to Auto-Status view');
+}
+function showCalendarView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const calendarView = document.getElementById('calendar-view');
+        calendarView.style.display = 'block';
+        calendarView.style.opacity = '0';
+        requestAnimationFrame(() => {
+            calendarView.style.opacity = '1';
+        });
+    }, 300);
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navCalendar = document.getElementById('nav-calendar');
+    if (navCalendar) {
+        navCalendar.classList.add('active');
+        navCalendar.disabled = true;
+    }
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    debugLog('Switched to Calendar Viewing view');
+}
 async function updateAppSettings() {
     try {
         const logLevel = document.getElementById('log-level').value;
@@ -1725,12 +2408,12 @@ async function loadAppSettings() {
         if (logLevelSelect) {
             logLevelSelect.value = settings.logLevel || 'info';
         }
-        // Set OSC received display state
-        oscReceivedDisplayEnabled = settings.oscReceivedDisplayEnabled !== false; // Default to true for backward compatibility
-        updateOscReceivedDisplayStatus();
         // Apply theme from settings
         currentTheme = settings.theme || 'light';
         applyTheme(currentTheme);
+        
+        // Apply snow setting (default to true)
+        applySnowSetting(settings.snowEnabled !== false);
         // Initialize WebSocket forwarding status from settings
         wsForwardingEnabled = settings.enableWebSocketForwarding || false;
         updateWebSocketForwardingStatus(wsForwardingEnabled);
@@ -1765,6 +2448,7 @@ window.addEventListener('beforeunload', () => {
     window.electronAPI.removeAllListeners('websocket-avatar-change');
     window.electronAPI.removeAllListeners('websocket-parameter-update');
     window.electronAPI.removeAllListeners('websocket-server-message');
+    window.electronAPI.removeAllListeners('websocket-panel-connections-update');
     window.electronAPI.removeAllListeners('app-settings');
 });
 async function addOscConnection(type) {
@@ -3003,46 +3687,6 @@ async function removeOscQuerySubscription(pattern) {
     debugLog('Function deprecated - use unsubscription management instead', 'info');
 }
 
-function updateOscReceivedDisplayStatus() {
-    const statusElement = document.getElementById('osc-received-display-status');
-    const toggleBtn = document.getElementById('osc-received-display-toggle-btn');
-    if (statusElement) {
-        statusElement.textContent = oscReceivedDisplayEnabled ? 'Enabled' : 'Disabled';
-        statusElement.className = oscReceivedDisplayEnabled ? 'status-value' : 'status-value disabled';
-    }
-    if (toggleBtn) {
-        toggleBtn.textContent = oscReceivedDisplayEnabled ? 'Hide OSC Received' : 'Show OSC Received';
-        toggleBtn.className = oscReceivedDisplayEnabled ? 'btn btn-warning' : 'btn btn-success';
-    }
-}
-async function toggleOscReceivedDisplay() {
-    try {
-        oscReceivedDisplayEnabled = !oscReceivedDisplayEnabled;
-        // Immediate and complete cleanup when disabling
-        if (!oscReceivedDisplayEnabled) {
-            // Remove all received messages from buffer
-            oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
-            clearFloatRateLimitingData();
-            document.getElementById('osc-received-log-container').innerHTML = 'OSC Received Display Disabled<br>';
-            // Force immediate garbage collection
-            if (window.gc) window.gc();
-        }
-        // Save the state to backend settings
-        const currentSettings = await window.electronAPI.getAppSettings();
-        currentSettings.oscReceivedDisplayEnabled = oscReceivedDisplayEnabled;
-        await window.electronAPI.setAppSettings(currentSettings);
-        // Update the UI
-        updateOscReceivedDisplayStatus();
-        // Clear existing OSC received log buffer when disabling
-        if (!oscReceivedDisplayEnabled) {
-            debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing load reduced`);
-        } else {
-            debugLog(`OSC received display ${oscReceivedDisplayEnabled ? 'enabled' : 'disabled'} - processing resumed`);
-        }
-    } catch (error) {
-        debugLog(`Error toggling OSC received display: ${error.message}`, 'error');
-    }
-}
 async function loadTheme() {
     try {
         const settings = await window.electronAPI.getAppSettings();
@@ -3075,6 +3719,49 @@ async function toggleTheme() {
         debugLog(`Theme switched to ${newTheme} mode`);
     } catch (error) {
         debugLog(`Error toggling theme: ${error.message}`, 'error');
+    }
+}
+
+// Snow overlay toggle
+let snowEnabled = true;
+
+async function toggleSnow() {
+    try {
+        snowEnabled = !snowEnabled;
+        const snowOverlay = document.getElementById('snow-overlay');
+        const snowButton = document.getElementById('snow-toggle');
+        
+        if (snowEnabled) {
+            snowOverlay.classList.remove('hidden');
+            snowButton.classList.remove('disabled');
+        } else {
+            snowOverlay.classList.add('hidden');
+            snowButton.classList.add('disabled');
+        }
+        
+        // Save the setting
+        const currentSettings = await window.electronAPI.getAppSettings();
+        currentSettings.snowEnabled = snowEnabled;
+        await window.electronAPI.setAppSettings(currentSettings);
+        debugLog(`Snow overlay ${snowEnabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+        debugLog(`Error toggling snow: ${error.message}`, 'error');
+    }
+}
+
+function applySnowSetting(enabled) {
+    snowEnabled = enabled !== false; // Default to true if undefined
+    const snowOverlay = document.getElementById('snow-overlay');
+    const snowButton = document.getElementById('snow-toggle');
+    
+    if (snowOverlay && snowButton) {
+        if (snowEnabled) {
+            snowOverlay.classList.remove('hidden');
+            snowButton.classList.remove('disabled');
+        } else {
+            snowOverlay.classList.add('hidden');
+            snowButton.classList.add('disabled');
+        }
     }
 }
 // Password saving functionality
@@ -3175,8 +3862,8 @@ const originalShowHyperateView = showHyperateView;
 showHyperateView = function() {
     try {
         // Stop any existing status updates first
-        if (window.HyperateUI && typeof window.HyperateUI.stopStatusUpdates === 'function') {
-            window.HyperateUI.stopStatusUpdates();
+        if (window.HyperateUI && typeof window.HyperateUI.stopHyperateStatusUpdates === 'function') {
+            window.HyperateUI.stopHyperateStatusUpdates();
         }
         
         // Call the original function
@@ -3188,8 +3875,8 @@ showHyperateView = function() {
                 if (window.HyperateUI) {
                     await window.HyperateUI.refreshHyperateStatus();
                     await window.HyperateUI.refreshHyperateTrackers();
-                    if (typeof window.HyperateUI.startStatusUpdates === 'function') {
-                        window.HyperateUI.startStatusUpdates();
+                    if (typeof window.HyperateUI.startHyperateStatusUpdates === 'function') {
+                        window.HyperateUI.startHyperateStatusUpdates();
                     }
                 }
             } catch (error) {
@@ -3280,5 +3967,195 @@ window.showVRChatAPIView = function() {
     } catch (error) {
         debugLog(`Error in showVRChatAPIView: ${error.message}`, 'error');
         originalShowVRChatAPIView.call(this);
+    }
+};
+
+// ============================================
+// Panel Dashboard Functions
+// ============================================
+
+function renderPanelDashboard() {
+    const container = document.getElementById('panels-grid');
+    if (!container) return;
+    
+    if (!panelConnectionsData || Object.keys(panelConnectionsData).length === 0) {
+        container.innerHTML = '<p class="panels-loading">No panels found. Create panels in the ARC dashboard.</p>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    const now = Date.now();
+    
+    Object.entries(panelConnectionsData).forEach(([panelId, panelInfo]) => {
+        const card = document.createElement('div');
+        card.className = 'panel-card';
+        
+        const statusClass = panelInfo.isActive ? 'active' : 'inactive';
+        const statusText = panelInfo.isActive ? 'Active' : 'Inactive';
+        
+        // Panel lock status
+        const lockClass = panelInfo.panelEnabled ? 'unlocked' : 'locked';
+        const lockText = panelInfo.panelEnabled ? 'Unlocked' : 'Locked';
+        
+        // Safety bubbles HTML
+        const safetyStatuses = [
+            panelInfo.safetyEnabled,
+            panelInfo.safety2Enabled,
+            panelInfo.safety3Enabled,
+            panelInfo.safety4Enabled,
+            panelInfo.safety5Enabled
+        ];
+        const safetyBubblesHtml = safetyStatuses.map((enabled, index) => {
+            const statusClass = enabled ? 'enabled' : 'disabled';
+            return `<span class="safety-bubble ${statusClass}">${index + 1}</span>`;
+        }).join('');
+        
+        // Access indicators HTML
+        // Visibility: Private (red) or Public (green) - mutually exclusive
+        const visibilityClass = panelInfo.isPublic ? 'public' : 'private';
+        const visibilityText = panelInfo.isPublic ? 'Public' : 'Private';
+        // Password protection
+        const passClass = panelInfo.hasPassword ? 'active' : 'inactive';
+        // Panel-level friend sharing (yellow when enabled)
+        const friendsClass = panelInfo.allowFriends ? 'friends' : 'inactive';
+        // Links with breakdown: L:N (F:X P:Y)
+        const linkCount = panelInfo.activeLinkCount || 0;
+        const friendLinkCount = panelInfo.friendLinkCount || 0;
+        const publicLinkCount = panelInfo.publicLinkCount || 0;
+        let linksHtml = '';
+        if (linkCount > 0) {
+            let breakdown = [];
+            if (friendLinkCount > 0) breakdown.push(`F:${friendLinkCount}`);
+            if (publicLinkCount > 0) breakdown.push(`P:${publicLinkCount}`);
+            const breakdownText = breakdown.length > 0 ? ` (${breakdown.join(' ')})` : '';
+            linksHtml = `<span class="access-indicator links">L:${linkCount}${breakdownText}</span>`;
+        } else {
+            linksHtml = `<span class="access-indicator inactive">Links</span>`;
+        }
+        
+        // Calculate connection time display (will update every 30s)
+        const connectionTime = panelInfo.connectionCount > 0 ? 
+            '<div class="panel-connection-time" data-panel-id="' + escapeHtml(panelId) + '">Viewing now</div>' :
+            '';
+        
+        card.innerHTML = `
+            <div class="panel-card-header">
+                <h4 class="panel-name">${escapeHtml(panelInfo.panelName)}</h4>
+                <div style="display: flex; gap: 6px;">
+                    <span class="panel-lock-badge ${lockClass}">${lockText}</span>
+                    <span class="panel-status-badge ${statusClass}">${statusText}</span>
+                </div>
+            </div>
+            <div class="panel-stats">
+                <div class="panel-stat">
+                    <span class="panel-stat-value">${panelInfo.connectionCount}</span>
+                    <span class="panel-stat-label">Connections</span>
+                </div>
+            </div>
+            <div class="safety-bubbles-row">
+                <span class="safety-label">Safety</span>
+                <div class="safety-bubbles">
+                    ${safetyBubblesHtml}
+                </div>
+            </div>
+            <div class="access-indicators-row">
+                <span class="access-indicator ${visibilityClass}">${visibilityText}</span>
+                <span class="access-indicator ${passClass}">Pass</span>
+                <span class="access-indicator ${friendsClass}">Friends</span>
+                ${linksHtml}
+            </div>
+            ${connectionTime}
+        `;
+        
+        container.appendChild(card);
+    });
+    
+    // Start/restart the 30-second update interval for connection times
+    startPanelUpdateInterval();
+}
+
+function startPanelUpdateInterval() {
+    // Clear existing interval if any
+    if (panelUpdateInterval) {
+        clearInterval(panelUpdateInterval);
+    }
+    
+    // Update connection times every 30 seconds
+    panelUpdateInterval = setInterval(() => {
+        updatePanelConnectionTimes();
+    }, 30000);
+}
+
+function updatePanelConnectionTimes() {
+    const timeElements = document.querySelectorAll('.panel-connection-time');
+    timeElements.forEach(el => {
+        const panelId = el.getAttribute('data-panel-id');
+        if (panelId && panelConnectionsData[panelId] && panelConnectionsData[panelId].connectionCount > 0) {
+            el.textContent = 'Viewing now';
+        }
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Clear panel update interval on disconnect
+const originalDisconnect = disconnect;
+disconnect = function() {
+    if (panelUpdateInterval) {
+        clearInterval(panelUpdateInterval);
+        panelUpdateInterval = null;
+    }
+    panelConnectionsData = {};
+    if (originalDisconnect) {
+        return originalDisconnect();
+    }
+};
+
+// =============================================
+// VRC Timeline Link Modal Functions
+// =============================================
+let vrcTimelineLinkUrl = '';
+
+window.showVRCTimelineLinkModal = function showVRCTimelineLinkModal(url) {
+    vrcTimelineLinkUrl = url;
+    const modal = document.getElementById('vrc-timeline-link-modal');
+    const urlDisplay = document.getElementById('vrc-timeline-link-url');
+    if (modal && urlDisplay) {
+        urlDisplay.textContent = url;
+        modal.style.display = 'block';
+        requestAnimationFrame(() => {
+            modal.style.opacity = '1';
+        });
+    }
+};
+
+window.closeVRCTimelineLinkModal = function closeVRCTimelineLinkModal() {
+    const modal = document.getElementById('vrc-timeline-link-modal');
+    if (modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => {
+            modal.style.display = 'none';
+            vrcTimelineLinkUrl = '';
+        }, 300);
+    }
+};
+
+window.copyVRCTimelineLink = function copyVRCTimelineLink() {
+    if (vrcTimelineLinkUrl) {
+        window.electronAPI.clipboardWriteText(vrcTimelineLinkUrl);
+        debugLog(`Copied link to clipboard: ${vrcTimelineLinkUrl}`);
+        closeVRCTimelineLinkModal();
+    }
+};
+
+window.openVRCTimelineLinkInBrowser = function openVRCTimelineLinkInBrowser() {
+    if (vrcTimelineLinkUrl) {
+        window.electronAPI.openExternal(vrcTimelineLinkUrl);
+        debugLog(`Opening link in browser: ${vrcTimelineLinkUrl}`);
+        closeVRCTimelineLinkModal();
     }
 };

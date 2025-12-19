@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data:;">
     <title>ARC-OSC Client</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
@@ -55,6 +56,19 @@
         </div>
     </div>
 
+    <!-- VRC Timeline Link Modal -->
+    <div id="vrc-timeline-link-modal" class="modal-fade" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; opacity: 0; transition: opacity 0.3s ease;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 450px; width: 90%;">
+            <h3 style="margin-top: 0; color: #fff;">🔗 Open Link</h3>
+            <p style="margin-bottom: 20px; color: #aaa; font-size: 14px; line-height: 1.5; word-break: break-all;" id="vrc-timeline-link-url"></p>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeVRCTimelineLinkModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="copyVRCTimelineLink()">📋 Copy Link</button>
+                <button class="btn btn-primary" onclick="openVRCTimelineLinkInBrowser()">🌐 Open in Browser</button>
+            </div>
+        </div>
+    </div>
+
     <!-- VRChat Link Success Modal -->
     <div id="vrchat-link-success-modal" class="modal-fade" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 10000; opacity: 0; transition: opacity 0.3s ease;">
         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #2c2c2c; padding: 25px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 450px; width: 90%;">
@@ -92,10 +106,13 @@
             <div class="sidebar-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h3>Connection Status</h3>
-                    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
-                        <span class="theme-toggle-sun">☀</span>
-                        <span class="theme-toggle-moon">🌙</span>
-                    </button>
+                    <div style="display: flex; align-items: center;">
+                        <button class="snow-toggle" id="snow-toggle" onclick="toggleSnow()" title="Toggle Snow Overlay">❄️</button>
+                        <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                            <span class="theme-toggle-sun">☀</span>
+                            <span class="theme-toggle-moon">🌙</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="runtime-timer" style="text-align: center; margin-bottom: 15px;">
                     <span style="font-size: 0.85em; opacity: 0.8;">Runtime:</span>
@@ -132,10 +149,13 @@
                     <div class="tree-content">
                         <div class="tree-items">
                             <button class="tree-child" id="nav-arcfeedback" onclick="showARCFeedbackView()">ARC Feedback</button>
+                            <button class="tree-child" id="nav-arclink" onclick="showARCLinkView()">ARC Link</button>
                             <button class="tree-child" id="nav-chatbox" onclick="showChatboxView()">Chatbox</button>
                             <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
+                            <button class="tree-child" id="nav-openshock" onclick="showOpenShockView()">OpenShock</button>
                             <button class="tree-child" id="nav-osc-leash" onclick="showOSCLeashView()">OSC Leash</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
+                            <button class="tree-child" id="nav-vrc-timeline" onclick="showVRCTimelineView()">VRC Timeline</button>
                             <div class="tree-item" style="margin-top: 5px;">
                                 <button class="tree-toggle" id="nav-vrchatapi-toggle" style="width: 100%; display: flex; align-items: center;">
                                     <span class="arrow">▶</span>
@@ -145,6 +165,8 @@
                                     <div class="tree-items">
                                         <button class="tree-child" id="nav-vrchatapi" onclick="showVRChatAPIView()">Account Info</button>
                                         <button class="tree-child" id="nav-auto-inviter" onclick="showAutoInviterView()">Auto-Inviter</button>
+                                        <button class="tree-child" id="nav-auto-status" onclick="showAutoStatusView()">Auto-Status</button>
+                                        <button class="tree-child" id="nav-calendar" onclick="showCalendarView()">Calendar Viewing</button>
                                     </div>
                                 </div>
                             </div>
@@ -187,14 +209,14 @@
                 <p>Real-time OSC communication with VRChat</p>
             </div>
             <div class="tabs">
-                <button class="tab active" onclick="showTab('parameters')">Parameters</button>
+                <button class="tab active" onclick="showTab('panels')">My Panels</button>
             </div>
             
-            <div id="parameters" class="tab-content active">
+            <div id="panels" class="tab-content active">
                 <div class="card">
-                    <h3>Avatar Parameters</h3>
-                    <div class="parameter-list" id="parameter-list">
-                        <p>Connect and authenticate to view parameters</p>
+                    <h3>Panel Dashboard</h3>
+                    <div id="panels-grid" class="panels-grid">
+                        <p class="panels-loading">Connect and authenticate to view your panels</p>
                     </div>
                 </div>
             </div>
@@ -221,8 +243,9 @@
                 <div class="form-group">
                     <label for="server-url-settings">WebSocket Server URL</label>
                     <input type="text" id="server-url-settings" value="wss://avatar.comfychloe.uk:48255">
+                    <small style="display: block; margin-top: 5px; color: #666;">Use Quick Server Selection above for Live/Beta. Manual entry only for custom dev servers.</small>
                 </div>
-                <button class="btn btn-primary" onclick="updateConfigFromSettings()">Update Server Config</button>
+                <button class="btn btn-primary" onclick="updateConfigFromSettings()">Apply Custom Server URL</button>
             </div>
             <div class="card">
                 <h3>Application Settings</h3>
@@ -241,6 +264,76 @@
             <div class="header">
                 <h1>VOSK Voice Recognition</h1>
                 <p>Coming soon - Voice recognition for Universal control</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="vrc-timeline-view" style="display: none;">
+            <div class="header">
+                <h1>VRC Timeline</h1>
+                <p>Browse VRChat community events and activities</p>
+                <p>Click the Timeline Logo on top left to load the Page</p>
+                <p><b>Note: <U></U>Please note this feature is experimental in client, It might break.</U></b></p>
+            </div>
+            <div class="card" style="padding: 0; height: calc(100vh - 200px); overflow: hidden;">
+                <webview 
+                    id="vrc-timeline-webview"
+                    src="https://vrc.tl/" 
+                    style="width: 100%; height: 100%; display: inline-flex;"
+                    partition="persist:vrc-timeline"
+                    webpreferences="nodeIntegration=no,contextIsolation=yes">
+                </webview>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="arclink-view" style="display: none;">
+            <div class="header">
+                <h1>ARC Link</h1>
+                <p>Coming soon - Connect friends' avatar parameters together</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="openshock-view" style="display: none;">
+            <div class="header">
+                <h1>OpenShock Integration</h1>
+                <p>Coming soon - OpenShock API integration</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="auto-status-view" style="display: none;">
+            <div class="header">
+                <h1>Auto-Status</h1>
+                <p>Coming soon - Automatic VRChat status management</p>
+            </div>
+            <div class="card">
+                <h3>Feature Not Available</h3>
+                <p style="color: #666; text-align: center; padding: 20px;">
+                    This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="calendar-view" style="display: none;">
+            <div class="header">
+                <h1>Calendar</h1>
+                <p>Coming soon - View VRChat events and schedules</p>
             </div>
             <div class="card">
                 <h3>Feature Not Available</h3>
@@ -732,14 +825,6 @@
             </div>
             <div class="card">
                 <h3>OSC Received</h3>
-                <div class="status-panel">
-                    <div class="status-row">
-                        <span class="status-label">OSC Received Display:</span>
-                        <span id="osc-received-display-status" class="status-value">Enabled</span>
-                    </div>
-                    <button id="osc-received-display-toggle-btn" class="btn btn-warning" onclick="toggleOscReceivedDisplay()">Disable OSC Received</button>
-                    <p class="status-description">Disable OSC received logs to prevent lockup's due to a slow CPU - Use as you need, This should only really be enabled when you need to check whats going in/out.</p>
-                </div>
                 <div class="log-container" id="osc-received-log-container">
                     No OSC data received yet<br>
                 </div>
@@ -792,19 +877,39 @@
 
             <div class="card">
                 <h3>OSC Configuration</h3>
-                <div class="form-group">
-                    <label for="local-port-settings">Primary Incoming OSC Port</label>
-                    <input type="number" id="local-port-settings" value="9001" placeholder="Local OSC Port (Incoming)">
+                
+                <!-- Legacy OSC Configuration -->
+                <div style="margin-bottom: 10px;">
+                    <h4 style="margin: 5px 0; color: #666; font-size: 1em;">Legacy OSC (for non-OSC-Query apps)</h4>
+                    <div class="form-group">
+                        <label for="local-port-settings">Legacy Incoming OSC Port</label>
+                        <input type="number" id="local-port-settings" value="9001" placeholder="9001" min="1" max="65535">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="target-port-settings">Primary Outgoing OSC Port</label>
-                    <input type="number" id="target-port-settings" value="9000" placeholder="Target OSC Port (Outgoing)">
+
+                <!-- Outgoing OSC Target -->
+                <div style="margin-bottom: 10px;">
+                    <h4 style="margin: 5px 0; color: #666; font-size: 1em;">Outgoing OSC Target</h4>
+                    <div class="form-group">
+                        <label for="target-address-settings">Target IP Address</label>
+                        <input type="text" id="target-address-settings" value="127.0.0.1" placeholder="127.0.0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="target-port-settings">Target Port</label>
+                        <input type="number" id="target-port-settings" value="9000" placeholder="9000" min="1" max="65535">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="target-address-settings">Local OSC IP Address</label>
-                    <input type="text" id="target-address-settings" value="127.0.0.1">
+
+                <!-- OSC-Query Binding -->
+                <div style="margin-bottom: 10px;">
+                    <h4 style="margin: 5px 0; color: #666; font-size: 1em;">OSC-Query Binding</h4>
+                    <div class="form-group">
+                        <label for="oscquery-bind-address-settings">Bind Address <small style="color: #888;">(0.0.0.0 = all interfaces)</small></label>
+                        <input type="text" id="oscquery-bind-address-settings" value="0.0.0.0" placeholder="0.0.0.0">
+                    </div>
                 </div>
-                <button class="btn btn-primary" onclick="updateOscPortsFromSettings()" style="margin-top: 15px;">Update Primary OSC Configuration</button>
+
+                <button class="btn btn-primary" onclick="updateOscPortsFromSettings()">Update OSC Configuration</button>
             </div>
 
             <div class="card">
@@ -835,10 +940,6 @@
                 <h3>OSC-Query Service</h3>
                 <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
                     Automatic service discovery for VRChat using OSC-Query protocol. <strong>By default, all OSC data is received (/*)</strong>.
-                </p>
-                <p style="margin-bottom: 10px; color: #666; font-size: 0.9em;">
-                    OSC-Query enables VRChat to automatically discover this client on your network.
-                    The service starts automatically when OSC is enabled.
                 </p>
                 <p style="margin-bottom: 15px; color: #28a745; font-size: 0.85em; font-weight: 500;">
                     ✓ OSC-Query service is active and listening to all incoming OSC data
@@ -909,12 +1010,28 @@
     </div>
 
     <!-- UI Modules - Load before app.js -->
+    <script src="ARCFeedback-UI.js"></script>
+    <script src="ARCLink-UI.js"></script>
+    <script src="AutoStatus-UI.js"></script>
+    <script src="Calendar-UI.js"></script>
     <script src="Hyperate-UI.js"></script>
+    <script src="OpenShock-UI.js"></script>
     <script src="OSCLeash-UI.js"></script>
     <script src="VRC-API-UI.js"></script>
-    <script src="ARCFeedback-UI.js"></script>
     
     <!-- Main Application -->
     <script src="app.js"></script>
+    <div class="snow-overlay" id="snow-overlay">
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+        <div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div><div class="snow"></div>
+    </div>
 </body>
 </html>

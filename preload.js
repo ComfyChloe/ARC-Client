@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   disconnectServer: () => ipcRenderer.invoke('websocket-disconnect'),
   authenticate: (credentials) => ipcRenderer.invoke('websocket-connect', credentials),
   sendOsc: (data) => ipcRenderer.invoke('websocket-send-osc', data),
+  sendOscLocal: (data) => ipcRenderer.invoke('osc-send-local', data),
   testWebSocketSend: () => ipcRenderer.invoke('websocket-test-send'),
   sendWebSocketMessage: (event, data) => ipcRenderer.invoke('websocket-send-message', event, data),
   getWebSocketStatus: () => ipcRenderer.invoke('websocket-get-status'),
@@ -71,6 +72,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   voteFeedback: (feedbackId) => ipcRenderer.invoke('vote-feedback', feedbackId),
   getUserFeedbackStats: () => ipcRenderer.invoke('get-user-feedback-stats'),
   getClientVersion: () => ipcRenderer.invoke('get-client-version'),
+  // Error logging
+  logRendererError: (error, context) => ipcRenderer.invoke('log-renderer-error', error, context),
+  logRendererConsoleError: (args, context) => ipcRenderer.invoke('log-renderer-console-error', args, context),
   // Event listeners
   onOscReceived: (callback) => {
     ipcRenderer.on('osc-received', (event, data) => callback(data));
@@ -105,11 +109,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWebSocketServerMessage: (callback) => {
     ipcRenderer.on('websocket-server-message', (event, data) => callback(data));
   },
+  onWebSocketPanelConnectionsUpdate: (callback) => {
+    ipcRenderer.on('websocket-panel-connections-update', (event, data) => callback(data));
+  },
   onAppSettings: (callback) => {
     ipcRenderer.on('app-settings', (event, data) => callback(data));
   },
   onOSCLeashMovement: (callback) => {
     ipcRenderer.on('oscleash-movement-data', (event, data) => callback(data));
+  },
+  onOSCLeashStatusUpdate: (callback) => {
+    ipcRenderer.on('oscleash-status-update', (event, data) => callback(data));
   },
   onHyperateUpdate: (callback) => {
     ipcRenderer.on('hyperate-update', (event, data) => callback(data));
@@ -117,7 +127,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onFeedbackUpdate: (callback) => {
     ipcRenderer.on('feedback-update', (event, data) => callback(data));
   },
+  onVRChatPipelineEvent: (callback) => {
+    ipcRenderer.on('vrchatapi-pipeline-event', (event, data) => callback(data));
+  },
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);
-  }
+  },
+  // Shell and clipboard API for VRC Timeline
+  openExternal: (url) => ipcRenderer.invoke('shell-open-external', url),
+  clipboardWriteText: (text) => ipcRenderer.invoke('clipboard-write-text', text)
 });
