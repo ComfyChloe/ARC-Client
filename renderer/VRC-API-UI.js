@@ -30,13 +30,13 @@ function handleVRChatPipelineEvent(event, data) {
     
     switch (event) {
         case 'friend-online':
-            showNotification(`Friend Online: ${data.user?.displayName || data.userId}`, 'info');
+            debugLog(`Friend Online: ${data.user?.displayName || data.userId}`, 'info');
             break;
         case 'friend-offline':
-            showNotification(`Friend Offline: ${data.user?.displayName || data.userId}`, 'info');
+            debugLog(`Friend Offline: ${data.user?.displayName || data.userId}`, 'info');
             break;
         case 'notification':
-            showNotification(`VRChat: ${data.message || data.type}`, 'info');
+            debugLog(`VRChat: ${data.message || data.type}`, 'info');
             break;
         case 'user-update':
             debugLog(`User update: ${data.userId}`, 'info');

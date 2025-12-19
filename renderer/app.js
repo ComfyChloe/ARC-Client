@@ -565,13 +565,27 @@ async function updateConfig() {
 }
 async function updateConfigFromSettings() {
     try {
+        const serverUrl = document.getElementById('server-url-settings').value;
+        
+        // Only allow updating custom/dev URLs manually
+        if (!serverUrl.includes('127.0.0.1') && !serverUrl.includes('localhost')) {
+            debugLog('Use Quick Server Selection buttons for Live/Beta servers', 'warning');
+            return;
+        }
+        
         const config = {
-            websocketServerUrl: document.getElementById('server-url-settings').value
+            websocketServerUrl: serverUrl
         };
+        
+        // Disconnect if currently connected
+        if (isConnected) {
+            debugLog('Disconnecting to apply custom server URL...');
+            await window.electronAPI.disconnectServer();
+        }
+        
         await window.electronAPI.setConfig(config);
-        // Update the current server status after configuration update
         detectCurrentServer();
-        debugLog('Server configuration updated');
+        debugLog('Custom server URL updated');
     } catch (error) {
         debugLog(`Error updating server config: ${error.message}`, 'error');
     }
@@ -624,7 +638,9 @@ async function switchToServer(serverType) {
         const wasConnected = isConnected;
         if (wasConnected) {
             debugLog(`Disconnecting from current server to switch to ${serverName}...`);
-            await window.electronAPI.websocketDisconnect();
+            await window.electronAPI.disconnectServer();
+            // Small delay to ensure disconnect event is fully processed
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         
         // Update the configuration
@@ -643,20 +659,31 @@ async function switchToServer(serverType) {
         }
         
         // Auto-reconnect if we were previously connected
-        if (wasConnected && currentUser) {
+        if (wasConnected) {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
+            debugLog(`Auto-reconnect check: wasConnected=${wasConnected}, username=${username ? 'present' : 'missing'}, password=${password ? 'present' : 'missing'}`);
             if (username && password) {
-                debugLog(`Auto-reconnecting to ${serverName}...`);
+                debugLog(`Scheduling auto-reconnect to ${serverName}...`);
                 setTimeout(async () => {
-                    try {
-                        await authenticate();
-                        debugLog(`Successfully reconnected to ${serverName}`);
-                    } catch (error) {
-                        debugLog(`Failed to reconnect to ${serverName}: ${error.message}`, 'error');
+                    // Check if we're still not connected after the server switch
+                    if (!isConnected) {
+                        try {
+                            debugLog(`Auto-reconnecting to ${serverName}...`);
+                            await authenticate();
+                            debugLog(`Successfully reconnected to ${serverName}`);
+                        } catch (error) {
+                            debugLog(`Failed to reconnect to ${serverName}: ${error.message}`, 'error');
+                        }
+                    } else {
+                        debugLog('Already connected, skipping auto-reconnect');
                     }
                 }, 1000);
+            } else {
+                debugLog('Auto-reconnect skipped: missing credentials', 'warning');
             }
+        } else {
+            debugLog('Auto-reconnect skipped: was not previously connected');
         }
         
     } catch (error) {

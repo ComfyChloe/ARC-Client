@@ -635,6 +635,7 @@ ipcMain.handle('websocket-disconnect', () => {
   try {
     if (wsManager) {
       const result = wsManager.disconnect();
+      wsManager = null; // Force re-initialization on reconnect to re-register event handlers
       return result;
     }
     return { success: true, message: 'Already disconnected' };

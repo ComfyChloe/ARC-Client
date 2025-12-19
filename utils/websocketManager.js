@@ -18,11 +18,6 @@ class WebSocketManager {
     setConfig(config) {
         this.connectionConfig = { ...this.connectionConfig, ...config };
     }
-    updateServerUrl(url, persistent = true) {
-        this.connectionConfig.serverUrl = url;
-        this.connectionConfig.persistent = persistent;
-        return { success: true, url, persistent };
-    }
     async connect(credentials = {}) {
         if (this.socket && this.isConnected) {
             return { success: true, message: 'Already connected' };
@@ -164,10 +159,10 @@ class WebSocketManager {
         this.isAuthenticated = false;
         this.currentUser = null;
         this.reconnectAttempts = 0;
+        // Emit disconnection status before clearing handlers so they receive it
+        this.emit('connection-status', { status: 'disconnected' });
         // Clear internal event handlers to prevent memory leaks
         this.eventHandlers.clear();
-        // Emit disconnection status to any remaining listeners before clearing
-        this.emit('connection-status', { status: 'disconnected' });
         return { success: true, message: 'Disconnected successfully' };
     }
     sendOscData(data) {
