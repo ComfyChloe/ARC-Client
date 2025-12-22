@@ -3931,6 +3931,7 @@ showOSCLeashView = function() {
                 if (window.OSCLeashUI) {
                     await window.OSCLeashUI.refreshOSCLeashStatus();
                     await window.OSCLeashUI.loadOSCLeashConfig();
+                    await window.OSCLeashUI.loadOSCLeashAutostartStatus();
                 }
             } catch (error) {
                 debugLog(`Error refreshing OSCLeash view: ${error.message}`, 'error');

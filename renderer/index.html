@@ -536,9 +536,15 @@
                     <span class="status-indicator status-disconnected" id="oscleash-status"></span>
                     <span id="oscleash-status-text">Disabled</span>
                 </div>
-                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                     <button class="btn btn-primary" id="oscleash-toggle-btn" onclick="toggleOSCLeash()">Enable OSC Leash</button>
-                    <button class="btn btn-secondary" id="oscleash-autostart-btn" onclick="toggleOSCLeashAutostart()">Auto-start: Disabled</button>
+                    <div class="autostart-toggle-container">
+                        <span style="font-size: 13px; font-weight: 600; opacity: 0.8;">Auto-start:</span>
+                        <div class="autostart-toggle-slider" id="oscleash-autostart-toggle" onclick="toggleOSCLeashAutostart()">
+                            <div class="autostart-toggle-option disabled" id="oscleash-autostart-disabled">Disabled</div>
+                            <div class="autostart-toggle-option enabled" id="oscleash-autostart-enabled">Enabled</div>
+                        </div>
+                    </div>
                 </div>
                 <div style="margin-top: 10px; padding: 10px; background-color: #e8f4fd; border-radius: 4px; border-left: 4px solid #3498db;">
                     <small style="color: #2c3e50;">
@@ -768,9 +774,15 @@
                     <span class="status-indicator status-disconnected" id="hyperate-status"></span>
                     <span id="hyperate-status-text">Disconnected</span>
                 </div>
-                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                     <button class="btn btn-primary" id="hyperate-toggle-btn" onclick="toggleHyperate()">Start HypeRate</button>
-                    <button class="btn btn-secondary" id="hyperate-autostart-btn" onclick="toggleHyperateAutostart()">Auto-start: Disabled</button>
+                    <div class="autostart-toggle-container">
+                        <span style="font-size: 13px; font-weight: 600; opacity: 0.8;">Auto-start:</span>
+                        <div class="autostart-toggle-slider" id="hyperate-autostart-toggle" onclick="toggleHyperateAutostart()">
+                            <div class="autostart-toggle-option disabled" id="hyperate-autostart-disabled">Disabled</div>
+                            <div class="autostart-toggle-option enabled" id="hyperate-autostart-enabled">Enabled</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -787,6 +799,17 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card">
+                <h3>Heart Rate Graph</h3>
+                <div style="padding: 20px;">
+                    <div style="text-align: center; color: #666; padding: 40px 20px;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">📊 Graph Visualization</p>
+                        <p style="font-size: 12px; opacity: 0.7;">Heart rate graph will be displayed here</p>
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
                 <h3>Device Management</h3>
                 <div class="form-group">

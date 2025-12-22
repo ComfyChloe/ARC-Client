@@ -1807,3 +1807,78 @@ body.dark-theme .snow-toggle.disabled {
 @keyframes fall-49 { 66.7345% { transform: translate(50.6919vw, 66.7345vh) scale(0.3823); } to { transform: translate(66.5249vw, 100vh) scale(0.3823); } }
 .snow:nth-child(50) { opacity: 0.7148; transform: translate(12.9382vw, -10px) scale(0.5945); animation: fall-50 20s -6s linear infinite; }
 @keyframes fall-50 { 45.2678% { transform: translate(48.6722vw, 45.2678vh) scale(0.5945); } to { transform: translate(30.8052vw, 100vh) scale(0.5945); } }
+
+/* Autostart Toggle Slider Styles */
+.autostart-toggle-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.autostart-toggle-slider {
+    display: inline-flex;
+    background: #ecf0f1;
+    border-radius: 6px;
+    padding: 3px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 2px solid #bdc3c7;
+    user-select: none;
+}
+
+.autostart-toggle-slider:hover {
+    border-color: #3498db;
+}
+
+.autostart-toggle-option {
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    color: #7f8c8d;
+    background: transparent;
+}
+
+.autostart-toggle-option.active {
+    background: #3498db;
+    color: white;
+    box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+}
+
+.autostart-toggle-option.active.enabled {
+    background: #27ae60;
+    box-shadow: 0 2px 4px rgba(39, 174, 96, 0.3);
+}
+
+.autostart-toggle-option.active.disabled {
+    background: #95a5a6;
+    box-shadow: 0 2px 4px rgba(149, 165, 166, 0.3);
+}
+
+/* Dark theme autostart toggle */
+body.dark-theme .autostart-toggle-slider {
+    background: #34495e;
+    border-color: #2c3e50;
+}
+
+body.dark-theme .autostart-toggle-slider:hover {
+    border-color: #3498db;
+}
+
+body.dark-theme .autostart-toggle-option {
+    color: #95a5a6;
+}
+
+body.dark-theme .autostart-toggle-option.active {
+    background: #3498db;
+    color: white;
+}
+
+body.dark-theme .autostart-toggle-option.active.enabled {
+    background: #27ae60;
+}
+
+body.dark-theme .autostart-toggle-option.active.disabled {
+    background: #7f8c8d;
+}
