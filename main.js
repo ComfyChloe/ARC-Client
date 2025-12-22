@@ -415,6 +415,48 @@ async function initOscQueryService() {
           status: 'stopped'
         });
       });
+      // VRChat connection state events
+      oscQueryService.on('vrchat-addresses-changed', (addresses) => {
+        debug.info(`VRChat addresses changed: OSCQuery=${addresses.oscQueryAddress}, OSC=${addresses.oscAddress}`);
+        sendToRenderer('vrchat-connection-status', {
+          connected: !!addresses.oscQueryAddress,
+          oscQueryAddress: addresses.oscQueryAddress,
+          oscAddress: addresses.oscAddress
+        });
+      });
+      oscQueryService.on('vrchat-connection-lost', () => {
+        debug.warn('VRChat connection lost - will attempt to rediscover');
+        sendToRenderer('vrchat-connection-status', {
+          connected: false,
+          reason: 'connection-lost'
+        });
+      });
+      oscQueryService.on('vrchat-restarted', (info) => {
+        debug.info(`VRChat restarted: ${info.oldServiceName} -> ${info.newServiceName}`);
+        sendToRenderer('vrchat-connection-status', {
+          connected: true,
+          restarted: true,
+          oldServiceName: info.oldServiceName,
+          newServiceName: info.newServiceName
+        });
+      });
+      // OSC data flow monitoring events
+      oscQueryService.on('osc-flow-warning', (info) => {
+        debug.warn(`No OSC data received for ${Math.round(info.timeout / 1000)}s`);
+        sendToRenderer('osc-flow-status', {
+          status: 'warning',
+          timeout: info.timeout,
+          lastMessageTime: info.lastMessageTime
+        });
+      });
+      oscQueryService.on('osc-flow-timeout', (info) => {
+        debug.error(`OSC data flow timeout after ${Math.round(info.timeout / 1000)}s - triggering reconnection`);
+        sendToRenderer('osc-flow-status', {
+          status: 'timeout',
+          timeout: info.timeout,
+          lastMessageTime: info.lastMessageTime
+        });
+      });
       // Setup OSC message forwarding to WebSocket
       oscQueryService.on('osc-message', (oscData) => {
         // Send to renderer for logging (always, regardless of forwarding status)
@@ -603,6 +645,37 @@ ipcMain.handle('get-osc-status', () => {
     return status;
   }
   return { error: 'OSC service not initialized' };
+});
+
+// OSC Query status and control handlers
+ipcMain.handle('get-oscquery-status', () => {
+  if (oscQueryService) {
+    return oscQueryService.getStatus();
+  }
+  return { error: 'OSC Query service not initialized', isRunning: false };
+});
+
+ipcMain.handle('oscquery-force-reconnect', () => {
+  if (oscQueryService) {
+    const result = oscQueryService.forceReconnect();
+    debug.info(`OSC Query force reconnect: ${result ? 'success' : 'failed'}`);
+    return { success: result };
+  }
+  return { success: false, error: 'OSC Query service not initialized' };
+});
+
+ipcMain.handle('oscquery-reset-all', async () => {
+  if (oscQueryService) {
+    // Stop the service first
+    if (oscQueryService.isRunning) {
+      await oscQueryService.stop();
+    }
+    // Reset all persistent state
+    oscQueryService.resetAll();
+    debug.info('OSC Query service reset - will fully re-initialize on next start');
+    return { success: true };
+  }
+  return { success: false, error: 'OSC Query service not initialized' };
 });
 
 ipcMain.handle('get-last-username', () => {

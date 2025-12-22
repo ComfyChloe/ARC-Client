@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setOscQueryUnsubscriptions: (unsubscriptions) => ipcRenderer.invoke('set-oscquery-unsubscriptions', unsubscriptions),
   addOscQueryUnsubscription: (path) => ipcRenderer.invoke('add-oscquery-unsubscription', path),
   removeOscQueryUnsubscription: (path) => ipcRenderer.invoke('remove-oscquery-unsubscription', path),
+  // OSC Query status and control
+  getOscQueryStatus: () => ipcRenderer.invoke('get-oscquery-status'),
+  oscQueryForceReconnect: () => ipcRenderer.invoke('oscquery-force-reconnect'),
+  oscQueryResetAll: () => ipcRenderer.invoke('oscquery-reset-all'),
   // HypeRate API
   hyperateGetStatus: () => ipcRenderer.invoke('hyperate-get-status'),
   hyperateStart: () => ipcRenderer.invoke('hyperate-start'),
@@ -87,6 +91,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onOscQueryStatus: (callback) => {
     ipcRenderer.on('oscquery-status', (event, data) => callback(data));
+  },
+  onVRChatConnectionStatus: (callback) => {
+    ipcRenderer.on('vrchat-connection-status', (event, data) => callback(data));
+  },
+  onOscFlowStatus: (callback) => {
+    ipcRenderer.on('osc-flow-status', (event, data) => callback(data));
   },
   onWebSocketStatus: (callback) => {
     ipcRenderer.on('websocket-status', (event, data) => callback(data));
