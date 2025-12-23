@@ -13,15 +13,18 @@ class VRChatAPIContainer {
     this.twoFactorResolver = null; // Resolver for 2FA promise
     this.loginPromise = null; // Track ongoing login attempt
     // WebSocket Pipeline constants
-    this.PIPELINE_RECONNECT_INTERVAL_MS = 90000; // 90 seconds
-    this.PIPELINE_QUICK_RECONNECT_MS = 10000; // 10 seconds
-    this.PIPELINE_500_BACKOFF_MS = 180000; // 3 minutes
+    this.PIPELINE_HEALTH_CHECK_INTERVAL_MS = 30000; // 30 seconds health check (reduced from 90s for faster detection)
+    this.PIPELINE_QUICK_RECONNECT_MS = 5000; // 5 seconds quick retry after disconnect
+    this.PIPELINE_500_BACKOFF_MS = 180000; // 3 minutes backoff on 500 errors
     // Pipeline state
     this.pipelineConnected = false;
     this.pipelineReconnecting = false;
     this.pipelineReconnectTimeout = null;
     this.pipelineBackoffUntil = 0;
     this.pipelineListenersSetup = false;
+    // Bound event handlers for cleanup
+    this.handlePipelineClose = null;
+    this.handlePipelineError = null;
     // Initialize VRChat API client with proper application info and user agent
     this.initializeClient();
     debug.info('VRChat API container initialized');
@@ -460,6 +463,9 @@ class VRChatAPIContainer {
       this.pipelineConnected = this.apiClient.pipeline.connected;
       debug.info('WebSocket pipeline connected successfully');
 
+      // Attach close/error handlers for immediate disconnect detection
+      this.attachPipelineWebsocketHandlers();
+
       // Set up event listeners for real-time updates
       this.setupPipelineListeners();
     } catch (error) {
@@ -516,7 +522,51 @@ class VRChatAPIContainer {
   }
 
   /**
+   * Attach close/error handlers to the underlying pipeline websocket
+   * This provides immediate disconnect detection rather than waiting for health checks
+   */
+  attachPipelineWebsocketHandlers() {
+    if (!this.apiClient) return;
+
+    const pipeline = this.apiClient.pipeline;
+    const websocket = pipeline?.websocket;
+
+    if (!websocket) {
+      debug.warn('Could not access pipeline websocket for close handler');
+      return;
+    }
+
+    // Remove any existing listeners to avoid duplicates on reconnect
+    if (this.handlePipelineClose) {
+      websocket.removeEventListener?.('close', this.handlePipelineClose);
+    }
+    if (this.handlePipelineError) {
+      websocket.removeEventListener?.('error', this.handlePipelineError);
+    }
+
+    // Add close handler for immediate reconnection
+    this.handlePipelineClose = () => {
+      debug.warn('Pipeline WebSocket closed unexpectedly');
+      this.pipelineConnected = false;
+      if (this.authenticated && !this.pipelineReconnecting) {
+        this.schedulePipelineReconnect(this.PIPELINE_QUICK_RECONNECT_MS);
+      }
+    };
+
+    // Add error handler for logging
+    this.handlePipelineError = (event) => {
+      const errorMsg = event?.message || event?.error?.message || 'Unknown error';
+      debug.error(`Pipeline WebSocket error: ${errorMsg}`);
+    };
+
+    websocket.addEventListener('close', this.handlePipelineClose);
+    websocket.addEventListener('error', this.handlePipelineError);
+    debug.info('Pipeline WebSocket close/error handlers attached');
+  }
+
+  /**
    * Monitor pipeline connection and reconnect if needed.
+   * Serves as a backup to the close event handlers.
    */
   startPipelineHealthCheck() {
     const checkHealth = () => {
@@ -529,18 +579,19 @@ class VRChatAPIContainer {
         this.schedulePipelineReconnect(this.PIPELINE_QUICK_RECONNECT_MS);
       } else {
         this.pipelineConnected = this.apiClient?.pipeline.connected || false;
+        debug.info('Pipeline health check: connected');
         // Schedule next health check
-        this.pipelineReconnectTimeout = setTimeout(checkHealth, this.PIPELINE_RECONNECT_INTERVAL_MS);
+        this.pipelineReconnectTimeout = setTimeout(checkHealth, this.PIPELINE_HEALTH_CHECK_INTERVAL_MS);
       }
     };
-    // Start the first health check after the normal interval
-    this.pipelineReconnectTimeout = setTimeout(checkHealth, this.PIPELINE_RECONNECT_INTERVAL_MS);
+    // Start the first health check after the interval
+    this.pipelineReconnectTimeout = setTimeout(checkHealth, this.PIPELINE_HEALTH_CHECK_INTERVAL_MS);
   }
 
   /**
    * Schedule a pipeline reconnection attempt.
    */
-  schedulePipelineReconnect(delayMs = this.PIPELINE_RECONNECT_INTERVAL_MS) {
+  schedulePipelineReconnect(delayMs = this.PIPELINE_HEALTH_CHECK_INTERVAL_MS) {
     this.clearPipelineReconnectTimeout();
     if (this.pipelineReconnecting) return;
     this.pipelineReconnectTimeout = setTimeout(() => {
