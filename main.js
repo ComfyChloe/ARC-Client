@@ -15,6 +15,7 @@ const { OSCQueryService } = require('./utils/oscQueryService');
 const HyperateAddon = require('./Containers/Hyperate');
 const OSCLeashAddon = require('./Containers/OSCLeash');
 const VRChatAPIContainer = require('./Containers/VRC-API');
+const OscGoesBrrrAddon = require('./Containers/OscGoesBrrr');
 // Logger will be loaded after app is ready
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
@@ -30,6 +31,7 @@ let serverConfig = configManager.getServerConfig();
 let hyperateAddon;
 let oscLeashAddon;
 let vrchatApiContainer;
+let oscGoesBrrrAddon;
 // Custom WebSocket URLs are now persisted across restarts
 let isShuttingDown = false;
 let hasShownCriticalError = false;
@@ -512,6 +514,19 @@ async function initOscQueryService() {
     
     // Start the service
     await oscQueryService.start();
+    
+    // Attach OscGoesBrrr addon to OSC-Query service
+    if (oscGoesBrrrAddon) {
+      oscGoesBrrrAddon.setOscQueryService(oscQueryService);
+      debug.info('OscGoesBrrr addon attached to OSC-Query service');
+      
+      // Start OGB if autostart is enabled
+      const appSettings = configManager.getAppSettings();
+      if (appSettings.ogbAutostart && !oscGoesBrrrAddon.isEnabled()) {
+        debug.info('Starting OscGoesBrrr addon based on autostart setting...');
+        oscGoesBrrrAddon.start();
+      }
+    }
   } catch (error) {
     debug.error(`Failed to initialize OSC Query service: ${error.message}`);
   }
@@ -1373,6 +1388,128 @@ ipcMain.handle('oscleash-set-autostart', (event, enabled) => {
     return { success: false, error: error.message };
   }
 });
+
+// OscGoesBrrr addon IPC handlers
+ipcMain.handle('ogb-get-status', () => {
+  if (oscGoesBrrrAddon) {
+    return oscGoesBrrrAddon.getStatus();
+  }
+  return { enabled: false, connected: false, deviceCount: 0 };
+});
+
+ipcMain.handle('ogb-start', () => {
+  try {
+    if (!oscGoesBrrrAddon) {
+      return { success: false, error: 'OscGoesBrrr addon not initialized' };
+    }
+    const result = oscGoesBrrrAddon.start();
+    return result;
+  } catch (error) {
+    debug.error(`Failed to start OscGoesBrrr addon: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-stop', () => {
+  try {
+    if (oscGoesBrrrAddon) {
+      oscGoesBrrrAddon.stop();
+    }
+    return { success: true };
+  } catch (error) {
+    debug.error(`Failed to stop OscGoesBrrr addon: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-get-devices', () => {
+  try {
+    if (oscGoesBrrrAddon) {
+      return oscGoesBrrrAddon.getStatus().devices || [];
+    }
+    return [];
+  } catch (error) {
+    debug.error(`Failed to get OscGoesBrrr devices: ${error.message}`);
+    return [];
+  }
+});
+
+ipcMain.handle('ogb-get-config', () => {
+  try {
+    if (oscGoesBrrrAddon) {
+      return oscGoesBrrrAddon.getConfig();
+    }
+    return configManager.getOgbConfig();
+  } catch (error) {
+    debug.error(`Failed to get OscGoesBrrr config: ${error.message}`);
+    return {};
+  }
+});
+
+ipcMain.handle('ogb-update-config', (event, config) => {
+  try {
+    if (!oscGoesBrrrAddon) {
+      return { success: false, error: 'OscGoesBrrr addon not initialized' };
+    }
+    const result = oscGoesBrrrAddon.updateConfig(config);
+    return result;
+  } catch (error) {
+    debug.error(`Failed to update OscGoesBrrr config: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-update-device-binding', (event, deviceId, binding) => {
+  try {
+    if (!oscGoesBrrrAddon) {
+      return { success: false, error: 'OscGoesBrrr addon not initialized' };
+    }
+    const result = oscGoesBrrrAddon.updateDeviceBinding(deviceId, binding);
+    return result;
+  } catch (error) {
+    debug.error(`Failed to update OscGoesBrrr device binding: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-update-intiface-config', (event, config) => {
+  try {
+    if (!oscGoesBrrrAddon) {
+      return { success: false, error: 'OscGoesBrrr addon not initialized' };
+    }
+    const result = oscGoesBrrrAddon.updateIntifaceConfig(config);
+    return result;
+  } catch (error) {
+    debug.error(`Failed to update Intiface config: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings();
+    return { enabled: appSettings.ogbAutostart || false };
+  } catch (error) {
+    debug.error(`Failed to get OscGoesBrrr autostart setting: ${error.message}`);
+    return { enabled: false };
+  }
+});
+
+ipcMain.handle('ogb-set-autostart', (event, enabled) => {
+  try {
+    const result = configManager.updateAppSettings({ ogbAutostart: enabled });
+    if (result) {
+      debug.info(`OscGoesBrrr autostart ${enabled ? 'enabled' : 'disabled'}`);
+      return { success: true, enabled };
+    } else {
+      throw new Error('Failed to save autostart setting');
+    }
+  } catch (error) {
+    debug.error(`Failed to set OscGoesBrrr autostart: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
 // Encryption/Decryption IPC handlers
 ipcMain.handle('encrypt-data', (event, plaintext) => {
   return encryptData(plaintext);
@@ -1481,6 +1618,7 @@ app.whenReady().then(async () => {
   hyperateAddon = new HyperateAddon();
   oscLeashAddon = new OSCLeashAddon();
   vrchatApiContainer = new VRChatAPIContainer();
+  oscGoesBrrrAddon = new OscGoesBrrrAddon();
   
   // Set up HypeRate status and heart rate callbacks to update renderer in real-time
   hyperateAddon.setStatusChangeCallback((status) => {
@@ -1503,6 +1641,13 @@ app.whenReady().then(async () => {
   oscLeashAddon.setMovementCallback((data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('oscleash-movement-data', data);
+    }
+  });
+  
+  // Set up OscGoesBrrr status callback to update renderer in real-time
+  oscGoesBrrrAddon.setStatusChangeCallback((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('ogb-status-update', status);
     }
   });
   

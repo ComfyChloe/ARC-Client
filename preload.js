@@ -57,6 +57,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   oscleashUpdateConfig: (config) => ipcRenderer.invoke('oscleash-update-config', config),
   oscleashGetAutostart: () => ipcRenderer.invoke('oscleash-get-autostart'),
   oscleashSetAutostart: (enabled) => ipcRenderer.invoke('oscleash-set-autostart', enabled),
+  // OscGoesBrrr API
+  ogbGetStatus: () => ipcRenderer.invoke('ogb-get-status'),
+  ogbStart: () => ipcRenderer.invoke('ogb-start'),
+  ogbStop: () => ipcRenderer.invoke('ogb-stop'),
+  ogbGetDevices: () => ipcRenderer.invoke('ogb-get-devices'),
+  ogbGetConfig: () => ipcRenderer.invoke('ogb-get-config'),
+  ogbUpdateConfig: (config) => ipcRenderer.invoke('ogb-update-config', config),
+  ogbUpdateDeviceBinding: (deviceId, binding) => ipcRenderer.invoke('ogb-update-device-binding', deviceId, binding),
+  ogbUpdateIntifaceConfig: (config) => ipcRenderer.invoke('ogb-update-intiface-config', config),
+  ogbGetAutostart: () => ipcRenderer.invoke('ogb-get-autostart'),
+  ogbSetAutostart: (enabled) => ipcRenderer.invoke('ogb-set-autostart', enabled),
   // Encryption API
   encryptData: (plaintext) => ipcRenderer.invoke('encrypt-data', plaintext),
   decryptData: (encryptedData) => ipcRenderer.invoke('decrypt-data', encryptedData),
@@ -133,6 +144,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onHyperateUpdate: (callback) => {
     ipcRenderer.on('hyperate-update', (event, data) => callback(data));
+  },
+  onOgbStatusUpdate: (callback) => {
+    ipcRenderer.on('ogb-status-update', (event, data) => callback(data));
   },
   onFeedbackUpdate: (callback) => {
     ipcRenderer.on('feedback-update', (event, data) => callback(data));

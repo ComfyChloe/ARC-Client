@@ -281,6 +281,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (window.gc) window.gc();
         }
     }, 10000);
+    // Initialize OscGoesBrrr view
+    if (typeof initOgbView === 'function') {
+        initOgbView();
+    }
 });
 async function loadConfig() {
     try {
@@ -1323,7 +1327,8 @@ function showMainView() {
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
     const vrcTimelineView = document.getElementById('vrc-timeline-view');
-    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
+    const oscGoesBrrrView = document.getElementById('oscgoesbrrr-view');
+    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1368,13 +1373,14 @@ function showOscView() {
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
     const vrcTimelineView = document.getElementById('vrc-timeline-view');
+    const oscGoesBrrrView = document.getElementById('oscgoesbrrr-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
+    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1425,9 +1431,10 @@ function showSettingsView() {
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
     const vrcTimelineView = document.getElementById('vrc-timeline-view');
+    const oscGoesBrrrView = document.getElementById('oscgoesbrrr-view');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
+    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1472,13 +1479,14 @@ function showLogsView() {
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
     const vrcTimelineView = document.getElementById('vrc-timeline-view');
+    const oscGoesBrrrView = document.getElementById('oscgoesbrrr-view');
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
     const navLogs = document.getElementById('nav-logs');
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
+    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1559,7 +1567,7 @@ function setupVRChatApiDropdown() {
 }
 function showVOSKView() {
     cleanupVRCTimelineWebview();
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
 
     views.forEach(view => {
@@ -1610,7 +1618,7 @@ function showVOSKView() {
     debugLog('Switched to VOSK view');
 }
 function showVRCTimelineView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1897,7 +1905,7 @@ function showVRCTimelineView() {
 }
 function showHyperateView() {
     debugLog('showHyperateView called');
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -1953,7 +1961,7 @@ function showHyperateView() {
     debugLog('Switched to Hyperate view');
 }
 function showARCFeedbackView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -2003,7 +2011,7 @@ function showARCFeedbackView() {
     debugLog('Switched to ARC Feedback view');
 }
 function showChatboxView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -2053,7 +2061,7 @@ function showChatboxView() {
     debugLog('Switched to Chatbox view');
 }
 function showVRChatAPIView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -2104,7 +2112,7 @@ function showVRChatAPIView() {
 }
 
 function showOSCLeashView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -2154,8 +2162,67 @@ function showOSCLeashView() {
     debugLog('Switched to OSC Leash view');
 }
 
+function showOscGoesBrrrView() {
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
+    views.forEach(view => {
+        if (view) view.style.opacity = '0';
+    });
+    setTimeout(() => {
+        views.forEach(view => {
+            if (view) view.style.display = 'none';
+        });
+        const oscGoesBrrrView = document.getElementById('oscgoesbrrr-view');
+        if (oscGoesBrrrView) {
+            oscGoesBrrrView.style.display = 'block';
+            oscGoesBrrrView.style.opacity = '0';
+            requestAnimationFrame(() => {
+                oscGoesBrrrView.style.opacity = '1';
+            });
+        } else {
+            debugLog('Error: OscGoesBrrr view element not found!', 'error');
+        }
+    }, 300);
+    // Reset ALL main navigation buttons explicitly
+    const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
+    allMainNavButtons.forEach(navId => {
+        const navElement = document.getElementById(navId);
+        if (navElement) {
+            navElement.classList.remove('active');
+            navElement.disabled = false;
+        }
+    });
+    // Reset all tree-child buttons and set OscGoesBrrr as active
+    const treeChildren = document.querySelectorAll('.tree-child');
+    treeChildren.forEach(child => {
+        child.classList.remove('active');
+        child.disabled = false;
+    });
+    const navOscGoesBrrr = document.getElementById('nav-oscgoesbrrr');
+    if (navOscGoesBrrr) {
+        navOscGoesBrrr.classList.add('active');
+        navOscGoesBrrr.disabled = true;
+    }
+    // Ensure extras dropdown is expanded
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
+    }
+    // Initialize OscGoesBrrr status
+    if (typeof showOgbView === 'function') {
+        showOgbView();
+    }
+    debugLog('Switched to OscGoesBrrr view');
+}
+
 function showAutoInviterView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
@@ -2205,7 +2272,7 @@ function showAutoInviterView() {
     debugLog('Switched to Auto-Inviter view');
 }
 function showARCLinkView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });
@@ -2251,7 +2318,7 @@ function showARCLinkView() {
     debugLog('Switched to ARC Link view');
 }
 function showOpenShockView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });
@@ -2297,7 +2364,7 @@ function showOpenShockView() {
     debugLog('Switched to OpenShock view');
 }
 function showAutoStatusView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });
@@ -2343,7 +2410,7 @@ function showAutoStatusView() {
     debugLog('Switched to Auto-Status view');
 }
 function showCalendarView() {
-    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
+    const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     views.forEach(view => {
         if (view) view.style.opacity = '0';
     });

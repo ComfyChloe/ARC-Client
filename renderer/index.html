@@ -154,6 +154,7 @@
                             <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
                             <button class="tree-child" id="nav-openshock" onclick="showOpenShockView()">OpenShock</button>
                             <button class="tree-child" id="nav-osc-leash" onclick="showOSCLeashView()">OSC Leash</button>
+                            <button class="tree-child" id="nav-oscgoesbrrr" onclick="showOscGoesBrrrView()">OscGoesBrrr</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
                             <button class="tree-child" id="nav-vrc-timeline" onclick="showVRCTimelineView()">VRC Timeline</button>
                             <div class="tree-item" style="margin-top: 5px;">
@@ -300,6 +301,156 @@
                 <h3>Feature Not Available</h3>
                 <p style="color: #666; text-align: center; padding: 20px;">
                     This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="oscgoesbrrr-view" style="display: none;">
+            <div class="header">
+                <h1>OscGoesBrrr</h1>
+                <p>Control Bluetooth haptic devices from VRChat OSC using Intiface/Buttplug</p>
+            </div>
+
+            <div class="card">
+                <h3>Connection Status</h3>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="ogb-status"></span>
+                    <span id="ogb-status-text">Stopped</span>
+                </div>
+                <div id="ogb-server-info" style="display: none; font-size: 12px; color: #666; margin-top: 5px;"></div>
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <button class="btn btn-primary" id="ogb-toggle-btn" onclick="toggleOgb()">Start</button>
+                    <div class="autostart-toggle-container">
+                        <span style="font-size: 13px; font-weight: 600; opacity: 0.8;">Auto-start:</span>
+                        <div class="autostart-toggle-slider" id="ogb-autostart-toggle" onclick="toggleOgbAutostart()">
+                            <div class="autostart-toggle-option active disabled" id="ogb-autostart-disabled">Disabled</div>
+                            <div class="autostart-toggle-option enabled" id="ogb-autostart-enabled">Enabled</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Overall level indicator -->
+                <div style="margin-top: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span style="font-size: 13px; font-weight: 600;">Max Haptic Level</span>
+                        <span id="ogb-level-text" style="font-size: 13px; font-weight: 600;">0%</span>
+                    </div>
+                    <div style="background: #333; border-radius: 4px; height: 8px; overflow: hidden;">
+                        <div id="ogb-level-bar" style="background: linear-gradient(90deg, #ff6b9d, #ff3366); height: 100%; width: 0%; transition: width 0.1s ease;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Intiface Settings</h3>
+                <div class="form-group">
+                    <label for="ogb-intiface-address">Intiface Address</label>
+                    <div style="display: flex; gap: 10px; margin-top: 5px; align-items: center;">
+                        <input type="text" id="ogb-intiface-address" placeholder="127.0.0.1" style="flex: 1;" value="127.0.0.1">
+                        <span>:</span>
+                        <input type="number" id="ogb-intiface-port" placeholder="12345" style="width: 80px;" value="12345">
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px; align-items: center;">
+                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                            <input type="checkbox" id="ogb-intiface-wss">
+                            <span>Use Secure WebSocket (WSS)</span>
+                        </label>
+                        <button class="btn btn-secondary" onclick="updateIntifaceSettings()">Save</button>
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        Make sure <a href="https://intiface.com/central/" target="_blank" style="color: #3498db;">Intiface Central</a> is running and the server is started
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Connected Haptic Devices</h3>
+                <div id="ogb-devices-list">
+                    <div class="ogb-no-devices">
+                        <p>No haptic devices connected</p>
+                        <p class="hint">Make sure Intiface Central is running and devices are connected</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Device Configuration Section (embedded, shown when device selected) -->
+            <div class="card" id="ogb-device-config-section" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">Configure: <span id="ogb-config-device-name"></span></h3>
+                    <button class="btn btn-secondary btn-small" onclick="closeOgbDeviceConfig()">Close</button>
+                </div>
+                
+                <div class="form-group">
+                    <label for="ogb-config-type">Source Type Filter</label>
+                    <select id="ogb-config-type">
+                        <option value="all">All Sources</option>
+                        <option value="pen">Penetrators Only</option>
+                        <option value="orf">Orifices Only</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Enabled Contact Sources</label>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 5px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="ogb-source-touchSelf">
+                            <span>Touch Self</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="ogb-source-touchOthers" checked>
+                            <span>Touch Others</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="ogb-source-penSelf">
+                            <span>Pen Self</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="ogb-source-penOthers" checked>
+                            <span>Pen Others</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="ogb-source-frotOthers" checked>
+                            <span>Frot Others</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label for="ogb-config-multiplier">Intensity Multiplier</label>
+                        <span id="ogb-config-multiplier-value" style="font-weight: 600; color: #3498db;">1.0x</span>
+                    </div>
+                    <input type="range" id="ogb-config-multiplier" min="0.1" max="2.0" step="0.1" value="1.0" style="width: 100%;">
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #888; margin-top: 2px;">
+                        <span>Min: 0.1x</span>
+                        <span>Max: 2.0x</span>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button class="btn btn-primary" onclick="saveOgbDeviceConfig()" style="flex: 1;">Save Configuration</button>
+                    <button class="btn btn-secondary" onclick="closeOgbDeviceConfig()">Cancel</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Avatar Contact Sources</h3>
+                <div id="ogb-game-devices-list">
+                    <div class="ogb-no-devices">
+                        <p>No avatar contacts detected</p>
+                        <p class="hint">Contacts will appear when your avatar has VRCFury Haptics or similar setup</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>About OscGoesBrrr</h3>
+                <p style="font-size: 14px; color: #888; line-height: 1.6;">
+                    OscGoesBrrr bridges VRChat avatar haptic parameters to Bluetooth toys via the 
+                    <a href="https://intiface.com/central/" target="_blank" style="color: #3498db;">Intiface Central</a> application.
+                    Based on <a href="https://osc.toys" target="_blank" style="color: #3498db;">osc.toys</a>.
+                </p>
+                <p style="font-size: 13px; color: #666; margin-top: 10px;">
+                    Supported avatar systems: OGB (OscGoesBrrr), TPS (Poiyomi/DPS), VRCFury Haptics
                 </p>
             </div>
         </div>
@@ -1039,6 +1190,7 @@
     <script src="Calendar-UI.js"></script>
     <script src="Hyperate-UI.js"></script>
     <script src="OpenShock-UI.js"></script>
+    <script src="OscGoesBrrr-UI.js"></script>
     <script src="OSCLeash-UI.js"></script>
     <script src="VRC-API-UI.js"></script>
     
