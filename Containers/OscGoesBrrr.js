@@ -33,6 +33,8 @@ class ToyBridge {
     this.lastPushTime = 0;
     this.lastRawLevel = 0; // For motion calculation
     this.motionLevel = 0;
+    this.motionHistory = []; // Track motion over time for averaging
+    this.motionWindowMs = 500; // Motion averaging window (500ms)
   }
 
   /**
@@ -63,18 +65,35 @@ class ToyBridge {
 
     // Calculate max level from all relevant sources
     let rawLevel = 0;
+    let maxSource = null;
     for (const source of relevantSources) {
-      rawLevel = Math.max(rawLevel, source.value);
+      if (source.value > rawLevel) {
+        rawLevel = source.value;
+        maxSource = source;
+      }
     }
 
     let level = rawLevel;
 
     // Apply motion-based calculation if linear is disabled
     if (!linear) {
+      const now = Date.now();
       const motion = Math.abs(rawLevel - this.lastRawLevel);
-      // Smooth motion with exponential decay
-      this.motionLevel = Math.max(motion, this.motionLevel * 0.8);
-      level = this.motionLevel;
+      
+      // Add current motion to history with timestamp
+      this.motionHistory.push({ time: now, motion });
+      
+      // Remove old entries outside the window
+      const cutoff = now - this.motionWindowMs;
+      this.motionHistory = this.motionHistory.filter(entry => entry.time > cutoff);
+      
+      // Sum all motion in the window and normalize by time
+      // This gives us "total movement distance" over the window period
+      const totalMotion = this.motionHistory.reduce((sum, entry) => sum + entry.motion, 0);
+      
+      // Scale: if you move from 0 to 1 and back (2.0 total distance) in the window, that's max
+      // Typical thrusting might do 0.5 distance per window, so scale by 2 to make it reach 100%
+      level = Math.min(1, totalMotion * 2);
     }
 
     this.lastRawLevel = rawLevel;

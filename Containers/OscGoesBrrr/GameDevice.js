@@ -32,31 +32,93 @@ class BridgeSource {
 
 /**
  * Detects the length of a penetrator by tracking root/tip proximity
+ * Based on the original OscGoesBrrr's GameDeviceLengthDetector
  */
 class LengthDetector {
   constructor() {
-    this.recordedLength = null;
-    this.lastRoot = 0;
-    this.lastTip = 0;
+    this.length = null;
+    this.recentSamples = [];
+    this.badPenetratingSample = undefined;
+  }
+
+  saveSample(sample) {
+    if (sample === undefined) {
+      this.recentSamples = [];
+    } else {
+      this.recentSamples.push(sample);
+      if (this.recentSamples.length > 5) {
+        this.recentSamples.shift();
+      }
+    }
+    this.updateLengthFromSamples();
+  }
+
+  updateLengthFromSamples() {
+    const sortedSamples = [...this.recentSamples];
+    if (sortedSamples.length === 0) {
+      // Use bad sample if we have no good samples
+      this.length = this.badPenetratingSample ?? null;
+      return;
+    }
+    
+    // Find the most consistent pair of samples
+    sortedSamples.sort((a, b) => a - b);
+    let smallestDiff = 1;
+    let smallestDiffIndex = -1;
+    for (let i = 1; i < sortedSamples.length; i++) {
+      const diff = Math.abs(sortedSamples[i] - sortedSamples[i - 1]);
+      if (diff < smallestDiff) {
+        smallestDiff = diff;
+        smallestDiffIndex = i;
+      }
+    }
+    if (smallestDiffIndex >= 0) {
+      this.length = sortedSamples[smallestDiffIndex];
+    } else if (sortedSamples.length > 0) {
+      this.length = sortedSamples[0];
+    }
   }
 
   update(rootProx, tipProx) {
-    if (typeof rootProx !== 'number' || typeof tipProx !== 'number') return;
-    
-    // When tip is fully inside and root is partially in, we can calculate length
-    if (tipProx > 0.99 && rootProx > 0 && rootProx < 0.99) {
-      const newLength = 1 - rootProx;
-      if (!this.recordedLength || Math.abs(newLength - this.recordedLength) < 0.1) {
-        this.recordedLength = newLength;
-      }
+    if (typeof rootProx !== 'number' || typeof tipProx !== 'number') {
+      this.badPenetratingSample = undefined;
+      this.saveSample(undefined);
+      return;
+    }
+    if (rootProx < 0.01 || tipProx < 0.01) {
+      // Nobody in radius, clear recorded length
+      this.badPenetratingSample = undefined;
+      this.saveSample(undefined);
+      return;
+    }
+    if (rootProx > 0.95) {
+      // Nearly impossible (root is at center of orifice)
+      // Keep using whatever we recorded before
+      return;
+    }
+
+    // Calculate length as difference between tip and root proximity
+    // The receiver spheres are 1m in size, so this is in meters
+    const calculatedLength = tipProx - rootProx;
+    if (calculatedLength < 0.02) {
+      // Too short (broken or backward?), keep previous
+      return;
     }
     
-    this.lastRoot = rootProx;
-    this.lastTip = tipProx;
+    if (tipProx > 0.99) {
+      // Penetrator is penetrating right now. Only use this length if we don't have better.
+      if (this.badPenetratingSample === undefined || calculatedLength > this.badPenetratingSample) {
+        this.badPenetratingSample = calculatedLength;
+        this.updateLengthFromSamples();
+      }
+    } else {
+      // Good sample while not fully penetrating
+      this.saveSample(calculatedLength);
+    }
   }
 
   getLength() {
-    return this.recordedLength;
+    return this.length;
   }
 }
 
@@ -125,6 +187,10 @@ class GameDevice extends EventEmitter {
 
   /**
    * Calculate new-style penetration amount
+   * Based on original OscGoesBrrr implementation:
+   * - Returns depth 0-1 when fully penetrating (tipProx > 0.99)
+   * - Returns 0 during approach (tipProx < 0.99) so legacy PenOthers is used
+   * - Returns undefined if new-style parameters aren't being used
    * @param {boolean} self - Whether to check self or others
    * @returns {number|undefined} Penetration amount 0-1, or undefined if not applicable
    */
@@ -133,32 +199,24 @@ class GameDevice extends EventEmitter {
     const tipProx = this.getNumber(self ? 'PenSelfNewTip' : 'PenOthersNewTip');
 
     if (typeof rootProx === 'number' && typeof tipProx === 'number' && (rootProx > 0 || tipProx > 0)) {
+      // Someone with new penetration is nearby, so never use legacy pen
       const lengthDetector = self ? this.recordedSelfLength : this.recordedOthersLength;
       const len = lengthDetector.getLength();
       
-      // If tip is fully inside (> 0.99), we can calculate precise depth
       if (len && tipProx > 0.99) {
+        // Tip is fully inside - calculate depth based on how much root is exposed
         const exposedLength = 1 - rootProx;
         const exposedRatio = exposedLength / len;
-        return Math.max(0, Math.min(1, 1 - exposedRatio));
+        const depth = Math.max(0, Math.min(1, 1 - exposedRatio));
+        return depth;
       }
       
-      // If we have a recorded length, use it for partial calculation
-      if (len && tipProx > 0) {
-        // Estimate based on tip proximity and recorded length
-        const tipDepth = tipProx * len;
-        return Math.max(0, Math.min(1, tipDepth));
-      }
-      
-      // Fallback: Use tip proximity directly as a rough estimate
-      // This handles the case where we haven't recorded a length yet
-      if (tipProx > 0) {
-        return Math.max(0, Math.min(1, tipProx));
-      }
-      
+      // Tip not fully inside - return 0 to indicate "new style is active but not penetrating"
+      // This ensures legacy PenOthers doesn't override during new-style interaction
       return 0;
     }
 
+    // New-style parameters aren't being used - return undefined to allow legacy fallback
     return undefined;
   }
 

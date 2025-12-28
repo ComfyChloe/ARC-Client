@@ -23,6 +23,8 @@ class DeviceFeature {
     this.actuatorType = actuatorType;
     this.parent = parent;
     this.lastLevel = 0;
+    this.batteryLevel = null; // Battery level 0-100, null if unknown
+    this.hasBatterySensor = false;
   }
 
   /**
@@ -48,11 +50,12 @@ class DeviceFeature {
     } else {
       // Vibrate/Scalar - skip Constrict actuators
       if (this.actuatorType !== 'Constrict') {
-        this.parent.send({
+        const cmd = {
           type: 'ScalarCmd',
           DeviceIndex: this.bioDeviceIndex,
           Scalars: [{ Index: this.bioSubIndex, Scalar: level, ActuatorType: this.actuatorType }]
-        });
+        };
+        this.parent.send(cmd);
       }
     }
     this.lastLevel = level;
@@ -79,6 +82,7 @@ class ButtplugClient extends EventEmitter {
     this.connectionTimeout = null;
     this.scanInterval = null;
     this.logInterval = null;
+    this.batteryPollInterval = null;
     this.address = '127.0.0.1';
     this.port = 12345;
     this.useWss = false;
@@ -98,7 +102,6 @@ class ButtplugClient extends EventEmitter {
     if (config.address) this.address = config.address;
     if (config.port) this.port = config.port;
     if (config.useWss !== undefined) this.useWss = config.useWss;
-    debug.debug(`[Buttplug] Config updated: ${this.useWss ? 'wss' : 'ws'}://${this.address}:${this.port}`);
   }
 
   /**
@@ -108,6 +111,7 @@ class ButtplugClient extends EventEmitter {
     this.isStopped = false;
     this.retry();
     this.startScanning();
+    this.startBatteryPolling();
     // Log command frequency every 15 seconds
     this.logInterval = setInterval(() => {
       if (this.recentlySentCmds > 0) {
@@ -124,7 +128,6 @@ class ButtplugClient extends EventEmitter {
     this.isStopped = true;
     this.clearTimers();
     this.terminate();
-    debug.debug('[Buttplug] Client stopped');
   }
 
   clearTimers() {
@@ -143,6 +146,10 @@ class ButtplugClient extends EventEmitter {
     if (this.logInterval) {
       clearInterval(this.logInterval);
       this.logInterval = null;
+    }
+    if (this.batteryPollInterval) {
+      clearInterval(this.batteryPollInterval);
+      this.batteryPollInterval = null;
     }
   }
 
@@ -164,7 +171,6 @@ class ButtplugClient extends EventEmitter {
 
     const protocol = this.useWss ? 'wss' : 'ws';
     const uri = `${protocol}://${this.address}:${this.port}`;
-    debug.debug(`[Buttplug] Opening connection to ${uri}`);
 
     let ws;
     try {
@@ -191,7 +197,6 @@ class ButtplugClient extends EventEmitter {
       }
       this.activeCallbacks.clear();
       this.clearDevices();
-      debug.debug('[Buttplug] Connection closed');
       this.isConnecting = false;
       this.emit('disconnected');
       this.delayRetry();
@@ -262,7 +267,7 @@ class ButtplugClient extends EventEmitter {
   handlePacket(params) {
     const type = params.type;
 
-    // Log non-Ok messages
+    // Log non-Ok messages (and periodically log Ok for debugging)
     if (type !== 'Ok') {
       debug.info(`[Buttplug] <- ${type}: ${JSON.stringify(params)}`);
     }
@@ -278,6 +283,8 @@ class ButtplugClient extends EventEmitter {
     } else if (type === 'Error') {
       debug.error(`[Buttplug] Server error: ${params.ErrorMessage}`);
       this.lastError = params.ErrorMessage;
+    } else if (type === 'SensorReading') {
+      this.handleSensorReading(params);
     }
 
     // Handle callbacks
@@ -306,10 +313,7 @@ class ButtplugClient extends EventEmitter {
     // Track high-frequency commands
     if (['ScalarCmd', 'LinearCmd', 'RotateCmd', 'FleshlightLaunchFW12Cmd'].includes(type)) {
       this.recentlySentCmds++;
-    } else if (['StartScanning', 'StopScanning'].includes(type)) {
-      // Debug level only for scanning commands
-      debug.debug(`[Buttplug] -> ${type}: ${JSON.stringify(newArgs)}`);
-    } else {
+    } else if (!['StartScanning', 'StopScanning'].includes(type)) {
       debug.info(`[Buttplug] -> ${type}: ${JSON.stringify(newArgs)}`);
     }
 
@@ -388,6 +392,67 @@ class ButtplugClient extends EventEmitter {
   }
 
   /**
+   * Start periodic battery polling
+   */
+  startBatteryPolling() {
+    if (this.batteryPollInterval) return;
+
+    const pollBatteries = async () => {
+      if (!this.wsReady()) return;
+      
+      // Get unique device indexes that have battery sensors
+      const deviceIndexes = new Set();
+      for (const feature of this.features.values()) {
+        if (feature.hasBatterySensor) {
+          deviceIndexes.add(feature.bioDeviceIndex);
+        }
+      }
+
+      // Poll each device's battery
+      for (const deviceIndex of deviceIndexes) {
+        try {
+          await this.send({
+            type: 'SensorReadCmd',
+            DeviceIndex: deviceIndex,
+            SensorIndex: 0,
+            SensorType: 'Battery'
+          });
+        } catch (e) {
+          // Silently ignore battery read errors
+        }
+      }
+    };
+
+    // Poll every 60 seconds
+    this.batteryPollInterval = setInterval(pollBatteries, 60000);
+    
+    // Initial poll after 2 seconds (give devices time to connect)
+    setTimeout(pollBatteries, 2000);
+  }
+
+  /**
+   * Handle sensor reading response
+   */
+  handleSensorReading(params) {
+    const deviceIndex = params.DeviceIndex;
+    const data = params.Data || params.data || [];
+    
+    if (data.length === 0) return;
+    
+    // Battery level is typically the first (and only) sensor value
+    const batteryLevel = Math.round(data[0]);
+    
+    // Update all features for this device
+    for (const feature of this.features.values()) {
+      if (feature.bioDeviceIndex === deviceIndex) {
+        feature.batteryLevel = batteryLevel;
+      }
+    }
+    
+    this.emit('devicesChanged');
+  }
+
+  /**
    * Clear all devices
    */
   clearDevices() {
@@ -435,6 +500,9 @@ class ButtplugClient extends EventEmitter {
     }
     this.usedDeviceIds.add(id);
 
+    // Check for battery sensor
+    const hasBattery = (d.DeviceMessages?.SensorReadCmd || []).some(s => s.SensorType === 'Battery');
+
     let featureNum = 0;
 
     // Add scalar/vibrate features
@@ -450,6 +518,7 @@ class ButtplugClient extends EventEmitter {
         scalarCmds[i].ActuatorType,
         this
       );
+      feature.hasBatterySensor = hasBattery;
       this.features.set(feature.id, feature);
       this.emit('addFeature', feature);
     }
@@ -509,6 +578,7 @@ class ButtplugClient extends EventEmitter {
         devices.set(feature.deviceId, {
           id: feature.deviceId,
           name: feature.deviceName,
+          batteryLevel: feature.batteryLevel,
           features: []
         });
       }
