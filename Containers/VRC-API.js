@@ -579,7 +579,7 @@ class VRChatAPIContainer {
         this.schedulePipelineReconnect(this.PIPELINE_QUICK_RECONNECT_MS);
       } else {
         this.pipelineConnected = this.apiClient?.pipeline.connected || false;
-        debug.info('Pipeline health check: connected');
+        debug.debug('Pipeline health check: connected');
         // Schedule next health check
         this.pipelineReconnectTimeout = setTimeout(checkHealth, this.PIPELINE_HEALTH_CHECK_INTERVAL_MS);
       }

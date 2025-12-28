@@ -85,6 +85,7 @@ class ButtplugClient extends EventEmitter {
     this.serverName = null;
     this.serverVersion = null;
     this.isConnecting = false;
+    this.isStopped = false;
     this.lastError = null;
     debug.info('[Buttplug] Client initialized');
   }
@@ -97,13 +98,14 @@ class ButtplugClient extends EventEmitter {
     if (config.address) this.address = config.address;
     if (config.port) this.port = config.port;
     if (config.useWss !== undefined) this.useWss = config.useWss;
-    debug.info(`[Buttplug] Config updated: ${this.useWss ? 'wss' : 'ws'}://${this.address}:${this.port}`);
+    debug.debug(`[Buttplug] Config updated: ${this.useWss ? 'wss' : 'ws'}://${this.address}:${this.port}`);
   }
 
   /**
    * Start the connection to Intiface
    */
   start() {
+    this.isStopped = false;
     this.retry();
     this.startScanning();
     // Log command frequency every 15 seconds
@@ -119,9 +121,10 @@ class ButtplugClient extends EventEmitter {
    * Stop the connection and cleanup
    */
   stop() {
+    this.isStopped = true;
     this.clearTimers();
     this.terminate();
-    debug.info('[Buttplug] Client stopped');
+    debug.debug('[Buttplug] Client stopped');
   }
 
   clearTimers() {
@@ -161,7 +164,7 @@ class ButtplugClient extends EventEmitter {
 
     const protocol = this.useWss ? 'wss' : 'ws';
     const uri = `${protocol}://${this.address}:${this.port}`;
-    debug.info(`[Buttplug] Opening connection to ${uri}`);
+    debug.debug(`[Buttplug] Opening connection to ${uri}`);
 
     let ws;
     try {
@@ -188,7 +191,7 @@ class ButtplugClient extends EventEmitter {
       }
       this.activeCallbacks.clear();
       this.clearDevices();
-      debug.info('[Buttplug] Connection closed');
+      debug.debug('[Buttplug] Connection closed');
       this.isConnecting = false;
       this.emit('disconnected');
       this.delayRetry();
@@ -348,11 +351,13 @@ class ButtplugClient extends EventEmitter {
    * Schedule a retry after delay
    */
   delayRetry() {
-    if (this.retryTimeout) return;
+    if (this.isStopped || this.retryTimeout) return;
     this.terminate();
     this.retryTimeout = setTimeout(() => {
       this.retryTimeout = null;
-      this.retry();
+      if (!this.isStopped) {
+        this.retry();
+      }
     }, 3000);
   }
 
