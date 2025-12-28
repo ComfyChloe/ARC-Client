@@ -31,6 +31,8 @@ class ToyBridge {
     this.config = config;
     this.lastLevel = 0;
     this.lastPushTime = 0;
+    this.lastRawLevel = 0; // For motion calculation
+    this.motionLevel = 0;
   }
 
   /**
@@ -42,6 +44,8 @@ class ToyBridge {
     const bindType = binding.type || 'all';
     const enabledSources = binding.sources || DEFAULT_ENABLED_SOURCES;
     const multiplier = binding.multiplier ?? 1.0;
+    const idle = binding.idle ?? 0; // Idle vibration level
+    const linear = binding.linear ?? true; // True = depth-based, false = motion-based
 
     // Filter sources based on binding config
     const relevantSources = sources.filter(source => {
@@ -58,13 +62,33 @@ class ToyBridge {
     });
 
     // Calculate max level from all relevant sources
-    let level = 0;
+    let rawLevel = 0;
     for (const source of relevantSources) {
-      level = Math.max(level, source.value);
+      rawLevel = Math.max(rawLevel, source.value);
     }
 
-    // Apply multiplier and clamp
-    level = Math.min(1, Math.max(0, level * multiplier));
+    let level = rawLevel;
+
+    // Apply motion-based calculation if linear is disabled
+    if (!linear) {
+      const motion = Math.abs(rawLevel - this.lastRawLevel);
+      // Smooth motion with exponential decay
+      this.motionLevel = Math.max(motion, this.motionLevel * 0.8);
+      level = this.motionLevel;
+    }
+
+    this.lastRawLevel = rawLevel;
+
+    // Apply multiplier
+    level = level * multiplier;
+
+    // Add idle baseline if contact is active
+    if (rawLevel > 0) {
+      level = Math.max(level, idle);
+    }
+
+    // Clamp to valid range
+    level = Math.min(1, Math.max(0, level));
 
     // Push to device
     this.feature.setLevel(level);
@@ -143,7 +167,9 @@ class OscGoesBrrrAddon extends EventEmitter {
         id: feature.deviceId,
         type: 'all',
         sources: [...DEFAULT_ENABLED_SOURCES],
-        multiplier: 1.0
+        multiplier: 1.0,
+        idle: 0,
+        linear: true
       };
       // Save new binding
       if (!this.config.devices) this.config.devices = [];

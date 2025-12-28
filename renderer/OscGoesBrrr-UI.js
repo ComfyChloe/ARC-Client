@@ -250,12 +250,12 @@ function updateOgbDevicesList() {
                 <div class="ogb-features-list">
                     ${featuresHtml}
                 </div>
-                <button class="btn btn-secondary btn-small" onclick="openOgbDeviceConfig('${device.id}')" style="width: 100%; margin-top: 10px;">
-                    Configure Bindings
-                </button>
             </div>
         `;
     }).join('');
+    
+    // Update device selector
+    updateOgbDeviceSelector();
 }
 
 /**
@@ -288,39 +288,68 @@ function updateOgbGameDevicesList() {
 }
 
 /**
- * Open device configuration (embedded section)
+ * Update device selector dropdown
  */
-async function openOgbDeviceConfig(deviceId) {
-    const section = document.getElementById('ogb-device-config-section');
-    const deviceNameEl = document.getElementById('ogb-config-device-name');
+function updateOgbDeviceSelector() {
+    const selector = document.getElementById('ogb-config-device-select');
+    if (!selector) return;
+
+    const currentSelection = selector.value;
+    const devices = ogbStatus.devices || [];
     
-    if (!section || !deviceNameEl) {
-        console.error('[OGB UI] Missing config section elements');
+    if (devices.length === 0) {
+        selector.innerHTML = '<option value="">-- No devices connected --</option>';
+        selector.disabled = true;
         return;
     }
 
-    // Find device
-    const device = ogbStatus.devices.find(d => d.id === deviceId);
-    if (!device) {
-        console.error('[OGB UI] Device not found:', deviceId);
-        return;
+    selector.disabled = false;
+    selector.innerHTML = devices.map(device => 
+        `<option value="${device.id}">${device.name}</option>`
+    ).join('');
+
+    // Restore previous selection if still valid, otherwise select first device
+    if (currentSelection && devices.some(d => d.id === currentSelection)) {
+        selector.value = currentSelection;
+    } else if (devices.length > 0) {
+        selector.value = devices[0].id;
     }
 
-    deviceNameEl.textContent = device.name;
-    section.dataset.deviceId = deviceId;
+    // Load config for selected device
+    if (selector.value) {
+        onOgbDeviceSelected();
+    }
+}
+
+/**
+ * Called when a device is selected from the dropdown
+ */
+async function onOgbDeviceSelected() {
+    const selector = document.getElementById('ogb-config-device-select');
+    if (!selector || !selector.value) return;
+
+    const deviceId = selector.value;
 
     // Get current config
     const config = await window.electronAPI.ogbGetConfig();
     const deviceBinding = config.devices?.find(d => d.id === deviceId) || {
         type: 'all',
         sources: ['touchOthers', 'penOthers', 'frotOthers'],
-        multiplier: 1.0
+        multiplier: 1.0,
+        idle: 0,
+        linear: true
     };
 
     // Populate form
     document.getElementById('ogb-config-type').value = deviceBinding.type || 'all';
     document.getElementById('ogb-config-multiplier').value = deviceBinding.multiplier || 1.0;
     document.getElementById('ogb-config-multiplier-value').textContent = `${deviceBinding.multiplier || 1.0}x`;
+    
+    const idleValue = deviceBinding.idle ?? 0;
+    document.getElementById('ogb-config-idle').value = idleValue;
+    document.getElementById('ogb-config-idle-value').textContent = `${Math.round(idleValue * 100)}%`;
+    
+    document.getElementById('ogb-config-linear').checked = deviceBinding.linear ?? true;
 
     // Populate source checkboxes
     const sources = deviceBinding.sources || [];
@@ -330,37 +359,23 @@ async function openOgbDeviceConfig(deviceId) {
             checkbox.checked = sources.includes(source);
         }
     });
-
-    // Show section and scroll to it
-    section.style.display = 'block';
-    setTimeout(() => {
-        section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 100);
-}
-
-/**
- * Close device configuration section
- */
-function closeOgbDeviceConfig() {
-    const section = document.getElementById('ogb-device-config-section');
-    if (section) {
-        section.style.display = 'none';
-    }
 }
 
 /**
  * Save device configuration
  */
 async function saveOgbDeviceConfig() {
-    const section = document.getElementById('ogb-device-config-section');
-    if (!section) return;
+    const selector = document.getElementById('ogb-config-device-select');
+    if (!selector) return;
 
-    const deviceId = section.dataset.deviceId;
+    const deviceId = selector.value;
     if (!deviceId) return;
 
     // Gather form data
     const type = document.getElementById('ogb-config-type').value;
     const multiplier = parseFloat(document.getElementById('ogb-config-multiplier').value) || 1.0;
+    const idle = parseFloat(document.getElementById('ogb-config-idle').value) || 0;
+    const linear = document.getElementById('ogb-config-linear').checked;
     
     const sources = [];
     ['touchSelf', 'touchOthers', 'penSelf', 'penOthers', 'frotOthers'].forEach(source => {
@@ -374,12 +389,13 @@ async function saveOgbDeviceConfig() {
         const result = await window.electronAPI.ogbUpdateDeviceBinding(deviceId, {
             type,
             sources,
-            multiplier
+            multiplier,
+            idle,
+            linear
         });
 
         if (result.success) {
             debugLog(`Updated binding for device ${deviceId}`);
-            closeOgbDeviceConfig();
         } else {
             alert(`Failed to save binding: ${result.error}`);
         }
@@ -469,6 +485,16 @@ async function initOgbView() {
             }
         });
     }
+    
+    const idleSlider = document.getElementById('ogb-config-idle');
+    if (idleSlider) {
+        idleSlider.addEventListener('input', (e) => {
+            const valueDisplay = document.getElementById('ogb-config-idle-value');
+            if (valueDisplay) {
+                valueDisplay.textContent = `${Math.round(e.target.value * 100)}%`;
+            }
+        });
+    }
 
     // Setup real-time status updates via IPC
     if (window.electronAPI.onOgbStatusUpdate) {
@@ -510,8 +536,7 @@ if (typeof window !== 'undefined') {
     window.toggleOgb = toggleOgb;
     window.toggleOgbAutostart = toggleOgbAutostart;
     window.refreshOgbStatus = refreshOgbStatus;
-    window.openOgbDeviceConfig = openOgbDeviceConfig;
-    window.closeOgbDeviceConfig = closeOgbDeviceConfig;
+    window.onOgbDeviceSelected = onOgbDeviceSelected;
     window.saveOgbDeviceConfig = saveOgbDeviceConfig;
     window.updateIntifaceSettings = updateIntifaceSettings;
     window.initOgbView = initOgbView;

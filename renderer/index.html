@@ -372,11 +372,18 @@
                 </div>
             </div>
 
-            <!-- Device Configuration Section (embedded, shown when device selected) -->
-            <div class="card" id="ogb-device-config-section" style="display: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin: 0;">Configure: <span id="ogb-config-device-name"></span></h3>
-                    <button class="btn btn-secondary btn-small" onclick="closeOgbDeviceConfig()">Close</button>
+            <!-- Device Configuration Section (always visible) -->
+            <div class="card" id="ogb-device-config-section">
+                <h3>Device Configuration</h3>
+                
+                <div class="form-group">
+                    <label for="ogb-config-device-select">Select Device</label>
+                    <select id="ogb-config-device-select" onchange="onOgbDeviceSelected()">
+                        <option value="">-- No devices connected --</option>
+                    </select>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        Settings are saved per device and apply even when the device is disconnected
+                    </div>
                 </div>
                 
                 <div class="form-group">
@@ -416,7 +423,7 @@
 
                 <div class="form-group">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <label for="ogb-config-multiplier">Intensity Multiplier</label>
+                        <label for="ogb-config-multiplier">Intensity Multiplier (Scale)</label>
                         <span id="ogb-config-multiplier-value" style="font-weight: 600; color: #3498db;">1.0x</span>
                     </div>
                     <input type="range" id="ogb-config-multiplier" min="0.1" max="2.0" step="0.1" value="1.0" style="width: 100%;">
@@ -424,11 +431,38 @@
                         <span>Min: 0.1x</span>
                         <span>Max: 2.0x</span>
                     </div>
+                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                        Increase if toy needs more work to vibrate, decrease if it's always on/off with nothing in between
+                    </div>
                 </div>
 
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button class="btn btn-primary" onclick="saveOgbDeviceConfig()" style="flex: 1;">Save Configuration</button>
-                    <button class="btn btn-secondary" onclick="closeOgbDeviceConfig()">Cancel</button>
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label for="ogb-config-idle">Idle Vibration Level</label>
+                        <span id="ogb-config-idle-value" style="font-weight: 600; color: #3498db;">0%</span>
+                    </div>
+                    <input type="range" id="ogb-config-idle" min="0" max="1" step="0.05" value="0" style="width: 100%;">
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #888; margin-top: 2px;">
+                        <span>Min: 0%</span>
+                        <span>Max: 100%</span>
+                    </div>
+                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                        Minimum vibration level when not being touched/penetrated (idle baseline)
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="ogb-config-linear" checked>
+                        <span>Depth-Based Vibration</span>
+                    </label>
+                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                        When checked: vibrates based on penetration depth. When unchecked: vibrates based on motion/speed
+                    </div>
+                </div>
+
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-primary" onclick="saveOgbDeviceConfig()" style="width: 100%;">Save Configuration</button>
                 </div>
             </div>
 
