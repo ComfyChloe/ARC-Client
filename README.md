@@ -142,6 +142,34 @@ Transform PhysBone leash inputs into VRChat movement controls. Get pulled around
 
 </details>
 
+### 🎮 OSCGoesBrrr - Haptic Device Integration
+Connect Bluetooth haptic devices (via Buttplug.io/Intiface Central) to your VRChat avatar for immersive tactile feedback. Control toy vibration based on avatar contacts and penetration depth.
+
+- **Real-time Haptic Feedback**: Responds to VRCFury Haptics and TPS penetration systems
+- **Multi-Device Support**: Configure multiple toys independently with per-device settings
+- **Flexible Source Filtering**: 
+  - Touch (self/others)
+  - Penetration (self/others)
+  - Frot (others)
+- **Advanced Control Options**:
+  - Depth-based or Motion-based vibration modes
+  - Intensity multiplier (0.1x - 2.0x)
+  - Idle vibration baseline
+  - Per-device source filtering
+- **Device Management**:
+  - Battery level monitoring
+  - Real-time activity display
+  - Device configuration
+- **Intiface Central Integration**: Connect via WebSocket to Intiface Central server
+
+<details>
+<summary>📸 Preview</summary>
+
+<!-- Add your OSCGoesBrrr screenshot here -->
+*Screenshot placeholder: OSCGoesBrrr Panel showing connected devices and configuration*
+
+</details>
+
 ### 💬 Feedback System
 Built-in feedback system to communicate directly with the development team. Submit bug reports, feature requests, or general feedback without leaving the app.
 
@@ -163,6 +191,7 @@ Built-in feedback system to communicate directly with the development team. Subm
 | **Node.js** | v24 LTS (recommended) |
 | **ARC-OSC Server** | Access to a running instance (Live or Beta) |
 | **VRChat** | With OSC enabled in settings |
+| **Intiface Central** | (Optional) For OSCGoesBrrr haptic device support |
 
 ### Quick Start
 
@@ -216,6 +245,21 @@ Create a `secrets.json` file in the root directory using `secrets.example.json` 
   "hyperate_api_key": "your-hyperate-api-key-here"
 }
 ```
+
+### OSCGoesBrrr Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Intiface Address | `127.0.0.1` | IP address of Intiface Central server |
+| Intiface Port | `12345` | WebSocket port for Intiface Central |
+| Use WSS | `false` | Enable secure WebSocket (wss://) |
+
+**Per-Device Settings:**
+- **Source Type**: Filter by penetrator type (all, penetrator, orifice)
+- **Enabled Sources**: Toggle individual contact types (touch, penetration, frot)
+- **Intensity Multiplier**: Scale haptic strength (0.1x - 2.0x)
+- **Idle Vibration**: Baseline vibration when in contact (0-100%)
+- **Vibration Mode**: Depth-based (penetration depth) or Motion-based (thrusting speed)
 
 <details>
 <summary>📸 Settings Preview</summary>
@@ -289,7 +333,8 @@ Explore the ARC-OSC Client interface through these screenshots:
 ## 📚 Documentation
 
 ### Guides
-
+├──── Intiface Central (Buttplug.io)
+         │                      
 | Guide | Description |
 |-------|-------------|
 | [OSC Leash Setup](Guides/OSC-Leash%20Setup.md) | Complete Unity prefab setup guide for avatar-side leash configuration |
@@ -319,6 +364,10 @@ ARC-Client/
 ├── secrets.json         # API keys (user-created)
 ├── Containers/          # Feature modules
 │   ├── Hyperate.js      # HypeRate integration
+│   ├── OscGoesBrrr.js   # Haptic device integration
+│   ├── OscGoesBrrr/     # OSCGoesBrrr submodules
+│   │   ├── ButtplugClient.js  # Buttplug.io protocol
+│   │   └── GameDevice.js      # Avatar contact tracking
 │   ├── OSCLeash.js      # Leash locomotion control
 │   ├── VRC-API.js       # VRChat API wrapper
 │   └── ...
