@@ -348,13 +348,11 @@
                         <input type="text" id="ogb-intiface-address" placeholder="127.0.0.1" style="flex: 1;" value="127.0.0.1">
                         <span>:</span>
                         <input type="number" id="ogb-intiface-port" placeholder="12345" style="width: 80px;" value="12345">
-                    </div>
-                    <div style="display: flex; gap: 10px; margin-top: 10px; align-items: center;">
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                            <input type="checkbox" id="ogb-intiface-wss">
-                            <span>Use Secure WebSocket (WSS)</span>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 14px; white-space: nowrap;">
+                            <input type="checkbox" id="ogb-intiface-wss" style="margin: 0;">
+                            <span>WSS</span>
                         </label>
-                        <button class="btn btn-secondary" onclick="updateIntifaceSettings()">Save</button>
+                        <button class="btn btn-secondary" onclick="updateIntifaceSettings()" style="padding: 6px 12px;">Save</button>
                     </div>
                     <div style="font-size: 12px; color: #666; margin-top: 5px;">
                         Make sure <a href="https://intiface.com/central/" target="_blank" style="color: #3498db;">Intiface Central</a> is running and the server is started
@@ -397,25 +395,25 @@
 
                 <div class="form-group">
                     <label>Enabled Contact Sources</label>
-                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 5px;">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="ogb-source-touchSelf">
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; font-size: 16px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-touchSelf" style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
                             <span>Touch Self</span>
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="ogb-source-touchOthers" checked>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-touchOthers" checked style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
                             <span>Touch Others</span>
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="ogb-source-penSelf">
-                            <span>Pen Self</span>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-penSelf" style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Penetration Self</span>
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="ogb-source-penOthers" checked>
-                            <span>Pen Others</span>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-penOthers" checked style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Penetration Others</span>
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="ogb-source-frotOthers" checked>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-frotOthers" checked style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
                             <span>Frot Others</span>
                         </label>
                     </div>
@@ -427,11 +425,11 @@
                         <span id="ogb-config-multiplier-value" style="font-weight: 600; color: #3498db;">1.0x</span>
                     </div>
                     <input type="range" id="ogb-config-multiplier" min="0.1" max="2.0" step="0.1" value="1.0" style="width: 100%;">
-                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #888; margin-top: 2px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; color: #aaa; margin-top: 2px;">
                         <span>Min: 0.1x</span>
                         <span>Max: 2.0x</span>
                     </div>
-                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                    <div style="font-size: 13px; color: #b0b0b0; margin-top: 5px; line-height: 1.4;">
                         Increase if toy needs more work to vibrate, decrease if it's always on/off with nothing in between
                     </div>
                 </div>
@@ -442,21 +440,24 @@
                         <span id="ogb-config-idle-value" style="font-weight: 600; color: #3498db;">0%</span>
                     </div>
                     <input type="range" id="ogb-config-idle" min="0" max="1" step="0.05" value="0" style="width: 100%;">
-                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #888; margin-top: 2px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; color: #aaa; margin-top: 2px;">
                         <span>Min: 0%</span>
                         <span>Max: 100%</span>
                     </div>
-                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                    <div style="font-size: 13px; color: #b0b0b0; margin-top: 5px; line-height: 1.4;">
                         Minimum vibration level when not being touched/penetrated (idle baseline)
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="ogb-config-linear" checked>
-                        <span>Depth-Based Vibration</span>
-                    </label>
-                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                    <label>Vibration Mode</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; font-size: 16px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-config-linear" checked style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Depth-Based Vibration</span>
+                        </label>
+                    </div>
+                    <div style="font-size: 13px; color: #b0b0b0; margin-top: 8px; line-height: 1.4;">
                         When checked: vibrates based on penetration depth. When unchecked: vibrates based on motion/speed
                     </div>
                 </div>
@@ -480,8 +481,7 @@
                 <h3>About OscGoesBrrr</h3>
                 <p style="font-size: 14px; color: #888; line-height: 1.6;">
                     OscGoesBrrr bridges VRChat avatar haptic parameters to Bluetooth toys via the 
-                    <a href="https://intiface.com/central/" target="_blank" style="color: #3498db;">Intiface Central</a> application.
-                    Based on <a href="https://osc.toys" target="_blank" style="color: #3498db;">osc.toys</a>.
+                    <a href="javascript:void(0)" onclick="window.electronAPI.openExternal('https://intiface.com/central/')" style="color: #3498db; cursor: pointer;">Intiface Central</a> application.
                 </p>
                 <p style="font-size: 13px; color: #666; margin-top: 10px;">
                     Supported avatar systems: OGB (OscGoesBrrr), TPS (Poiyomi/DPS), VRCFury Haptics

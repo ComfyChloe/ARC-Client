@@ -575,11 +575,11 @@ class VRChatAPIContainer {
       }
       if (this.apiClient && !this.apiClient.pipeline.connected) {
         this.pipelineConnected = false;
-        debug.warn('Pipeline health check: disconnected, scheduling reconnect');
+        //debug.warn('Pipeline health check: disconnected, scheduling reconnect');
         this.schedulePipelineReconnect(this.PIPELINE_QUICK_RECONNECT_MS);
       } else {
         this.pipelineConnected = this.apiClient?.pipeline.connected || false;
-        debug.debug('Pipeline health check: connected');
+        //debug.debug('Pipeline health check: connected');
         // Schedule next health check
         this.pipelineReconnectTimeout = setTimeout(checkHealth, this.PIPELINE_HEALTH_CHECK_INTERVAL_MS);
       }
