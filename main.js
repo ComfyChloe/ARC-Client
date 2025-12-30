@@ -343,8 +343,8 @@ function initOscServer() {
       hyperateAddon.start(oscService);
     }
     if (appSettings.oscleashAutostart && oscLeashAddon && !oscLeashAddon.isEnabled()) {
-      debug.info('Starting OSCLeash addon based on autostart setting (OSC service ready)...');
-      oscLeashAddon.start(oscService);
+      debug.info('Starting OSCLeash addon based on autostart setting (OSC-Query ready)...');
+      oscLeashAddon.start(oscQueryService, oscService);
     }
   });
 
@@ -1318,10 +1318,13 @@ ipcMain.handle('oscleash-start', () => {
     if (!oscLeashAddon) {
       return { success: false, error: 'OSCLeash addon not initialized' };
     }
+    if (!oscQueryService) {
+      return { success: false, error: 'OSC-Query service not available' };
+    }
     if (!oscService) {
       return { success: false, error: 'OSC service not available' };
     }
-    const result = oscLeashAddon.start(oscService);
+    const result = oscLeashAddon.start(oscQueryService, oscService);
     return { success: result };
   } catch (error) {
     debug.error(`Failed to start OSCLeash addon: ${error.message}`);
