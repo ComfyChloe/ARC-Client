@@ -1847,11 +1847,16 @@ function cleanup(source = 'unknown') {
   }
   try {
     if (hyperateAddon) {
+      debug.info('Stopping HypeRate addon during cleanup...');
       hyperateAddon.stop();
       hyperateAddon = null;
+      debug.info('HypeRate addon cleanup completed');
     }
   } catch (error) {
     debug.error(`Error stopping HypeRate addon: ${error.message}`);
+    debug.error(`HypeRate cleanup stack trace: ${error.stack}`);
+    // Still nullify to prevent further attempts
+    hyperateAddon = null;
   }
   try {
     if (vrchatApiContainer) {
