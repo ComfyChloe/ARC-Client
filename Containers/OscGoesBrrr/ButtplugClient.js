@@ -231,6 +231,7 @@ class ButtplugClient extends EventEmitter {
       } catch (e) {
         debug.error(`[Buttplug] Handshake failed: ${e.message}`);
         this.lastError = e.message;
+        // Don't rethrow - let the connection attempt continue
       }
     });
 
@@ -357,12 +358,15 @@ class ButtplugClient extends EventEmitter {
   delayRetry() {
     if (this.isStopped || this.retryTimeout) return;
     this.terminate();
+    this.isConnecting = true;
+    this.emit('connecting');
     this.retryTimeout = setTimeout(() => {
       this.retryTimeout = null;
       if (!this.isStopped) {
+        debug.info('[Buttplug] Attempting reconnection...');
         this.retry();
       }
-    }, 3000);
+    }, 5000);
   }
 
   /**
@@ -381,14 +385,21 @@ class ButtplugClient extends EventEmitter {
         }
       } catch (e) {
         debug.error(`[Buttplug] Scan error: ${e.message}`);
+        // Don't propagate - connection loss is handled by ws events
       }
     };
 
-    // Initial scan
-    doScan();
+    // Initial scan (wrapped to catch any errors)
+    doScan().catch(e => {
+      debug.error(`[Buttplug] Initial scan error: ${e.message}`);
+    });
 
     // Scan every 15 seconds
-    this.scanInterval = setInterval(doScan, 15000);
+    this.scanInterval = setInterval(() => {
+      doScan().catch(e => {
+        debug.error(`[Buttplug] Periodic scan error: ${e.message}`);
+      });
+    }, 15000);
   }
 
   /**
@@ -423,11 +434,19 @@ class ButtplugClient extends EventEmitter {
       }
     };
 
-    // Poll every 60 seconds
-    this.batteryPollInterval = setInterval(pollBatteries, 60000);
+    // Poll every 60 seconds (wrapped to catch errors)
+    this.batteryPollInterval = setInterval(() => {
+      pollBatteries().catch(e => {
+        debug.error(`[Buttplug] Battery poll error: ${e.message}`);
+      });
+    }, 60000);
     
     // Initial poll after 2 seconds (give devices time to connect)
-    setTimeout(pollBatteries, 2000);
+    setTimeout(() => {
+      pollBatteries().catch(e => {
+        debug.error(`[Buttplug] Initial battery poll error: ${e.message}`);
+      });
+    }, 2000);
   }
 
   /**

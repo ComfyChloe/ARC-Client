@@ -142,6 +142,11 @@ class OscGoesBrrrAddon extends EventEmitter {
       this.notifyStatusChange();
     });
 
+    this.buttplugClient.on('connecting', () => {
+      debug.info('[OGB] Connecting to Intiface...');
+      this.notifyStatusChange();
+    });
+
     this.buttplugClient.on('disconnected', () => {
       debug.info('[OGB] Disconnected from Intiface');
       this.notifyStatusChange();
