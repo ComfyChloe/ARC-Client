@@ -21,12 +21,13 @@ let oscLogBuffer = [];
 let lastOscLogFlush = 0;
 const OSC_LOG_BUFFER_SIZE = 100; // Reduced for better memory management
 const OSC_LOG_FLUSH_INTERVAL = 1000; // Flush every 1 second
-const MAX_LOG_ENTRIES = 10000; // Maximum log entries to keep in DOM
+const MAX_LOG_ENTRIES = 5000; // Maximum log entries to keep in DOM (balances memory vs visibility)
 // OSC parameter frequency tracking for unsubscription suggestions
 let oscParameterFrequency = new Map(); // Track message count per address
 let oscParameterLastUpdate = new Map(); // Track last update time per address
 const FREQUENCY_TRACKING_WINDOW = 10000; // 10 second window
 const HIGH_FREQUENCY_THRESHOLD = 20; // Messages per tracking window to be considered "high frequency"
+const MAX_MAP_SIZE = 500; // Prevent unbounded Map growth during extended runtime
 
 // Adaptive suggestion system configuration
 const LEARNING_PHASE_DURATION = 120000; // 2 minutes learning phase
@@ -53,6 +54,26 @@ let lastFloatLogTimes = new Map(); // Track last log time per address
 let pendingFloatTimeouts = new Map(); // Track pending timeouts for float logging
 let lastFloatValues = new Map(); // Store latest values for delayed logging
 // Websocket connection states end
+
+// Stop all view-specific intervals to prevent memory leaks
+function stopAllViewIntervals() {
+    // Stop Hyperate status updates
+    if (typeof stopHyperateStatusUpdates === 'function') {
+        stopHyperateStatusUpdates();
+    }
+    // Stop panel update interval
+    if (panelUpdateInterval) {
+        clearInterval(panelUpdateInterval);
+        panelUpdateInterval = null;
+    }
+    // Stop suggestion updater
+    if (suggestionUpdateTimer) {
+        clearInterval(suggestionUpdateTimer);
+        suggestionUpdateTimer = null;
+    }
+    // Enforce Map size limits during view switches
+    enforceMapSizeLimits();
+}
 
 // Global error handlers for renderer process
 window.addEventListener('error', (event) => {
@@ -1154,6 +1175,19 @@ function clearFloatRateLimitingData() {
     lastFloatValues.clear();
     //debugLog('Float rate limiting data cleared');
 }
+// Enforce Map size limits to prevent unbounded growth during extended runtime
+function enforceMapSizeLimits() {
+    // Prevent unbounded Map growth by clearing when exceeding limits
+    if (oscParameterFrequency.size > MAX_MAP_SIZE) {
+        debugLog(`Clearing oscParameterFrequency Map (size: ${oscParameterFrequency.size})`, 'warn');
+        oscParameterFrequency.clear();
+        oscParameterLastUpdate.clear();
+    }
+    if (lastFloatLogTimes.size > MAX_MAP_SIZE) {
+        debugLog(`Clearing float rate limiting Maps (size: ${lastFloatLogTimes.size})`, 'warn');
+        clearFloatRateLimitingData();
+    }
+}
 function rotateLogContainers() {
     document.getElementById('osc-received-log-container').innerHTML = 'Log rotation performed<br>';
     clearFloatRateLimitingData();
@@ -1305,6 +1339,8 @@ function updateOscPortsFromSettings() {
     return updateOscPorts();
 }
 function showMainView() {
+    // Stop all view-specific intervals to prevent memory leaks
+    stopAllViewIntervals();
     const mainView = document.getElementById('main-view');
     const oscView = document.getElementById('osc-view');
     const logsView = document.getElementById('logs-view');
@@ -1905,6 +1941,8 @@ function showVRCTimelineView() {
 }
 function showHyperateView() {
     debugLog('showHyperateView called');
+    // Stop intervals from other views to prevent memory leaks
+    stopAllViewIntervals();
     const views = ['main-view', 'osc-view', 'vosk-view', 'Hyperate-view', 'arcfeedback-view', 'chatbox-view', 'vrchatapi-view', 'osc-leash-view', 'oscgoesbrrr-view', 'auto-inviter-view', 'arclink-view', 'openshock-view', 'auto-status-view', 'calendar-view', 'logs-view', 'settings-view', 'vrc-timeline-view'].map(id => document.getElementById(id));
     const navButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'].map(id => document.getElementById(id));
     views.forEach(view => {

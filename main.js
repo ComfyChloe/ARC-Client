@@ -189,21 +189,24 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-  mainWindow.webContents.on('crashed', (event, killed) => {
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
     if (hasShownCriticalError) {
       return;
     }
     hasShownCriticalError = true;
     // Log crash details before cleanup
     debug.logRendererCrash({
-      reason: 'webContents crashed',
-      killed: killed,
+      reason: details.reason, // 'crashed', 'oom', 'killed', 'clean-exit'
+      exitCode: details.exitCode,
       timestamp: new Date().toISOString()
     });
-    debug.logCriticalShutdown('Renderer process crashed', 'webContents.crashed');
-    cleanup('renderer-crashed');
-    dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
-    process.exit(1);
+    debug.logCriticalShutdown(`Renderer process gone: ${details.reason}`, 'webContents.render-process-gone');
+    // Only force quit on actual crashes, not clean exits
+    if (details.reason !== 'clean-exit') {
+      cleanup('renderer-process-gone');
+      dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
+      process.exit(1);
+    }
   });
   mainWindow.on('unresponsive', () => {
     if (hasShownCriticalError) {
@@ -546,8 +549,18 @@ function initOscClient() {
   debug.logOscClientInit(serverConfig.targetOscAddress, serverConfig.targetOscPort);
 }
 function sendToRenderer(channel, data) {
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send(channel, data);
+  if (mainWindow && 
+      !mainWindow.isDestroyed() && 
+      mainWindow.webContents && 
+      !mainWindow.webContents.isDestroyed()) {
+    try {
+      mainWindow.webContents.send(channel, data);
+    } catch (error) {
+      // Silently fail if renderer is gone during shutdown
+      if (!isShuttingDown) {
+        debug.warn(`Failed to send ${channel} to renderer: ${error.message}`);
+      }
+    }
   }
 }
 ipcMain.handle('get-config', () => {
@@ -1836,6 +1849,14 @@ function cleanup(source = 'unknown') {
     }
   } catch (error) {
     debug.error(`Error closing OSC client: ${error.message}`);
+  }
+  // Prevent further renderer communication attempts during cleanup
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+    try {
+      mainWindow.webContents.removeAllListeners();
+    } catch (error) {
+      debug.error(`Error removing renderer listeners: ${error.message}`);
+    }
   }
   try {
     if (wsManager) {
