@@ -18,6 +18,7 @@ class ConfigManager {
         enableWebSocketForwarding: false,
         hyperateAutostart: false,
         oscleashAutostart: false,
+        ogbAutostart: false,
         theme: 'light',
         lastUsername: '',
         savedPassword: '',
@@ -63,6 +64,17 @@ class ConfigManager {
         enabled: false,
         authToken: null,
         twoFactorToken: null
+      },
+      // OscGoesBrrr configuration
+      oscgoesbrrr: {
+        enabled: false,
+        intifaceAddress: '127.0.0.1',
+        intifacePort: 12345,
+        intifaceWss: false,
+        devices: [],
+        audioEnabled: false,
+        audioMultiplier: 1.0,
+        maxLevelParam: null
       },
       // Version for future migration support
       configVersion: 1
@@ -131,6 +143,7 @@ class ConfigManager {
       enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
       hyperateAutostart: this.config.appSettings?.hyperateAutostart || false,
       oscleashAutostart: this.config.appSettings?.oscleashAutostart || false,
+      ogbAutostart: this.config.appSettings?.ogbAutostart || false,
       theme: this.config.appSettings?.theme || 'light',
       lastUsername: this.config.appSettings?.lastUsername || '',
       savedPassword: this.config.appSettings?.savedPassword || ''
@@ -153,6 +166,10 @@ class ConfigManager {
     // Update OSC Leash autostart setting
     if (settings.oscleashAutostart !== undefined) {
       this.config.appSettings.oscleashAutostart = settings.oscleashAutostart;
+    }
+    // Update OscGoesBrrr autostart setting
+    if (settings.ogbAutostart !== undefined) {
+      this.config.appSettings.ogbAutostart = settings.ogbAutostart;
     }
     // Update theme setting
     if (settings.theme !== undefined) {
@@ -305,6 +322,33 @@ class ConfigManager {
       ...vrchatApiConfig
     };
     debug.info('VRChat API config updated in configuration manager');
+    return this.saveConfig();
+  }
+  // OscGoesBrrr configuration methods
+  getOgbConfig() {
+    if (!this.config.oscgoesbrrr) {
+      this.config.oscgoesbrrr = {
+        enabled: false,
+        intifaceAddress: '127.0.0.1',
+        intifacePort: 12345,
+        intifaceWss: false,
+        devices: [],
+        audioEnabled: false,
+        audioMultiplier: 1.0,
+        maxLevelParam: null
+      };
+    }
+    return { ...this.config.oscgoesbrrr };
+  }
+  updateOgbConfig(ogbConfig) {
+    if (!this.config.oscgoesbrrr) {
+      this.config.oscgoesbrrr = {};
+    }
+    this.config.oscgoesbrrr = {
+      ...this.config.oscgoesbrrr,
+      ...ogbConfig
+    };
+    debug.info('OscGoesBrrr config updated in configuration manager');
     return this.saveConfig();
   }
 }

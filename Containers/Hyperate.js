@@ -127,13 +127,16 @@ class HyperateAddon {
   }
   stop() {
     if (!this.enabled) {
+      debug.info('HypeRate addon already stopped');
       return;
     }
+    debug.info('HypeRate addon stopping...');
     this.enabled = false;
     this.reconnecting = false;
+    this.lastError = null; // Clear error on manual stop
     this.disconnect();
     this.notifyStatusChange(); // Notify UI of state change immediately
-    debug.info('HypeRate addon stopped');
+    debug.info('HypeRate addon stopped successfully');
   }
   connect() {
     if (!this.secrets || !this.secrets.hyperate || !this.secrets.hyperate.apiKey) {
@@ -155,21 +158,25 @@ class HyperateAddon {
       });
       this.ws.on('close', (code, reason) => {
         debug.info('HypeRate connection closed');
+        this.removeAllListeners();
         this.cleanup();
         if (this.enabled && !this.lastError) {
           this.lastError = 'Connection closed unexpectedly';
         }
         this.notifyStatusChange();
-        if (this.enabled) {
+        // Only reconnect if still enabled and not manually stopped
+        if (this.enabled && !this.reconnecting) {
           this.scheduleReconnect();
         }
       });
       this.ws.on('error', (error) => {
         debug.logError(`HypeRate connection error: ${error.message}`);
         this.lastError = error.message || 'Connection error';
+        this.removeAllListeners();
         this.cleanup();
         this.notifyStatusChange();
-        if (this.enabled) {
+        // Only reconnect if still enabled and not manually stopped
+        if (this.enabled && !this.reconnecting) {
           this.scheduleReconnect();
         }
       });
@@ -188,20 +195,77 @@ class HyperateAddon {
     }
   }
   disconnect() {
+    debug.info('HypeRate disconnecting...');
+    // Leave all active channels before disconnecting
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN)) {
+      const trackerIds = Array.from(this.trackers.keys());
+      if (trackerIds.length > 0) {
+        debug.info(`Leaving ${trackerIds.length} active channel(s)...`);
+        trackerIds.forEach(deviceId => {
+          try {
+            const message = {
+              topic: `hr:${deviceId}`,
+              event: "phx_leave",
+              payload: {},
+              ref: 0
+            };
+            this.ws.send(JSON.stringify(message));
+            debug.info(`Left channel: ${deviceId}`);
+          } catch (error) {
+            debug.warn(`Failed to leave channel ${deviceId}: ${error.message}`);
+          }
+        });
+      }
+    }
+    
+    // Clear trackers map
+    const trackerCount = this.trackers.size;
+    this.trackers.clear();
+    if (trackerCount > 0) {
+      debug.info(`Cleared ${trackerCount} tracker(s) from memory`);
+    }
+    
+    // Clean up intervals and timeouts
     this.cleanup();
+    
+    // Remove all event listeners and close WebSocket
     if (this.ws) {
-      this.ws.close();
+      this.removeAllListeners();
+      const wsState = this.ws.readyState;
+      if (wsState === WebSocket.OPEN || wsState === WebSocket.CONNECTING) {
+        this.ws.close();
+        debug.info('WebSocket connection closed');
+      } else {
+        debug.info(`WebSocket already closed (state: ${wsState})`);
+      }
       this.ws = null;
+    }
+    debug.info('HypeRate disconnect completed');
+  }
+  removeAllListeners() {
+    if (this.ws) {
+      this.ws.removeAllListeners('open');
+      this.ws.removeAllListeners('close');
+      this.ws.removeAllListeners('error');
+      this.ws.removeAllListeners('message');
     }
   }
   cleanup() {
+    let cleaned = false;
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
+      cleaned = true;
+      debug.info('Cleared heartbeat interval');
     }
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+      cleaned = true;
+      debug.info('Cleared reconnect timeout');
+    }
+    if (cleaned) {
+      debug.info('HypeRate cleanup completed');
     }
   }
   scheduleReconnect() {
@@ -276,6 +340,8 @@ class HyperateAddon {
   }
   leaveChannel(deviceId) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      // Still remove from trackers even if not connected
+      this.trackers.delete(deviceId);
       return false;
     }
     const message = {

@@ -55,7 +55,7 @@ class OSCLeashConfig {
     if (this.Logging) {
       debug.info('  Logging is enabled');
     }
-    debug.info(`  Using integrated OSC service (no separate ports)`);
+    debug.info(`  Using OSC-Query for receiving, legacy OSC for sending`);
     debug.info(`  Leash name(s): ${this.Leashes.join(', ')}`);
     debug.info(`  Strength Multiplier: ${this.StrengthMultiplier}`);
     debug.info(`  Delays: ${this.ActiveDelay}ms & ${this.InactiveDelay}ms`);
@@ -124,11 +124,12 @@ class Leash {
  * OSC Package Controller - Handles OSC message routing
  */
 class OSCPackageController {
-  constructor(leashCollection, oscService, addonInstance = null) {
+  constructor(leashCollection, oscQuery, oscService, addonInstance = null) {
     if (!leashCollection || leashCollection.length === 0) {
       throw new Error("Leash collection empty within Package manager.");
     }
     this.leashes = leashCollection;
+    this.oscQuery = oscQuery;
     this.oscService = oscService;
     this.addonInstance = addonInstance;
     this.listeners = new Map();
@@ -182,9 +183,15 @@ class OSCPackageController {
     });
   }
   registerListener(address, callback) {
-    if (this.oscService && this.oscService.registerOSCLeashListener) {
-      this.oscService.registerOSCLeashListener(address, callback);
-      this.listeners.set(address, callback);
+    if (this.oscQuery) {
+      // Create a wrapper callback that filters OSC-Query messages by address
+      const wrappedCallback = (oscData) => {
+        if (oscData.address === address) {
+          callback(oscData.value);
+        }
+      };
+      this.oscQuery.on('osc-message', wrappedCallback);
+      this.listeners.set(address, wrappedCallback);
     }
   }
   updateGrabbed(currLeash, value) {
@@ -221,9 +228,9 @@ class OSCPackageController {
     }
   }
   removeAllListeners() {
-    if (this.oscService && this.oscService.unregisterOSCLeashListener) {
+    if (this.oscQuery) {
       for (const [address, callback] of this.listeners) {
-        this.oscService.unregisterOSCLeashListener(address, callback);
+        this.oscQuery.off('osc-message', callback);
       }
     }
     this.listeners.clear();
@@ -233,7 +240,8 @@ class OSCPackageController {
  * OSC Leash Program - Main processing logic
  */
 class OSCLeashProgram {
-  constructor(oscService, addonInstance = null) {
+  constructor(oscQuery, oscService, addonInstance = null) {
+    this.oscQuery = oscQuery;
     this.oscService = oscService;
     this.addonInstance = addonInstance;
     this.running = false;
@@ -388,6 +396,7 @@ class OSCLeashProgram {
 class OSCLeashAddon {
   constructor() {
     this.enabled = false;
+    this.oscQuery = null;
     this.oscService = null;
     this.config = this.loadConfig();
     this.settings = new OSCLeashConfig(this.config);
@@ -452,9 +461,13 @@ class OSCLeashAddon {
     return this.enabled;
   }
 
-  start(oscService = null) {
+  start(oscQuery = null, oscService = null) {
+    if (!oscQuery) {
+      debug.logError('Cannot start OSCLeash: No OSC-Query service provided');
+      return false;
+    }
     if (!oscService) {
-      debug.logError('Cannot start OSCLeash: No OSC service provided');
+      debug.logError('Cannot start OSCLeash: No OSC service provided for sending');
       return false;
     }
 
@@ -463,6 +476,7 @@ class OSCLeashAddon {
       return true;
     }
 
+    this.oscQuery = oscQuery;
     this.oscService = oscService;
     this.enabled = true;
 
@@ -479,10 +493,10 @@ class OSCLeashAddon {
       }
 
       // Create program
-      this.program = new OSCLeashProgram(this.oscService, this);
+      this.program = new OSCLeashProgram(this.oscQuery, this.oscService, this);
 
       // Create package controller
-      this.packageController = new OSCPackageController(this.leashes, this.oscService, this);
+      this.packageController = new OSCPackageController(this.leashes, this.oscQuery, this.oscService, this);
       this.packageController.onLeashActivate = (leash) => {
         this.program.leashRun(leash);
       };
@@ -494,7 +508,7 @@ class OSCLeashAddon {
       // Do NOT automatically set leash as active - wait for OSC grab detection
       // this.leashes[0].Active = true; // REMOVED - leashes should only be active when grabbed
       
-      debug.info('OSCLeash initialized - all leashes in idle state, waiting for grab detection...');
+      debug.info('OSCLeash initialized - all leashes in idle state, waiting for grab detection via OSC-Query...');
       this.settings.printInfo();
       debug.info('OSCLeash addon started, awaiting input...');
       this.notifyStatusChange(); // Notify UI of status change
@@ -560,8 +574,8 @@ class OSCLeashAddon {
       this.saveConfig();
 
       // Restart if it was enabled
-      if (wasEnabled && this.oscService) {
-        this.start(this.oscService);
+      if (wasEnabled && this.oscQuery && this.oscService) {
+        this.start(this.oscQuery, this.oscService);
       }
 
       debug.info('OSCLeash config updated');
