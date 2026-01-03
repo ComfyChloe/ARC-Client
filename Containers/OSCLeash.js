@@ -282,8 +282,14 @@ class OSCLeashProgram {
       clearInterval(intervalId);
       this.activeIntervals.delete(leash.Name);
       // debug.info(`Stopped monitoring thread for ${leash.Name}`);
-      // Send stop signals
-      this.leashOutput(0.0, 0.0, 0, leash.settings);
+      // Send stop signals (only if OSC is available)
+      try {
+        if (this.oscService && this.oscService.isListening) {
+          this.leashOutput(0.0, 0.0, 0, leash.settings);
+        }
+      } catch (error) {
+        debug.warn(`OSCLeash: Could not send stop signals: ${error.message}`);
+      }
       // Reset leash state
       leash.Active = false;
       leash.resetMovement();
@@ -293,6 +299,12 @@ class OSCLeashProgram {
     // Only process if leash is grabbed and active
     if (!leash.Grabbed || !leash.Active) {
       debug.info(`Stopping movement processing - Grabbed: ${leash.Grabbed}, Active: ${leash.Active}`);
+      this.stopLeashMonitoring(leash);
+      return;
+    }
+    // Check if OSC service is still available and listening
+    if (!this.oscService || !this.oscService.isListening) {
+      debug.info(`Stopping movement processing - OSC service not available`);
       this.stopLeashMonitoring(leash);
       return;
     }
@@ -378,10 +390,19 @@ class OSCLeashProgram {
       debug.warn('OSCLeash: OSC service not available');
       return;
     }
+    // Check if OSC service is actually running before sending
+    if (!this.oscService.isListening) {
+      debug.warn('OSCLeash: OSC service not listening - skipping output');
+      return;
+    }
     // Send OSC messages to VRChat
-    this.oscService.sendMessage('/input/Vertical', vert, 'f');
-    this.oscService.sendMessage('/input/Horizontal', hori, 'f');
-    this.oscService.sendMessage('/input/Run', runType, 'i');
+    try {
+      this.oscService.sendMessage('/input/Vertical', vert, 'f');
+      this.oscService.sendMessage('/input/Horizontal', hori, 'f');
+      this.oscService.sendMessage('/input/Run', runType, 'i');
+    } catch (error) {
+      debug.error(`OSCLeash: Error sending OSC messages: ${error.message}`);
+    }
   }
   clamp(n) {
     return Math.max(-1.0, Math.min(n, 1.0));
@@ -540,9 +561,13 @@ class OSCLeashAddon {
       leash.resetMovement();
     }
 
-    // Send stop signals
-    if (this.program && this.oscService) {
-      this.program.leashOutput(0.0, 0.0, 0, this.settings);
+    // Send stop signals only if OSC is available
+    try {
+      if (this.program && this.oscService && this.oscService.isListening) {
+        this.program.leashOutput(0.0, 0.0, 0, this.settings);
+      }
+    } catch (error) {
+      debug.warn(`OSCLeash: Could not send stop signals during shutdown: ${error.message}`);
     }
 
     // Remove listeners
