@@ -70,8 +70,12 @@ async function toggleHyperate() {
  */
 async function toggleHyperateAutostart() {
     try {
-        const autostartBtn = document.getElementById('hyperate-autostart-btn');
-        autostartBtn.disabled = true;
+        const toggleSlider = document.getElementById('hyperate-autostart-toggle');
+        if (toggleSlider) {
+            toggleSlider.style.pointerEvents = 'none';
+            toggleSlider.style.opacity = '0.6';
+        }
+        
         // Get current autostart status
         const currentStatus = await window.electronAPI.hyperateGetAutostart();
         const newEnabled = !currentStatus.enabled;
@@ -87,8 +91,11 @@ async function toggleHyperateAutostart() {
     } catch (error) {
         debugLog(`Error toggling HypeRate autostart: ${error.message}`, 'error');
     } finally {
-        const autostartBtn = document.getElementById('hyperate-autostart-btn');
-        autostartBtn.disabled = false;
+        const toggleSlider = document.getElementById('hyperate-autostart-toggle');
+        if (toggleSlider) {
+            toggleSlider.style.pointerEvents = '';
+            toggleSlider.style.opacity = '';
+        }
     }
 }
 
@@ -96,10 +103,17 @@ async function toggleHyperateAutostart() {
  * Update the autostart button UI
  */
 function updateHyperateAutostartUI(enabled) {
-    const autostartBtn = document.getElementById('hyperate-autostart-btn');
-    if (autostartBtn) {
-        autostartBtn.textContent = `Auto-start: ${enabled ? 'Enabled' : 'Disabled'}`;
-        autostartBtn.className = enabled ? 'btn btn-success' : 'btn btn-secondary';
+    const disabledOption = document.getElementById('hyperate-autostart-disabled');
+    const enabledOption = document.getElementById('hyperate-autostart-enabled');
+    
+    if (disabledOption && enabledOption) {
+        if (enabled) {
+            disabledOption.classList.remove('active');
+            enabledOption.classList.add('active');
+        } else {
+            enabledOption.classList.remove('active');
+            disabledOption.classList.add('active');
+        }
     }
 }
 

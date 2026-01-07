@@ -15,6 +15,7 @@ const { OSCQueryService } = require('./utils/oscQueryService');
 const HyperateAddon = require('./Containers/Hyperate');
 const OSCLeashAddon = require('./Containers/OSCLeash');
 const VRChatAPIContainer = require('./Containers/VRC-API');
+const OscGoesBrrrAddon = require('./Containers/OscGoesBrrr');
 // Logger will be loaded after app is ready
 let logger;
 const WebSocketManager = require('./utils/websocketManager');
@@ -30,6 +31,7 @@ let serverConfig = configManager.getServerConfig();
 let hyperateAddon;
 let oscLeashAddon;
 let vrchatApiContainer;
+let oscGoesBrrrAddon;
 // Custom WebSocket URLs are now persisted across restarts
 let isShuttingDown = false;
 let hasShownCriticalError = false;
@@ -187,21 +189,24 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-  mainWindow.webContents.on('crashed', (event, killed) => {
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
     if (hasShownCriticalError) {
       return;
     }
     hasShownCriticalError = true;
     // Log crash details before cleanup
     debug.logRendererCrash({
-      reason: 'webContents crashed',
-      killed: killed,
+      reason: details.reason, // 'crashed', 'oom', 'killed', 'clean-exit'
+      exitCode: details.exitCode,
       timestamp: new Date().toISOString()
     });
-    debug.logCriticalShutdown('Renderer process crashed', 'webContents.crashed');
-    cleanup('renderer-crashed');
-    dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
-    process.exit(1);
+    debug.logCriticalShutdown(`Renderer process gone: ${details.reason}`, 'webContents.render-process-gone');
+    // Only force quit on actual crashes, not clean exits
+    if (details.reason !== 'clean-exit') {
+      cleanup('renderer-process-gone');
+      dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
+      process.exit(1);
+    }
   });
   mainWindow.on('unresponsive', () => {
     if (hasShownCriticalError) {
@@ -341,8 +346,8 @@ function initOscServer() {
       hyperateAddon.start(oscService);
     }
     if (appSettings.oscleashAutostart && oscLeashAddon && !oscLeashAddon.isEnabled()) {
-      debug.info('Starting OSCLeash addon based on autostart setting (OSC service ready)...');
-      oscLeashAddon.start(oscService);
+      debug.info('Starting OSCLeash addon based on autostart setting (OSC-Query ready)...');
+      oscLeashAddon.start(oscQueryService, oscService);
     }
   });
 
@@ -415,6 +420,48 @@ async function initOscQueryService() {
           status: 'stopped'
         });
       });
+      // VRChat connection state events
+      oscQueryService.on('vrchat-addresses-changed', (addresses) => {
+        debug.info(`VRChat addresses changed: OSCQuery=${addresses.oscQueryAddress}, OSC=${addresses.oscAddress}`);
+        sendToRenderer('vrchat-connection-status', {
+          connected: !!addresses.oscQueryAddress,
+          oscQueryAddress: addresses.oscQueryAddress,
+          oscAddress: addresses.oscAddress
+        });
+      });
+      oscQueryService.on('vrchat-connection-lost', () => {
+        debug.warn('VRChat connection lost - will attempt to rediscover');
+        sendToRenderer('vrchat-connection-status', {
+          connected: false,
+          reason: 'connection-lost'
+        });
+      });
+      oscQueryService.on('vrchat-restarted', (info) => {
+        debug.info(`VRChat restarted: ${info.oldServiceName} -> ${info.newServiceName}`);
+        sendToRenderer('vrchat-connection-status', {
+          connected: true,
+          restarted: true,
+          oldServiceName: info.oldServiceName,
+          newServiceName: info.newServiceName
+        });
+      });
+      // OSC data flow monitoring events
+      oscQueryService.on('osc-flow-warning', (info) => {
+        debug.warn(`No OSC data received for ${Math.round(info.timeout / 1000)}s`);
+        sendToRenderer('osc-flow-status', {
+          status: 'warning',
+          timeout: info.timeout,
+          lastMessageTime: info.lastMessageTime
+        });
+      });
+      oscQueryService.on('osc-flow-timeout', (info) => {
+        debug.error(`OSC data flow timeout after ${Math.round(info.timeout / 1000)}s - triggering reconnection`);
+        sendToRenderer('osc-flow-status', {
+          status: 'timeout',
+          timeout: info.timeout,
+          lastMessageTime: info.lastMessageTime
+        });
+      });
       // Setup OSC message forwarding to WebSocket
       oscQueryService.on('osc-message', (oscData) => {
         // Send to renderer for logging (always, regardless of forwarding status)
@@ -470,6 +517,19 @@ async function initOscQueryService() {
     
     // Start the service
     await oscQueryService.start();
+    
+    // Attach OscGoesBrrr addon to OSC-Query service
+    if (oscGoesBrrrAddon) {
+      oscGoesBrrrAddon.setOscQueryService(oscQueryService);
+      debug.info('OscGoesBrrr addon attached to OSC-Query service');
+      
+      // Start OGB if autostart is enabled
+      const appSettings = configManager.getAppSettings();
+      if (appSettings.ogbAutostart && !oscGoesBrrrAddon.isEnabled()) {
+        debug.info('Starting OscGoesBrrr addon based on autostart setting...');
+        oscGoesBrrrAddon.start();
+      }
+    }
   } catch (error) {
     debug.error(`Failed to initialize OSC Query service: ${error.message}`);
   }
@@ -489,8 +549,18 @@ function initOscClient() {
   debug.logOscClientInit(serverConfig.targetOscAddress, serverConfig.targetOscPort);
 }
 function sendToRenderer(channel, data) {
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send(channel, data);
+  if (mainWindow && 
+      !mainWindow.isDestroyed() && 
+      mainWindow.webContents && 
+      !mainWindow.webContents.isDestroyed()) {
+    try {
+      mainWindow.webContents.send(channel, data);
+    } catch (error) {
+      // Silently fail if renderer is gone during shutdown
+      if (!isShuttingDown) {
+        debug.warn(`Failed to send ${channel} to renderer: ${error.message}`);
+      }
+    }
   }
 }
 ipcMain.handle('get-config', () => {
@@ -603,6 +673,37 @@ ipcMain.handle('get-osc-status', () => {
     return status;
   }
   return { error: 'OSC service not initialized' };
+});
+
+// OSC Query status and control handlers
+ipcMain.handle('get-oscquery-status', () => {
+  if (oscQueryService) {
+    return oscQueryService.getStatus();
+  }
+  return { error: 'OSC Query service not initialized', isRunning: false };
+});
+
+ipcMain.handle('oscquery-force-reconnect', () => {
+  if (oscQueryService) {
+    const result = oscQueryService.forceReconnect();
+    debug.info(`OSC Query force reconnect: ${result ? 'success' : 'failed'}`);
+    return { success: result };
+  }
+  return { success: false, error: 'OSC Query service not initialized' };
+});
+
+ipcMain.handle('oscquery-reset-all', async () => {
+  if (oscQueryService) {
+    // Stop the service first
+    if (oscQueryService.isRunning) {
+      await oscQueryService.stop();
+    }
+    // Reset all persistent state
+    oscQueryService.resetAll();
+    debug.info('OSC Query service reset - will fully re-initialize on next start');
+    return { success: true };
+  }
+  return { success: false, error: 'OSC Query service not initialized' };
 });
 
 ipcMain.handle('get-last-username', () => {
@@ -1230,10 +1331,13 @@ ipcMain.handle('oscleash-start', () => {
     if (!oscLeashAddon) {
       return { success: false, error: 'OSCLeash addon not initialized' };
     }
+    if (!oscQueryService) {
+      return { success: false, error: 'OSC-Query service not available' };
+    }
     if (!oscService) {
       return { success: false, error: 'OSC service not available' };
     }
-    const result = oscLeashAddon.start(oscService);
+    const result = oscLeashAddon.start(oscQueryService, oscService);
     return { success: result };
   } catch (error) {
     debug.error(`Failed to start OSCLeash addon: ${error.message}`);
@@ -1300,6 +1404,128 @@ ipcMain.handle('oscleash-set-autostart', (event, enabled) => {
     return { success: false, error: error.message };
   }
 });
+
+// OscGoesBrrr addon IPC handlers
+ipcMain.handle('ogb-get-status', () => {
+  if (oscGoesBrrrAddon) {
+    return oscGoesBrrrAddon.getStatus();
+  }
+  return { enabled: false, connected: false, deviceCount: 0 };
+});
+
+ipcMain.handle('ogb-start', () => {
+  try {
+    if (!oscGoesBrrrAddon) {
+      return { success: false, error: 'OscGoesBrrr addon not initialized' };
+    }
+    const result = oscGoesBrrrAddon.start();
+    return result;
+  } catch (error) {
+    debug.error(`Failed to start OscGoesBrrr addon: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-stop', () => {
+  try {
+    if (oscGoesBrrrAddon) {
+      oscGoesBrrrAddon.stop();
+    }
+    return { success: true };
+  } catch (error) {
+    debug.error(`Failed to stop OscGoesBrrr addon: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-get-devices', () => {
+  try {
+    if (oscGoesBrrrAddon) {
+      return oscGoesBrrrAddon.getStatus().devices || [];
+    }
+    return [];
+  } catch (error) {
+    debug.error(`Failed to get OscGoesBrrr devices: ${error.message}`);
+    return [];
+  }
+});
+
+ipcMain.handle('ogb-get-config', () => {
+  try {
+    if (oscGoesBrrrAddon) {
+      return oscGoesBrrrAddon.getConfig();
+    }
+    return configManager.getOgbConfig();
+  } catch (error) {
+    debug.error(`Failed to get OscGoesBrrr config: ${error.message}`);
+    return {};
+  }
+});
+
+ipcMain.handle('ogb-update-config', (event, config) => {
+  try {
+    if (!oscGoesBrrrAddon) {
+      return { success: false, error: 'OscGoesBrrr addon not initialized' };
+    }
+    const result = oscGoesBrrrAddon.updateConfig(config);
+    return result;
+  } catch (error) {
+    debug.error(`Failed to update OscGoesBrrr config: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-update-device-binding', (event, deviceId, binding) => {
+  try {
+    if (!oscGoesBrrrAddon) {
+      return { success: false, error: 'OscGoesBrrr addon not initialized' };
+    }
+    const result = oscGoesBrrrAddon.updateDeviceBinding(deviceId, binding);
+    return result;
+  } catch (error) {
+    debug.error(`Failed to update OscGoesBrrr device binding: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-update-intiface-config', (event, config) => {
+  try {
+    if (!oscGoesBrrrAddon) {
+      return { success: false, error: 'OscGoesBrrr addon not initialized' };
+    }
+    const result = oscGoesBrrrAddon.updateIntifaceConfig(config);
+    return result;
+  } catch (error) {
+    debug.error(`Failed to update Intiface config: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('ogb-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings();
+    return { enabled: appSettings.ogbAutostart || false };
+  } catch (error) {
+    debug.error(`Failed to get OscGoesBrrr autostart setting: ${error.message}`);
+    return { enabled: false };
+  }
+});
+
+ipcMain.handle('ogb-set-autostart', (event, enabled) => {
+  try {
+    const result = configManager.updateAppSettings({ ogbAutostart: enabled });
+    if (result) {
+      debug.info(`OscGoesBrrr autostart ${enabled ? 'enabled' : 'disabled'}`);
+      return { success: true, enabled };
+    } else {
+      throw new Error('Failed to save autostart setting');
+    }
+  } catch (error) {
+    debug.error(`Failed to set OscGoesBrrr autostart: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
 // Encryption/Decryption IPC handlers
 ipcMain.handle('encrypt-data', (event, plaintext) => {
   return encryptData(plaintext);
@@ -1408,6 +1634,7 @@ app.whenReady().then(async () => {
   hyperateAddon = new HyperateAddon();
   oscLeashAddon = new OSCLeashAddon();
   vrchatApiContainer = new VRChatAPIContainer();
+  oscGoesBrrrAddon = new OscGoesBrrrAddon();
   
   // Set up HypeRate status and heart rate callbacks to update renderer in real-time
   hyperateAddon.setStatusChangeCallback((status) => {
@@ -1430,6 +1657,13 @@ app.whenReady().then(async () => {
   oscLeashAddon.setMovementCallback((data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('oscleash-movement-data', data);
+    }
+  });
+  
+  // Set up OscGoesBrrr status callback to update renderer in real-time
+  oscGoesBrrrAddon.setStatusChangeCallback((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('ogb-status-update', status);
     }
   });
   
@@ -1616,6 +1850,14 @@ function cleanup(source = 'unknown') {
   } catch (error) {
     debug.error(`Error closing OSC client: ${error.message}`);
   }
+  // Prevent further renderer communication attempts during cleanup
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+    try {
+      mainWindow.webContents.removeAllListeners();
+    } catch (error) {
+      debug.error(`Error removing renderer listeners: ${error.message}`);
+    }
+  }
   try {
     if (wsManager) {
       wsManager.disconnect();
@@ -1626,11 +1868,16 @@ function cleanup(source = 'unknown') {
   }
   try {
     if (hyperateAddon) {
+      debug.info('Stopping HypeRate addon during cleanup...');
       hyperateAddon.stop();
       hyperateAddon = null;
+      debug.info('HypeRate addon cleanup completed');
     }
   } catch (error) {
     debug.error(`Error stopping HypeRate addon: ${error.message}`);
+    debug.error(`HypeRate cleanup stack trace: ${error.stack}`);
+    // Still nullify to prevent further attempts
+    hyperateAddon = null;
   }
   try {
     if (vrchatApiContainer) {

@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setOscQueryUnsubscriptions: (unsubscriptions) => ipcRenderer.invoke('set-oscquery-unsubscriptions', unsubscriptions),
   addOscQueryUnsubscription: (path) => ipcRenderer.invoke('add-oscquery-unsubscription', path),
   removeOscQueryUnsubscription: (path) => ipcRenderer.invoke('remove-oscquery-unsubscription', path),
+  // OSC Query status and control
+  getOscQueryStatus: () => ipcRenderer.invoke('get-oscquery-status'),
+  oscQueryForceReconnect: () => ipcRenderer.invoke('oscquery-force-reconnect'),
+  oscQueryResetAll: () => ipcRenderer.invoke('oscquery-reset-all'),
   // HypeRate API
   hyperateGetStatus: () => ipcRenderer.invoke('hyperate-get-status'),
   hyperateStart: () => ipcRenderer.invoke('hyperate-start'),
@@ -53,6 +57,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   oscleashUpdateConfig: (config) => ipcRenderer.invoke('oscleash-update-config', config),
   oscleashGetAutostart: () => ipcRenderer.invoke('oscleash-get-autostart'),
   oscleashSetAutostart: (enabled) => ipcRenderer.invoke('oscleash-set-autostart', enabled),
+  // OscGoesBrrr API
+  ogbGetStatus: () => ipcRenderer.invoke('ogb-get-status'),
+  ogbStart: () => ipcRenderer.invoke('ogb-start'),
+  ogbStop: () => ipcRenderer.invoke('ogb-stop'),
+  ogbGetDevices: () => ipcRenderer.invoke('ogb-get-devices'),
+  ogbGetConfig: () => ipcRenderer.invoke('ogb-get-config'),
+  ogbUpdateConfig: (config) => ipcRenderer.invoke('ogb-update-config', config),
+  ogbUpdateDeviceBinding: (deviceId, binding) => ipcRenderer.invoke('ogb-update-device-binding', deviceId, binding),
+  ogbUpdateIntifaceConfig: (config) => ipcRenderer.invoke('ogb-update-intiface-config', config),
+  ogbGetAutostart: () => ipcRenderer.invoke('ogb-get-autostart'),
+  ogbSetAutostart: (enabled) => ipcRenderer.invoke('ogb-set-autostart', enabled),
   // Encryption API
   encryptData: (plaintext) => ipcRenderer.invoke('encrypt-data', plaintext),
   decryptData: (encryptedData) => ipcRenderer.invoke('decrypt-data', encryptedData),
@@ -87,6 +102,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onOscQueryStatus: (callback) => {
     ipcRenderer.on('oscquery-status', (event, data) => callback(data));
+  },
+  onVRChatConnectionStatus: (callback) => {
+    ipcRenderer.on('vrchat-connection-status', (event, data) => callback(data));
+  },
+  onOscFlowStatus: (callback) => {
+    ipcRenderer.on('osc-flow-status', (event, data) => callback(data));
   },
   onWebSocketStatus: (callback) => {
     ipcRenderer.on('websocket-status', (event, data) => callback(data));
@@ -123,6 +144,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onHyperateUpdate: (callback) => {
     ipcRenderer.on('hyperate-update', (event, data) => callback(data));
+  },
+  onOgbStatusUpdate: (callback) => {
+    ipcRenderer.on('ogb-status-update', (event, data) => callback(data));
   },
   onFeedbackUpdate: (callback) => {
     ipcRenderer.on('feedback-update', (event, data) => callback(data));

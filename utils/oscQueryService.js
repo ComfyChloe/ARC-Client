@@ -70,6 +70,18 @@ class OSCQueryService extends EventEmitter {
         this._discoveryInterval = null; // Continuous discovery interval
         this._currentVRChatOscQueryAddress = null; // Track current VRChat OSCQuery address
         this._currentVRChatOscAddress = null; // Track current VRChat OSC address
+        this._currentVRChatServiceName = null; // Track VRChat's service name to detect restarts
+        // Liveness & health monitoring
+        this._livenessCheckFailures = 0; // Count consecutive liveness check failures
+        this._lastOscMessageTime = null; // Track last received OSC message
+        this._oscFlowMonitorInterval = null; // Monitor OSC data flow
+        this._reAdvertiseInterval = null; // Periodic mDNS re-advertisement
+        this._persistentBrowser = null; // Long-lived mDNS browser
+        // Configuration constants
+        this.LIVENESS_FAILURE_THRESHOLD = 2; // Failures before clearing connection
+        this.OSC_FLOW_TIMEOUT_WARNING = 30000; // 30s without data = warning
+        this.OSC_FLOW_TIMEOUT_RECONNECT = 60000; // 60s without data = reconnect
+        this.READVERTISE_INTERVAL = 30000; // Re-advertise every 30 seconds
         // Hardcode heartrate parameter to never be forwarded to ARC
         this.hardcodedUnsubscriptions.add('/avatar/parameters/ARCOSC/Heartrate/*');
         // Root node for OSC parameter tree
@@ -211,6 +223,9 @@ class OSCQueryService extends EventEmitter {
         }
         const url = new URL(req.url, `http://${req.headers.host}`);
         const query = url.search.length > 0 ? url.search.substring(1) : null;
+        const clientIP = req.socket.remoteAddress;
+        // Log incoming requests to help debug VRChat communication
+        console.log(`[OSCQuery] HTTP request from ${clientIP}: ${req.url}`);
         // Handle HOST_INFO query
         if (query === 'HOST_INFO') {
             const hostInfo = {
@@ -220,6 +235,7 @@ class OSCQueryService extends EventEmitter {
                 OSC_PORT: this.oscPort,
                 OSC_TRANSPORT: 'UDP',
             };
+            console.log(`[OSCQuery] Responding with HOST_INFO: OSC_PORT=${this.oscPort}`);
             this._respondJson(hostInfo, res);
             return;
         }
@@ -257,6 +273,8 @@ class OSCQueryService extends EventEmitter {
      */
     _handleOscMessage(oscMsg) {
         const address = oscMsg.address;
+        // Update last OSC message time for health monitoring
+        this._lastOscMessageTime = Date.now();
         // Check if this message matches any unsubscription (if so, ignore it)
         const isUnsubscribed = this._matchesUnsubscription(address);
         if (isUnsubscribed) {
@@ -471,8 +489,12 @@ class OSCQueryService extends EventEmitter {
                 // Only trigger if still running
                 if (this.isRunning) {
                     this.triggerDiscovery();
-                    // Start continuous VRChat discovery after initial trigger
+                    // Start continuous VRChat discovery with long-lived browser
                     this._startVRChatDiscovery();
+                    // Start periodic mDNS re-advertisement to keep service visible
+                    this._startReAdvertiseTimer();
+                    // Start OSC data flow monitoring
+                    this._startOscFlowMonitor();
                 }
             }, 1000);
             return {
@@ -494,104 +516,255 @@ class OSCQueryService extends EventEmitter {
             console.log('[OSCQuery] Bonjour not initialized, skipping discovery trigger');
             return;
         }
-        console.log('[OSCQuery] Triggering mDNS discovery...');
         // Perform a brief scan to wake up the network
         const browser = this.bonjour.find({ type: 'oscjson' }, (service) => {
-            console.log(`[OSCQuery] Found service during discovery: ${service.name}`);
+            // Service found (silent)
         });
         // Stop discovery after 1 second
         setTimeout(() => {
             try {
                 browser.stop();
-                console.log('[OSCQuery] Discovery trigger completed');
             } catch (error) {
                 // Ignore errors during cleanup
             }
         }, 1000);
     }
     /**
-     * Start continuous VRChat discovery (runs every 5 seconds)
-     * Based on OyasumiVR's implementation pattern
+     * Start continuous VRChat discovery using long-lived browser pattern
+     * Uses persistent browser instead of creating/destroying every 5 seconds
      * @private
      */
     _startVRChatDiscovery() {
-        // Clear any existing interval
+        // Clear any existing discovery setup
         this._stopVRChatDiscovery();
-        console.log('[OSCQuery] Starting continuous VRChat discovery...');
-        // Run discovery immediately on start
-        this._performVRChatDiscovery();
-        // Then run every 5 seconds
+        console.log('[OSCQuery] Starting continuous VRChat discovery with long-lived browser...');
+        // Create a persistent browser that listens for service changes
+        try {
+            this._persistentBrowser = this.bonjour.find({ type: 'oscjson' });
+            // Handle service discovery (service appears)
+            this._persistentBrowser.on('up', async (service) => {
+                if (!this.isRunning) return;
+                await this._handleServiceDiscovered(service);
+            });
+            // Handle service removal (service disappears)
+            this._persistentBrowser.on('down', (service) => {
+                if (!this.isRunning) return;
+                this._handleServiceRemoved(service);
+            });
+            console.log('[OSCQuery] Long-lived browser started');
+        } catch (error) {
+            console.error('[OSCQuery] Failed to start long-lived browser:', error);
+        }
+        // Also run periodic liveness checks every 5 seconds
+        // This catches cases where mDNS doesn't fire 'down' events properly
         this._discoveryInterval = setInterval(() => {
-            this._performVRChatDiscovery();
+            this._performLivenessCheck();
         }, 5000);
+    }
+    /**
+     * Handle a discovered OSCQuery service
+     * @private
+     */
+    async _handleServiceDiscovered(service) {
+        // Only process VRChat client services
+        if (!service.name || !service.name.startsWith('VRChat-Client-')) {
+            return;
+        }
+        // Get service details
+        // IMPORTANT: Force 127.0.0.1 for VRChat - it always runs locally
+        // mDNS may report incorrect IPs on complex networks (WSL2, VPNs, virtual adapters)
+        const reportedHost = service.referer?.address || '127.0.0.1';
+        const host = '127.0.0.1'; // Always use localhost for VRChat
+        const port = service.port;
+        const serviceName = service.name;
+        if (!port) {
+            return;
+        }
+        const oscQueryAddress = `${host}:${port}`;
+        if (reportedHost !== '127.0.0.1') {
+            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} at ${reportedHost}:${port} (forcing localhost: ${oscQueryAddress})`);
+        } else {
+            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} at ${oscQueryAddress}`);
+        }
+        // Verify the service is alive with HTTP request
+        const isAlive = await this._verifyVRChatService(host, port);
+        if (isAlive) {
+            console.log(`[OSCQuery] VRChat service ${serviceName} is alive, fetching OSC port...`);
+            // Get OSC port from HOST_INFO
+            const oscPort = await this._getVRChatOscPort(host, port);
+            if (oscPort) {
+                const oscAddress = `${host}:${oscPort}`;
+                console.log(`[OSCQuery] VRChat OSC port: ${oscPort} -> connection established`);
+                // Check if VRChat restarted (different service name)
+                if (this._currentVRChatServiceName && this._currentVRChatServiceName !== serviceName) {
+                    console.log(`[OSCQuery] VRChat restart detected: ${this._currentVRChatServiceName} -> ${serviceName}`);
+                    this.emit('vrchat-restarted', {
+                        oldServiceName: this._currentVRChatServiceName,
+                        newServiceName: serviceName
+                    });
+                }
+                this._currentVRChatServiceName = serviceName;
+                this._livenessCheckFailures = 0; // Reset failure counter
+                // Update state if changed
+                this._updateVRChatAddresses(oscQueryAddress, oscAddress);
+            } else {
+                console.log(`[OSCQuery] VRChat service alive but couldn't get OSC port`);
+                // OSCQuery service exists but couldn't get OSC port
+                this._updateVRChatAddresses(oscQueryAddress, null);
+            }
+        } else {
+            console.log(`[OSCQuery] VRChat service ${serviceName} at ${oscQueryAddress} is not responding`);
+        }
+    }
+    /**
+     * Handle a removed OSCQuery service
+     * @private
+     */
+    _handleServiceRemoved(service) {
+        if (!service.name || !service.name.startsWith('VRChat-Client-')) {
+            return;
+        }
+        // Force 127.0.0.1 to match how we store addresses
+        const host = '127.0.0.1';
+        const port = service.port;
+        const oscQueryAddress = `${host}:${port}`;
+        console.log(`[OSCQuery] VRChat service removed: ${service.name}`);
+        // Only clear if this was our current connection
+        if (this._currentVRChatOscQueryAddress === oscQueryAddress) {
+            this._updateVRChatAddresses(null, null);
+            this._currentVRChatServiceName = null;
+        }
+    }
+    /**
+     * Perform liveness check on current VRChat connection
+     * Verifies the current connection is still responsive
+     * @private
+     */
+    async _performLivenessCheck() {
+        if (!this.isRunning || !this._currentVRChatOscQueryAddress) {
+            return;
+        }
+        try {
+            const [host, portStr] = this._currentVRChatOscQueryAddress.split(':');
+            const port = parseInt(portStr, 10);
+            const isAlive = await this._verifyVRChatService(host, port);
+            if (isAlive) {
+                // Connection is healthy, reset failure counter
+                if (this._livenessCheckFailures > 0) {
+                    console.log('[OSCQuery] VRChat connection restored');
+                }
+                this._livenessCheckFailures = 0;
+            } else {
+                // Connection failed
+                this._livenessCheckFailures++;
+                console.log(`[OSCQuery] VRChat liveness check failed (${this._livenessCheckFailures}/${this.LIVENESS_FAILURE_THRESHOLD})`);
+                if (this._livenessCheckFailures >= this.LIVENESS_FAILURE_THRESHOLD) {
+                    console.log('[OSCQuery] VRChat connection lost - clearing addresses');
+                    this._updateVRChatAddresses(null, null);
+                    this._currentVRChatServiceName = null;
+                    this._livenessCheckFailures = 0;
+                    // Emit connection lost event
+                    this.emit('vrchat-connection-lost');
+                }
+            }
+        } catch (error) {
+            console.error('[OSCQuery] Error during liveness check:', error);
+        }
     }
     /**
      * Stop continuous VRChat discovery
      * @private
      */
     _stopVRChatDiscovery() {
+        // Stop the long-lived browser
+        if (this._persistentBrowser) {
+            try {
+                this._persistentBrowser.stop();
+                this._persistentBrowser = null;
+                console.log('[OSCQuery] Long-lived browser stopped');
+            } catch (error) {
+                // Ignore cleanup errors
+            }
+        }
+        // Stop the liveness check interval
         if (this._discoveryInterval) {
             clearInterval(this._discoveryInterval);
             this._discoveryInterval = null;
-            console.log('[OSCQuery] Stopped continuous VRChat discovery');
+            console.log('[OSCQuery] Stopped liveness check interval');
         }
     }
     /**
-     * Perform a single VRChat discovery cycle
-     * Looks for services with names starting with "VRChat-Client-"
-     * Verifies they're alive with an HTTP request to /?HOST_INFO
+     * Start periodic mDNS re-advertisement to keep service visible
+     * Helps with Windows mDNS cache issues
      * @private
      */
-    async _performVRChatDiscovery() {
-        if (!this.bonjour || !this.isRunning) {
-            return;
+    _startReAdvertiseTimer() {
+        this._stopReAdvertiseTimer();
+        console.log(`[OSCQuery] Starting periodic re-advertisement (every ${this.READVERTISE_INTERVAL / 1000}s)`);
+        this._reAdvertiseInterval = setInterval(() => {
+            if (this.isRunning && this.bonjour) {
+                // Trigger a discovery scan to "wake up" the network
+                // This helps Windows see our service after mDNS cache expires
+                this.triggerDiscovery();
+            }
+        }, this.READVERTISE_INTERVAL);
+    }
+    /**
+     * Stop periodic re-advertisement timer
+     * @private
+     */
+    _stopReAdvertiseTimer() {
+        if (this._reAdvertiseInterval) {
+            clearInterval(this._reAdvertiseInterval);
+            this._reAdvertiseInterval = null;
         }
-        try {
-            // Find OSCQuery services (type: oscjson)
-            const browser = this.bonjour.find({ type: 'oscjson' }, async (service) => {
-                // Only process VRChat client services
-                if (!service.name || !service.name.startsWith('VRChat-Client-')) {
-                    return;
-                }
-                // Get service details
-                const host = service.referer?.address || '127.0.0.1';
-                const port = service.port;
-                if (!port) {
-                    return;
-                }
-                const oscQueryAddress = `${host}:${port}`;
-                // Verify the service is alive with HTTP request
-                const isAlive = await this._verifyVRChatService(host, port);
-                if (isAlive) {
-                    // Get OSC port from HOST_INFO
-                    const oscPort = await this._getVRChatOscPort(host, port);
-                    if (oscPort) {
-                        const oscAddress = `${host}:${oscPort}`;
-                        
-                        // Update state if changed
-                        this._updateVRChatAddresses(oscQueryAddress, oscAddress);
-                    } else {
-                        // OSCQuery service exists but couldn't get OSC port
-                        this._updateVRChatAddresses(oscQueryAddress, null);
-                    }
-                } else {
-                    // Service is not responding, clear if it was the current one
-                    if (this._currentVRChatOscQueryAddress === oscQueryAddress) {
-                        this._updateVRChatAddresses(null, null);
-                    }
-                }
-            });
-            // Stop browser after 2 seconds to prevent memory leaks
-            setTimeout(() => {
-                try {
-                    browser.stop();
-                } catch (error) {
-                    // Ignore cleanup errors
-                }
-            }, 2000);
-            
-        } catch (error) {
-            console.error('[OSCQuery] Error during VRChat discovery:', error);
+    }
+    /**
+     * Start OSC data flow monitoring
+     * Detects when OSC data stops flowing and triggers reconnection
+     * @private
+     */
+    _startOscFlowMonitor() {
+        this._stopOscFlowMonitor();
+        // Initialize last message time
+        this._lastOscMessageTime = null;
+        console.log('[OSCQuery] Starting OSC data flow monitoring');
+        this._oscFlowMonitorInterval = setInterval(() => {
+            if (!this.isRunning || !this._currentVRChatOscQueryAddress) {
+                return; // Not connected, nothing to monitor
+            }
+            if (!this._lastOscMessageTime) {
+                return; // Haven't received any OSC yet, skip check
+            }
+            const timeSinceLastMessage = Date.now() - this._lastOscMessageTime;
+            if (timeSinceLastMessage >= this.OSC_FLOW_TIMEOUT_RECONNECT) {
+                // No data for 60+ seconds, trigger reconnection
+                console.log(`[OSCQuery] No OSC data for ${Math.round(timeSinceLastMessage / 1000)}s - triggering reconnection`);
+                this.emit('osc-flow-timeout', {
+                    lastMessageTime: this._lastOscMessageTime,
+                    timeout: timeSinceLastMessage
+                });
+                // Force a re-discovery and re-advertisement
+                this.triggerDiscovery();
+                // Reset the timer to avoid spamming
+                this._lastOscMessageTime = Date.now();
+            } else if (timeSinceLastMessage >= this.OSC_FLOW_TIMEOUT_WARNING) {
+                // No data for 30+ seconds, emit warning
+                this.emit('osc-flow-warning', {
+                    lastMessageTime: this._lastOscMessageTime,
+                    timeout: timeSinceLastMessage
+                });
+            }
+        }, 10000); // Check every 10 seconds
+    }
+    /**
+     * Stop OSC data flow monitoring
+     * @private
+     */
+    _stopOscFlowMonitor() {
+        if (this._oscFlowMonitorInterval) {
+            clearInterval(this._oscFlowMonitorInterval);
+            this._oscFlowMonitorInterval = null;
         }
     }
     /**
@@ -715,8 +888,14 @@ class OSCQueryService extends EventEmitter {
                 clearTimeout(this._discoveryTimer);
                 this._discoveryTimer = null;
             }
-            // Stop continuous VRChat discovery
+            // Stop all monitoring and discovery timers
             this._stopVRChatDiscovery();
+            this._stopReAdvertiseTimer();
+            this._stopOscFlowMonitor();
+            // Reset health monitoring state
+            this._livenessCheckFailures = 0;
+            this._lastOscMessageTime = null;
+            this._currentVRChatServiceName = null;
             // Stop OSC UDP listener FIRST to prevent new messages
             if (this.oscUdpPort) {
                 try {
@@ -854,6 +1033,8 @@ class OSCQueryService extends EventEmitter {
      * Get service status
      */
     getStatus() {
+        const now = Date.now();
+        const timeSinceLastOsc = this._lastOscMessageTime ? now - this._lastOscMessageTime : null;
         return {
             isRunning: this.isRunning,
             httpPort: this.httpPort,
@@ -861,8 +1042,35 @@ class OSCQueryService extends EventEmitter {
             serviceName: this.appName,
             unsubscriptions: this.getUnsubscriptions(),
             vrchatOscQueryAddress: this._currentVRChatOscQueryAddress,
-            vrchatOscAddress: this._currentVRChatOscAddress
+            vrchatOscAddress: this._currentVRChatOscAddress,
+            // Health monitoring info
+            vrchatServiceName: this._currentVRChatServiceName,
+            livenessCheckFailures: this._livenessCheckFailures,
+            lastOscMessageTime: this._lastOscMessageTime,
+            timeSinceLastOscMessage: timeSinceLastOsc,
+            isVRChatConnected: !!this._currentVRChatOscQueryAddress,
+            isReceivingOscData: timeSinceLastOsc !== null && timeSinceLastOsc < this.OSC_FLOW_TIMEOUT_WARNING
         };
+    }
+    /**
+     * Force a reconnection attempt
+     * Useful when the user suspects the connection is stale
+     */
+    forceReconnect() {
+        if (!this.isRunning) {
+            console.warn('[OSCQuery] Cannot force reconnect - service is not running');
+            return false;
+        }
+        console.log('[OSCQuery] Forcing reconnection...');
+        // Clear current connection state
+        this._currentVRChatOscQueryAddress = null;
+        this._currentVRChatOscAddress = null;
+        this._currentVRChatServiceName = null;
+        this._livenessCheckFailures = 0;
+        // Trigger discovery
+        this.triggerDiscovery();
+        this.emit('force-reconnect');
+        return true;
     }
     /**
      * Reset port assignments (will assign new random ports on next initialize)

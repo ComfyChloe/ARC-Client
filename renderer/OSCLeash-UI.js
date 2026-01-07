@@ -538,8 +538,11 @@ async function resetOSCLeashConfig() {
  */
 async function toggleOSCLeashAutostart() {
     try {
-        const autostartBtn = document.getElementById('oscleash-autostart-btn');
-        autostartBtn.disabled = true;
+        const toggleSlider = document.getElementById('oscleash-autostart-toggle');
+        if (toggleSlider) {
+            toggleSlider.style.pointerEvents = 'none';
+            toggleSlider.style.opacity = '0.6';
+        }
 
         // Get current autostart status
         const currentStatus = await window.electronAPI.oscleashGetAutostart();
@@ -559,8 +562,11 @@ async function toggleOSCLeashAutostart() {
         debugLog(`Error toggling OSCLeash autostart: ${error.message}`, 'error');
         alert('Failed to update autostart setting. Please try again.');
     } finally {
-        const autostartBtn = document.getElementById('oscleash-autostart-btn');
-        autostartBtn.disabled = false;
+        const toggleSlider = document.getElementById('oscleash-autostart-toggle');
+        if (toggleSlider) {
+            toggleSlider.style.pointerEvents = '';
+            toggleSlider.style.opacity = '';
+        }
     }
 }
 
@@ -568,10 +574,17 @@ async function toggleOSCLeashAutostart() {
  * Update autostart button UI
  */
 function updateOSCLeashAutostartButton(enabled) {
-    const autostartBtn = document.getElementById('oscleash-autostart-btn');
-    if (autostartBtn) {
-        autostartBtn.textContent = `Auto-start: ${enabled ? 'Enabled' : 'Disabled'}`;
-        autostartBtn.className = enabled ? 'btn btn-success' : 'btn btn-secondary';
+    const disabledOption = document.getElementById('oscleash-autostart-disabled');
+    const enabledOption = document.getElementById('oscleash-autostart-enabled');
+    
+    if (disabledOption && enabledOption) {
+        if (enabled) {
+            disabledOption.classList.remove('active');
+            enabledOption.classList.add('active');
+        } else {
+            enabledOption.classList.remove('active');
+            disabledOption.classList.add('active');
+        }
     }
 }
 

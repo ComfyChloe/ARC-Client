@@ -154,6 +154,7 @@
                             <button class="tree-child" id="nav-Hyperate" onclick="showHyperateView()">Hyperate</button>
                             <button class="tree-child" id="nav-openshock" onclick="showOpenShockView()">OpenShock</button>
                             <button class="tree-child" id="nav-osc-leash" onclick="showOSCLeashView()">OSC Leash</button>
+                            <button class="tree-child" id="nav-oscgoesbrrr" onclick="showOscGoesBrrrView()">OscGoesBrrr</button>
                             <button class="tree-child" id="nav-vosk" onclick="showVOSKView()">VOSK</button>
                             <button class="tree-child" id="nav-vrc-timeline" onclick="showVRCTimelineView()">VRC Timeline</button>
                             <div class="tree-item" style="margin-top: 5px;">
@@ -300,6 +301,190 @@
                 <h3>Feature Not Available</h3>
                 <p style="color: #666; text-align: center; padding: 20px;">
                     This feature is planned for development and will be available in the future.
+                </p>
+            </div>
+        </div>
+
+        <div class="main-content view-transition" id="oscgoesbrrr-view" style="display: none;">
+            <div class="header">
+                <h1>OscGoesBrrr</h1>
+                <p>Control Bluetooth haptic devices from VRChat OSC using Intiface/Buttplug</p>
+            </div>
+
+            <div class="card">
+                <h3>Connection Status</h3>
+                <div class="connection-status">
+                    <span class="status-indicator status-disconnected" id="ogb-status"></span>
+                    <span id="ogb-status-text">Stopped</span>
+                </div>
+                <div id="ogb-server-info" style="display: none; font-size: 12px; color: #666; margin-top: 5px;"></div>
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <button class="btn btn-primary" id="ogb-toggle-btn" onclick="toggleOgb()">Start</button>
+                    <div class="autostart-toggle-container">
+                        <span style="font-size: 13px; font-weight: 600; opacity: 0.8;">Auto-start:</span>
+                        <div class="autostart-toggle-slider" id="ogb-autostart-toggle" onclick="toggleOgbAutostart()">
+                            <div class="autostart-toggle-option active disabled" id="ogb-autostart-disabled">Disabled</div>
+                            <div class="autostart-toggle-option enabled" id="ogb-autostart-enabled">Enabled</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Overall level indicator -->
+                <div style="margin-top: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span style="font-size: 13px; font-weight: 600;">Max Haptic Level</span>
+                        <span id="ogb-level-text" style="font-size: 13px; font-weight: 600;">0%</span>
+                    </div>
+                    <div style="background: #333; border-radius: 4px; height: 8px; overflow: hidden;">
+                        <div id="ogb-level-bar" style="background: linear-gradient(90deg, #ff6b9d, #ff3366); height: 100%; width: 0%; transition: width 0.1s ease;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Intiface Settings</h3>
+                <div class="form-group">
+                    <label for="ogb-intiface-address">Intiface Address</label>
+                    <div style="display: flex; gap: 10px; margin-top: 5px; align-items: center;">
+                        <input type="text" id="ogb-intiface-address" placeholder="127.0.0.1" style="flex: 1;" value="127.0.0.1">
+                        <span>:</span>
+                        <input type="number" id="ogb-intiface-port" placeholder="12345" style="width: 80px;" value="12345">
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 14px; white-space: nowrap;">
+                            <input type="checkbox" id="ogb-intiface-wss" style="margin: 0;">
+                            <span>WSS</span>
+                        </label>
+                        <button class="btn btn-secondary" onclick="updateIntifaceSettings()" style="padding: 6px 12px;">Save</button>
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        Make sure <a href="https://intiface.com/central/" target="_blank" style="color: #3498db;">Intiface Central</a> is running and the server is started
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Connected Haptic Devices</h3>
+                <div id="ogb-devices-list">
+                    <div class="ogb-no-devices">
+                        <p>No haptic devices connected</p>
+                        <p class="hint">Make sure Intiface Central is running and devices are connected</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Device Configuration Section (always visible) -->
+            <div class="card" id="ogb-device-config-section">
+                <h3>Device Configuration</h3>
+                
+                <div class="form-group">
+                    <label for="ogb-config-device-select">Select Device</label>
+                    <select id="ogb-config-device-select" onchange="onOgbDeviceSelected()">
+                        <option value="">-- No devices connected --</option>
+                    </select>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        Settings are saved per device and apply even when the device is disconnected
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="ogb-config-type">Source Type Filter</label>
+                    <select id="ogb-config-type">
+                        <option value="all">All Sources</option>
+                        <option value="pen">Penetrators Only</option>
+                        <option value="orf">Orifices Only</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Enabled Contact Sources</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; font-size: 16px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-touchSelf" style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Touch Self</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-touchOthers" checked style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Touch Others</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-penSelf" style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Penetration Self</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-penOthers" checked style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Penetration Others</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-source-frotOthers" checked style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Frot Others</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label for="ogb-config-multiplier">Intensity Multiplier (Scale)</label>
+                        <span id="ogb-config-multiplier-value" style="font-weight: 600; color: #3498db;">1.0x</span>
+                    </div>
+                    <input type="range" id="ogb-config-multiplier" min="0.1" max="2.0" step="0.1" value="1.0" style="width: 100%;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; color: #aaa; margin-top: 2px;">
+                        <span>Min: 0.1x</span>
+                        <span>Max: 2.0x</span>
+                    </div>
+                    <div style="font-size: 13px; color: #b0b0b0; margin-top: 5px; line-height: 1.4;">
+                        Increase if toy needs more work to vibrate, decrease if it's always on/off with nothing in between
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label for="ogb-config-idle">Idle Vibration Level</label>
+                        <span id="ogb-config-idle-value" style="font-weight: 600; color: #3498db;">0%</span>
+                    </div>
+                    <input type="range" id="ogb-config-idle" min="0" max="1" step="0.05" value="0" style="width: 100%;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; color: #aaa; margin-top: 2px;">
+                        <span>Min: 0%</span>
+                        <span>Max: 100%</span>
+                    </div>
+                    <div style="font-size: 13px; color: #b0b0b0; margin-top: 5px; line-height: 1.4;">
+                        Minimum vibration level when not being touched/penetrated (idle baseline)
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Vibration Mode</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 5px; font-size: 16px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background-color 0.2s; user-select: none; color: #e0e0e0;" onmouseenter="this.style.backgroundColor='rgba(52, 152, 219, 0.1)'" onmouseleave="this.style.backgroundColor='transparent'">
+                            <input type="checkbox" id="ogb-config-linear" checked style="margin: 0; transform: scale(1.3); accent-color: #3498db;">
+                            <span>Depth-Based Vibration</span>
+                        </label>
+                    </div>
+                    <div style="font-size: 13px; color: #b0b0b0; margin-top: 8px; line-height: 1.4;">
+                        When checked: vibrates based on penetration depth. When unchecked: vibrates based on motion/speed
+                    </div>
+                </div>
+
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-primary" onclick="saveOgbDeviceConfig()" style="width: 100%;">Save Configuration</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Avatar Contact Sources</h3>
+                <div id="ogb-game-devices-list">
+                    <div class="ogb-no-devices">
+                        <p>No avatar contacts detected</p>
+                        <p class="hint">Contacts will appear when your avatar has VRCFury Haptics or similar setup</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>About OscGoesBrrr</h3>
+                <p style="font-size: 14px; color: #888; line-height: 1.6;">
+                    OscGoesBrrr bridges VRChat avatar haptic parameters to Bluetooth toys via the 
+                    <a href="javascript:void(0)" onclick="window.electronAPI.openExternal('https://intiface.com/central/')" style="color: #3498db; cursor: pointer;">Intiface Central</a> application.
+                </p>
+                <p style="font-size: 13px; color: #666; margin-top: 10px;">
+                    Supported avatar systems: OGB (OscGoesBrrr), TPS (Poiyomi/DPS), VRCFury Haptics
                 </p>
             </div>
         </div>
@@ -536,9 +721,15 @@
                     <span class="status-indicator status-disconnected" id="oscleash-status"></span>
                     <span id="oscleash-status-text">Disabled</span>
                 </div>
-                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                     <button class="btn btn-primary" id="oscleash-toggle-btn" onclick="toggleOSCLeash()">Enable OSC Leash</button>
-                    <button class="btn btn-secondary" id="oscleash-autostart-btn" onclick="toggleOSCLeashAutostart()">Auto-start: Disabled</button>
+                    <div class="autostart-toggle-container">
+                        <span style="font-size: 13px; font-weight: 600; opacity: 0.8;">Auto-start:</span>
+                        <div class="autostart-toggle-slider" id="oscleash-autostart-toggle" onclick="toggleOSCLeashAutostart()">
+                            <div class="autostart-toggle-option disabled" id="oscleash-autostart-disabled">Disabled</div>
+                            <div class="autostart-toggle-option enabled" id="oscleash-autostart-enabled">Enabled</div>
+                        </div>
+                    </div>
                 </div>
                 <div style="margin-top: 10px; padding: 10px; background-color: #e8f4fd; border-radius: 4px; border-left: 4px solid #3498db;">
                     <small style="color: #2c3e50;">
@@ -768,9 +959,15 @@
                     <span class="status-indicator status-disconnected" id="hyperate-status"></span>
                     <span id="hyperate-status-text">Disconnected</span>
                 </div>
-                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                     <button class="btn btn-primary" id="hyperate-toggle-btn" onclick="toggleHyperate()">Start HypeRate</button>
-                    <button class="btn btn-secondary" id="hyperate-autostart-btn" onclick="toggleHyperateAutostart()">Auto-start: Disabled</button>
+                    <div class="autostart-toggle-container">
+                        <span style="font-size: 13px; font-weight: 600; opacity: 0.8;">Auto-start:</span>
+                        <div class="autostart-toggle-slider" id="hyperate-autostart-toggle" onclick="toggleHyperateAutostart()">
+                            <div class="autostart-toggle-option disabled" id="hyperate-autostart-disabled">Disabled</div>
+                            <div class="autostart-toggle-option enabled" id="hyperate-autostart-enabled">Enabled</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -787,6 +984,17 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card">
+                <h3>Heart Rate Graph</h3>
+                <div style="padding: 20px;">
+                    <div style="text-align: center; color: #666; padding: 40px 20px;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">📊 Graph Visualization</p>
+                        <p style="font-size: 12px; opacity: 0.7;">Heart rate graph will be displayed here</p>
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
                 <h3>Device Management</h3>
                 <div class="form-group">
@@ -1016,6 +1224,7 @@
     <script src="Calendar-UI.js"></script>
     <script src="Hyperate-UI.js"></script>
     <script src="OpenShock-UI.js"></script>
+    <script src="OscGoesBrrr-UI.js"></script>
     <script src="OSCLeash-UI.js"></script>
     <script src="VRC-API-UI.js"></script>
     
