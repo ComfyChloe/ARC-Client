@@ -400,6 +400,11 @@ class HyperateAddon {
       debug.info(`HypeRate: OSC service not available, heart rate: ${heartRate}`);
       return;
     }
+    // Check if OSC service is listening before attempting to send
+    if (!this.oscService.isListening) {
+      debug.warn(`HypeRate: OSC service not listening, cannot send heart rate: ${heartRate}`);
+      return;
+    }
     try {
       const address = '/avatar/parameters/ARCOSC/Heartrate/Value';
       const success = this.oscService.sendMessage(address, heartRate, 'f');
