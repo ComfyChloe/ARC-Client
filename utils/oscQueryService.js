@@ -17,6 +17,7 @@ const EventEmitter = require('events');
 const osc = require('osc');
 const https = require('https');
 const { URL } = require('url');
+const os = require('os');
 /**
  * OSC Query Access Control enumeration
  */
@@ -77,6 +78,9 @@ class OSCQueryService extends EventEmitter {
         this._oscFlowMonitorInterval = null; // Monitor OSC data flow
         this._reAdvertiseInterval = null; // Periodic mDNS re-advertisement
         this._persistentBrowser = null; // Long-lived mDNS browser
+        // Network configuration
+        this.oscAdvertisedIp = null; // IP address to advertise in HOST_INFO
+        this._localIpAddresses = []; // Cache of local IP addresses
         // Configuration constants
         this.LIVENESS_FAILURE_THRESHOLD = 2; // Failures before clearing connection
         this.OSC_FLOW_TIMEOUT_WARNING = 30000; // 30s without data = warning
@@ -120,11 +124,20 @@ class OSCQueryService extends EventEmitter {
             this.httpPort = httpPort;
             this.assignedHttpPort = httpPort; // Store explicitly provided port
         }
-
         // Store bind address for use during start
         this.bindAddress = bindAddress || '0.0.0.0';
-
+        this._localIpAddresses = this._getLocalIpAddresses();
+        // Determine the advertised OSC IP based on bind address
+        if (bindAddress && bindAddress !== '0.0.0.0') {
+            this.oscAdvertisedIp = bindAddress;
+        } else {
+            // Binding to all interfaces
+            this.oscAdvertisedIp = this._getLocalIpAddress() || '127.0.0.1';
+        }
         console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}, Bind Address: ${this.bindAddress}`);
+        console.log(`[OSCQuery] Network Configuration:`);
+        console.log(`  - Advertised IP: ${this.oscAdvertisedIp}`);
+        console.log(`  - Local IPs: ${this._localIpAddresses.join(', ') || 'none detected'}`);
 
         // Setup OSC Query endpoints
         this._setupEndpoints();
@@ -231,11 +244,11 @@ class OSCQueryService extends EventEmitter {
             const hostInfo = {
                 NAME: this.appName,
                 EXTENSIONS,
-                OSC_IP: '127.0.0.1',
+                OSC_IP: this.oscAdvertisedIp,
                 OSC_PORT: this.oscPort,
                 OSC_TRANSPORT: 'UDP',
             };
-            console.log(`[OSCQuery] Responding with HOST_INFO: OSC_PORT=${this.oscPort}`);
+            console.log(`[OSCQuery] Responding with HOST_INFO: OSC_IP=${this.oscAdvertisedIp}, OSC_PORT=${this.oscPort}`);
             this._respondJson(hostInfo, res);
             return;
         }
@@ -373,6 +386,51 @@ class OSCQueryService extends EventEmitter {
         });
     }
     /**
+     * Get the primary local IP address for external communication
+     * Used for advertising in HOST_INFO when bound to 0.0.0.0
+     * @private
+     * @returns {string|null} Primary IPv4 address or null if none found
+     */
+    _getLocalIpAddress() {
+        const interfaces = os.networkInterfaces();
+        for (const name of Object.keys(interfaces)) {
+            for (const iface of interfaces[name]) {
+                // Skip loopback and non-IPv4
+                if (iface.family === 'IPv4' && !iface.internal) {
+                    return iface.address;
+                }
+            }
+        }
+        return null;
+    }
+    /**
+     * Get all local IPv4 addresses
+     * @private
+     * @returns {string[]} Array of local IPv4 addresses
+     */
+    _getLocalIpAddresses() {
+        const interfaces = os.networkInterfaces();
+        const addresses = [];
+        for (const name of Object.keys(interfaces)) {
+            for (const iface of interfaces[name]) {
+                if (iface.family === 'IPv4' && !iface.internal) {
+                    addresses.push(iface.address);
+                }
+            }
+        }
+        return addresses;
+    }
+    /**
+     * Check if an IP address is a loopback address
+     * @private
+     * @param {string} ip - IP address to check
+     * @returns {boolean} True if loopback
+     */
+    _isLoopback(ip) {
+        if (!ip) return false;
+        return ip === '127.0.0.1' || ip === 'localhost' || ip.startsWith('127.');
+    }
+    /**
      * Start the OSC Query service
      */
     async start() {
@@ -438,14 +496,21 @@ class OSCQueryService extends EventEmitter {
             // OSC data will be received through the main OSC Query port instead
             console.log('[OSCQuery] VRChat port 9001 listener disabled - using OSC Query port for all communication');
             // Initialize Bonjour for mDNS
-            this.bonjour = new Bonjour();
+            const bonjourOpts = {};
+            if (this.bindAddress && this.bindAddress !== '0.0.0.0') {
+                // Bind mDNS to specific interface when user specified one
+                bonjourOpts.interface = this.bindAddress;
+                console.log(`[OSCQuery] Binding mDNS to interface: ${this.bindAddress}`);
+            }
+            this.bonjour = new Bonjour(bonjourOpts);
             // Advertise service via mDNS with error handling for name conflicts
             try {
                 this.bonjourService = this.bonjour.publish({
                     name: this.appName,
                     type: 'oscjson',
                     port: this.httpPort,
-                    protocol: 'tcp'
+                    protocol: 'tcp',
+                    host: this.oscAdvertisedIp  // Explicit IP for VLAN support
                 });
                 console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}'`);
             } catch (publishError) {
@@ -459,12 +524,17 @@ class OSCQueryService extends EventEmitter {
                         // Wait a moment for cleanup
                         await new Promise(resolve => setTimeout(resolve, 500));
                         // Reinitialize and retry
-                        this.bonjour = new Bonjour();
+                        const retryBonjourOpts = {};
+                        if (this.bindAddress && this.bindAddress !== '0.0.0.0') {
+                            retryBonjourOpts.interface = this.bindAddress;
+                        }
+                        this.bonjour = new Bonjour(retryBonjourOpts);
                         this.bonjourService = this.bonjour.publish({
                             name: this.appName,
                             type: 'oscjson',
                             port: this.httpPort,
-                            protocol: 'tcp'
+                            protocol: 'tcp',
+                            host: this.oscAdvertisedIp  // Explicit IP
                         });
                         console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}' (after retry)`);
                     } catch (retryError) {
@@ -570,22 +640,34 @@ class OSCQueryService extends EventEmitter {
         if (!service.name || !service.name.startsWith('VRChat-Client-')) {
             return;
         }
-        // Get service details
-        // IMPORTANT: Force 127.0.0.1 for VRChat - it always runs locally
-        // mDNS may report incorrect IPs on complex networks (WSL2, VPNs, virtual adapters)
-        const reportedHost = service.referer?.address || '127.0.0.1';
-        const host = '127.0.0.1'; // Always use localhost for VRChat
+        // Get service details from mDNS
         const port = service.port;
         const serviceName = service.name;
         if (!port) {
             return;
         }
-        const oscQueryAddress = `${host}:${port}`;
-        if (reportedHost !== '127.0.0.1') {
-            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} at ${reportedHost}:${port} (forcing localhost: ${oscQueryAddress})`);
+        // Get the IP from mDNS and from the actual packet source
+        // VRChat always reports 127.0.0.1 in its A record, but we can use the packet source
+        const mdnsReportedHost = service.host || service.addresses?.[0] || '127.0.0.1';
+        const packetSourceIp = service.referer?.address;
+        let host;
+        // VRCFaceTracking's approach: if mDNS says loopback but packet came from different IP,
+        // use the packet source. This handles VLAN/cross-network scenarios correctly.
+        if (this._isLoopback(mdnsReportedHost) && packetSourceIp && !this._isLoopback(packetSourceIp)) {
+            // mDNS reported loopback but packet came from different IP - use actual source
+            // This is key for VLAN support where VRChat runs on a different network segment
+            host = packetSourceIp;
+            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} - mDNS reported ${mdnsReportedHost} but packet from ${packetSourceIp}, using actual source IP`);
+        } else if (this._isLoopback(mdnsReportedHost) || !mdnsReportedHost) {
+            // Both are loopback or mDNS didn't report - assume local connection
+            host = '127.0.0.1';
+            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} at ${host}:${port} (local)`);
         } else {
-            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} at ${oscQueryAddress}`);
+            // Use what mDNS reported (non-loopback address)
+            host = mdnsReportedHost;
+            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} at ${host}:${port} (mDNS reported)`);
         }
+        const oscQueryAddress = `${host}:${port}`;
         // Verify the service is alive with HTTP request
         const isAlive = await this._verifyVRChatService(host, port);
         if (isAlive) {
@@ -618,17 +700,27 @@ class OSCQueryService extends EventEmitter {
     }
     /**
      * Handle a removed OSCQuery service
+     * Uses same IP resolution logic as discovery for consistency
      * @private
      */
     _handleServiceRemoved(service) {
         if (!service.name || !service.name.startsWith('VRChat-Client-')) {
             return;
         }
-        // Force 127.0.0.1 to match how we store addresses
-        const host = '127.0.0.1';
+        // Use same logic as discovery to determine the host
+        const mdnsReportedHost = service.host || service.addresses?.[0] || '127.0.0.1';
+        const packetSourceIp = service.referer?.address;
+        let host;
+        if (this._isLoopback(mdnsReportedHost) && packetSourceIp && !this._isLoopback(packetSourceIp)) {
+            host = packetSourceIp;
+        } else if (this._isLoopback(mdnsReportedHost) || !mdnsReportedHost) {
+            host = '127.0.0.1';
+        } else {
+            host = mdnsReportedHost;
+        }
         const port = service.port;
         const oscQueryAddress = `${host}:${port}`;
-        console.log(`[OSCQuery] VRChat service removed: ${service.name}`);
+        console.log(`[OSCQuery] VRChat service removed: ${service.name} at ${oscQueryAddress}`);
         // Only clear if this was our current connection
         if (this._currentVRChatOscQueryAddress === oscQueryAddress) {
             this._updateVRChatAddresses(null, null);
