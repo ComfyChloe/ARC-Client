@@ -16,8 +16,6 @@ const HyperateAddon = require('./Containers/Hyperate');
 const OSCLeashAddon = require('./Containers/OSCLeash');
 const VRChatAPIContainer = require('./Containers/VRC-API');
 const OscGoesBrrrAddon = require('./Containers/OscGoesBrrr');
-// Logger will be loaded after app is ready
-let logger;
 const WebSocketManager = require('./utils/websocketManager');
 const configManager = require('./utils/configManager');
 let mainWindow;
@@ -204,8 +202,16 @@ function createWindow() {
     // Only force quit on actual crashes, not clean exits
     if (details.reason !== 'clean-exit') {
       cleanup('renderer-process-gone');
-      dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
-      process.exit(1);
+      const errorMessage = debug.formatCrashDialogMessage(
+        'Renderer Process Crashed',
+        `Reason: ${details.reason}\nExit Code: ${details.exitCode}`
+      );
+      const shouldRestart = showCrashDialog('Application Error', errorMessage);
+      if (shouldRestart) {
+        relaunchApp();
+      } else {
+        process.exit(1);
+      }
     }
   });
   mainWindow.on('unresponsive', () => {
@@ -220,8 +226,16 @@ function createWindow() {
     });
     debug.logCriticalShutdown('Renderer process unresponsive', 'window.unresponsive');
     cleanup('renderer-unresponsive');
-    dialog.showErrorBox('Application Unresponsive', 'The application is not responding and will now close.');
-    process.exit(1);
+    const errorMessage = debug.formatCrashDialogMessage(
+      'Application Unresponsive',
+      'The application stopped responding and could not recover.'
+    );
+    const shouldRestart = showCrashDialog('Application Unresponsive', errorMessage);
+    if (shouldRestart) {
+      relaunchApp();
+    } else {
+      process.exit(1);
+    }
   });
 }
 function initWebSocket() {
@@ -376,7 +390,7 @@ function initOscServer() {
     });
   });
   oscService.on('error', (err) => {
-    const status = logger ? logger.handleOscError(err) : { status: 'error', error: err.message };
+    const status = debug.handleOscError(err);
     sendToRenderer('osc-server-status', status);
   });
   // Initialize and start the service
@@ -1626,9 +1640,6 @@ app.whenReady().then(async () => {
   
   // Create splash window immediately after log cleanup
   createWindow();
-  // Load logger after app is ready
-  updateSplashProgress(10, 'Loading logger');
-  logger = require('./utils/logger');
   // Initialize addons
   updateSplashProgress(20, 'Initializing addons');
   hyperateAddon = new HyperateAddon();
@@ -1788,6 +1799,51 @@ function setupMemoryManagement() {
     }
   }, 20000); // 20 seconds
 }
+
+/**
+ * Shows a crash dialog with restart/close options
+ * Uses synchronous dialog to ensure user can interact before app exits
+ * @param {string} title - Dialog title
+ * @param {string} message - Formatted crash message
+ * @returns {boolean} True if user chose to restart
+ */
+function showCrashDialog(title, message) {
+  try {
+    const result = dialog.showMessageBoxSync({
+      type: 'error',
+      title: title,
+      message: title,
+      detail: message,
+      buttons: ['Restart Application', 'Close'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    });
+    return result === 0; // User clicked "Restart Application"
+  } catch (dialogError) {
+    // Fallback to showErrorBox if showMessageBoxSync fails
+    dialog.showErrorBox(title, message);
+    return true; // Default to restart
+  }
+}
+
+/**
+ * Attempts to relaunch the application after a crash
+ * Uses the original executable path to restart
+ */
+function relaunchApp() {
+  try {
+    debug.info('Attempting to relaunch application...');
+    // Use app.relaunch() which works for both packaged and dev modes
+    app.relaunch();
+    app.exit(0);
+  } catch (relaunchError) {
+    debug.error(`Failed to relaunch application: ${relaunchError.message}`);
+    // If relaunch fails, just exit
+    process.exit(1);
+  }
+}
+
 function cleanup(source = 'unknown') {
   if (isShuttingDown) {
     return;
@@ -1925,8 +1981,16 @@ process.on('uncaughtException', (error) => {
       console.error('Cleanup error:', cleanupError);
     }
   }
-  dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
-  process.exit(1);
+  const errorMessage = debug.formatCrashDialogMessage(
+    'Uncaught Exception',
+    error.message || String(error)
+  );
+  const shouldRestart = showCrashDialog('Critical Error', errorMessage);
+  if (shouldRestart) {
+    relaunchApp();
+  } else {
+    process.exit(1);
+  }
 });
 process.on('unhandledRejection', (reason, promise) => {
   if (hasShownCriticalError) {
@@ -1951,6 +2015,15 @@ process.on('unhandledRejection', (reason, promise) => {
       console.error('Cleanup error:', cleanupError);
     }
   }
-  dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
-  process.exit(1);
+  const reasonMessage = reason && reason.message ? reason.message : String(reason);
+  const errorMessage = debug.formatCrashDialogMessage(
+    'Unhandled Promise Rejection',
+    reasonMessage
+  );
+  const shouldRestart = showCrashDialog('Critical Error', errorMessage);
+  if (shouldRestart) {
+    relaunchApp();
+  } else {
+    process.exit(1);
+  }
 });

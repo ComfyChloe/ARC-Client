@@ -1,5 +1,21 @@
 const fs = require('fs');
 const path = require('path');
+
+// Crash submission notice - appended to all crash logs
+const CRASH_NOTICE = `
+================================================================================
+🚨 CRASH REPORT - PLEASE SUBMIT THIS LOG 🚨
+================================================================================
+If you encountered a crash, please help us fix it by submitting this log:
+
+1. Join the ARC Discord server and post this log in the #bug-reports channel
+2. If you have been in contact with ComfyChloe via Direct Messages regarding
+   this issue, please mention that in your report
+
+Your crash report helps improve ARC for everyone. Thank you!
+================================================================================
+`;
+
 class Debugger {
   constructor() {
     const unixTimestamp = Math.floor(Date.now() / 1000);
@@ -264,6 +280,75 @@ class Debugger {
       source,
       uptime: Math.round((Date.now() - this.startTime) / 1000) + 's'
     });
+    // Append crash notice to log file
+    this.appendCrashNotice();
+  }
+  
+  /**
+   * Appends the crash submission notice to the log file
+   */
+  appendCrashNotice() {
+    try {
+      fs.appendFileSync(this.logFile, CRASH_NOTICE + '\n');
+    } catch (err) {
+      console.error('Failed to append crash notice:', err);
+    }
+  }
+  
+  /**
+   * Formats a crash message with full context for error dialogs
+   * @param {string} errorType - Type of error (e.g., 'Uncaught Exception', 'Renderer Crash')
+   * @param {string} errorMessage - Brief error message
+   * @returns {string} Formatted message for display
+   */
+  formatCrashDialogMessage(errorType, errorMessage) {
+    return `${errorType}
+
+${errorMessage}
+
+A crash log has been saved. Please submit this log to help us fix the issue:
+• Join the ARC Discord and post in #bug-reports
+• If you've contacted ComfyChloe via DMs about this, please mention that
+
+Log location:
+${this.logFile}`;
+  }
+  
+  /**
+   * Gets the current log file path for error dialogs
+   * @returns {string} Path to the current log file
+   */
+  getLogFilePath() {
+    return this.logFile;
+  }
+  
+  /**
+   * Consolidated error logging from legacy logger.js
+   * Creates a standalone error file (for backwards compatibility)
+   * @param {Error|string} error - The error to log
+   * @returns {object} Error details object
+   */
+  logErrorToFile(error) {
+    const errorMessage = error && error.message ? error.message : String(error);
+    const errorStack = error && error.stack ? error.stack : 'No stack trace available';
+    const errorDetails = {
+      timestamp: new Date().toISOString(),
+      message: errorMessage,
+      stack: errorStack
+    };
+    // Log to main debug log
+    this.error(`Error logged: ${errorMessage}`, errorDetails);
+    return errorDetails;
+  }
+  
+  /**
+   * Handles OSC errors with proper logging (from legacy logger.js)
+   * @param {Error} err - The OSC error
+   * @returns {object} Status object with error details
+   */
+  handleOscError(err) {
+    const errorDetails = this.logErrorToFile(err);
+    return { status: 'error', error: errorDetails.message };
   }
 }
 module.exports = new Debugger();

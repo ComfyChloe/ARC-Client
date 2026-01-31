@@ -2,6 +2,7 @@
  * Calendar Container
  * Service for viewing VRChat events and schedules
  */
+const debug = require('../utils/debugger');
 
 class Calendar {
     constructor() {
@@ -15,17 +16,31 @@ class Calendar {
      * Initialize the Calendar service
      */
     async init() {
-        // Placeholder for future implementation
-        console.log('[Calendar] Service initialized (placeholder)');
+        try {
+            // Placeholder for future implementation
+            debug.info('[Calendar] Service initialized (placeholder)');
+        } catch (error) {
+            debug.error(`[Calendar] Failed to initialize: ${error.message}`, {
+                stack: error.stack
+            });
+            throw error;
+        }
     }
 
     /**
      * Fetch calendar events from VRChat API
      */
     async fetchEvents() {
-        // Placeholder for future implementation
-        console.log('[Calendar] Events fetched (placeholder)');
-        return { success: false, error: 'Feature not yet implemented', events: [] };
+        try {
+            // Placeholder for future implementation
+            debug.info('[Calendar] Events fetched (placeholder)');
+            return { success: false, error: 'Feature not yet implemented', events: [] };
+        } catch (error) {
+            debug.error(`[Calendar] Failed to fetch events: ${error.message}`, {
+                stack: error.stack
+            });
+            return { success: false, error: error.message, events: [] };
+        }
     }
 
     /**
@@ -43,7 +58,11 @@ class Calendar {
      * Clean up resources
      */
     async close() {
-        console.log('[Calendar] Service closed');
+        try {
+            debug.info('[Calendar] Service closed');
+        } catch (error) {
+            debug.error(`[Calendar] Error during close: ${error.message}`);
+        }
     }
 }
 

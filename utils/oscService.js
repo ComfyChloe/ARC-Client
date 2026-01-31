@@ -1,5 +1,6 @@
 const osc = require('osc');
 const EventEmitter = require('events');
+const debug = require('./debugger');
 
 class OscService extends EventEmitter {
   constructor() {
@@ -32,6 +33,12 @@ class OscService extends EventEmitter {
       this.setupEventHandlers();
       return true;
     } catch (error) {
+      debug.error(`Failed to initialize OSC service: ${error.message}`, {
+        localPort: this.localPort,
+        targetPort,
+        targetAddress,
+        stack: error.stack
+      });
       this.emit('error', error);
       return false;
     }
@@ -55,12 +62,20 @@ class OscService extends EventEmitter {
             const value = oscMessage.args && oscMessage.args.length > 0 ? oscMessage.args[0].value : 0;
             callback(value);
           } catch (error) {
-            console.error(`Error in OSCLeash listener for ${address}:`, error);
+            debug.error(`Error in OSCLeash listener for ${address}: ${error.message}`, {
+              address,
+              stack: error.stack
+            });
           }
         }
       }
     });
     this.primaryUdpPort.on("error", (error) => {
+      debug.error(`OSC UDP port error: ${error.message}`, {
+        code: error.code,
+        port: this.localPort,
+        stack: error.stack
+      });
       this.emit('error', error);
     });
   }
@@ -150,7 +165,9 @@ class OscService extends EventEmitter {
   
   start() {
     if (!this.primaryUdpPort) {
-      this.emit('error', new Error('OSC service not initialized'));
+      const error = new Error('OSC service not initialized');
+      debug.error('Attempted to start OSC service without initialization');
+      this.emit('error', error);
       return false;
     }
     try {
@@ -164,13 +181,17 @@ class OscService extends EventEmitter {
             portData.client.open();
             console.log(`Opened additional outgoing port for ${connection?.name || connectionId}`);
           } catch (err) {
-            console.warn(`Error opening additional outgoing port for ${connection?.name || connectionId}:`, err);
+            debug.warn(`Error opening additional outgoing port for ${connection?.name || connectionId}: ${err.message}`);
           }
         }
       });
       
       return true;
     } catch (error) {
+      debug.error(`Failed to start OSC service: ${error.message}`, {
+        localPort: this.localPort,
+        stack: error.stack
+      });
       this.emit('error', error);
       return false;
     }
@@ -187,7 +208,10 @@ class OscService extends EventEmitter {
         this.primaryUdpPort.close();
       } catch (error) {
         if (error.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
-          console.error('Error stopping primary UDP port:', error);
+          debug.error(`Error stopping primary UDP port: ${error.message}`, {
+            code: error.code,
+            stack: error.stack
+          });
         }
       }
     }
@@ -203,7 +227,7 @@ class OscService extends EventEmitter {
           }
         } catch (err) {
           if (err.code !== 'ERR_SOCKET_DGRAM_NOT_RUNNING') {
-            console.error('Error closing additional client:', err);
+            debug.error(`Error closing additional client ${connectionId}: ${err.message}`);
           }
         }
       }
@@ -315,7 +339,12 @@ class OscService extends EventEmitter {
       this.emit('messageSent', { address, value, type });
       return true;
     } catch (error) {
-      console.error('Error sending primary OSC message:', error);
+      debug.error(`Error sending primary OSC message: ${error.message}`, {
+        address,
+        value,
+        type,
+        stack: error.stack
+      });
       this.emit('error', error);
       return false;
     }

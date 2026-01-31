@@ -186,8 +186,16 @@ class OSCPackageController {
     if (this.oscQuery) {
       // Create a wrapper callback that filters OSC-Query messages by address
       const wrappedCallback = (oscData) => {
-        if (oscData.address === address) {
-          callback(oscData.value);
+        try {
+          if (oscData.address === address) {
+            callback(oscData.value);
+          }
+        } catch (error) {
+          debug.error(`Error in OSCLeash listener for ${address}: ${error.message}`, {
+            address,
+            value: oscData?.value,
+            stack: error.stack
+          });
         }
       };
       this.oscQuery.on('osc-message', wrappedCallback);
@@ -278,7 +286,17 @@ class OSCLeashProgram {
     }
     // debug.info(`Starting active monitoring thread for ${leash.Name} (Grabbed: ${leash.Grabbed})`);
     const intervalId = setInterval(() => {
-      this.processLeashMovement(leash);
+      try {
+        this.processLeashMovement(leash);
+      } catch (error) {
+        debug.error(`Error in leash monitoring loop for ${leash.Name}: ${error.message}`, {
+          leashName: leash.Name,
+          grabbed: leash.Grabbed,
+          active: leash.Active,
+          stack: error.stack
+        });
+        // Don't stop monitoring on error - try to recover on next tick
+      }
     }, leash.settings.ActiveDelay);
     this.activeIntervals.set(leash.Name, intervalId);
   }
@@ -362,21 +380,28 @@ class OSCLeashProgram {
   notifyMovementUpdate(leash, vertical, horizontal, run) {
     // Send movement data via callback for real-time display
     if (typeof this.addonInstance?.onMovementUpdate === 'function') {
-      this.addonInstance.onMovementUpdate({
-        vertical: vertical,
-        horizontal: horizontal,
-        run: run,
-        physboneData: {
-          stretch: leash.Stretch,
-          grabbed: leash.Grabbed,
-          zPos: leash.Z_Positive,
-          zNeg: leash.Z_Negative,
-          xPos: leash.X_Positive,
-          xNeg: leash.X_Negative,
-          yPos: leash.Y_Positive,
-          yNeg: leash.Y_Negative
-        }
-      });
+      try {
+        this.addonInstance.onMovementUpdate({
+          vertical: vertical,
+          horizontal: horizontal,
+          run: run,
+          physboneData: {
+            stretch: leash.Stretch,
+            grabbed: leash.Grabbed,
+            zPos: leash.Z_Positive,
+            zNeg: leash.Z_Negative,
+            xPos: leash.X_Positive,
+            xNeg: leash.X_Negative,
+            yPos: leash.Y_Positive,
+            yNeg: leash.Y_Negative
+          }
+        });
+      } catch (error) {
+        debug.error(`Error in movement update callback: ${error.message}`, {
+          leashName: leash.Name,
+          stack: error.stack
+        });
+      }
     }
   }
   // Legacy method for compatibility - now just starts monitoring
@@ -392,10 +417,19 @@ class OSCLeashProgram {
     if (!this.isOscAvailable()) {
       return;
     }
-    // Send OSC messages to VRChat
-    this.oscService.sendMessage('/input/Vertical', vert, 'f');
-    this.oscService.sendMessage('/input/Horizontal', hori, 'f');
-    this.oscService.sendMessage('/input/Run', runType, 'i');
+    try {
+      // Send OSC messages to VRChat
+      this.oscService.sendMessage('/input/Vertical', vert, 'f');
+      this.oscService.sendMessage('/input/Horizontal', hori, 'f');
+      this.oscService.sendMessage('/input/Run', runType, 'i');
+    } catch (error) {
+      debug.error(`Error sending leash output OSC messages: ${error.message}`, {
+        vertical: vert,
+        horizontal: hori,
+        runType,
+        stack: error.stack
+      });
+    }
   }
   clamp(n) {
     return Math.max(-1.0, Math.min(n, 1.0));
