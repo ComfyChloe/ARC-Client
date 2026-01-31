@@ -306,8 +306,7 @@ class OscService extends EventEmitter {
   }
   sendMessage(address, value, type = 'f') {
     if (!this.primaryUdpPort || !this.isListening) {
-      console.warn('OSC service not running - cannot send message');
-      this.emit('error', new Error('OSC service not running'));
+      // Dont emit error for expected "not running"
       return false;
     }
     try {

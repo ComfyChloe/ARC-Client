@@ -247,6 +247,13 @@ class OSCLeashProgram {
     this.running = false;
     this.activeIntervals = new Map(); // Track active polling intervals
   }
+  /**
+   * Check if OSC service is available and ready to send messages
+   * @returns {boolean} True if OSC service is available and listening
+   */
+  isOscAvailable() {
+    return this.oscService && this.oscService.isListening === true;
+  }
   resetProgram() {
     this.running = false;
     // Clear all active intervals
@@ -283,12 +290,8 @@ class OSCLeashProgram {
       this.activeIntervals.delete(leash.Name);
       // debug.info(`Stopped monitoring thread for ${leash.Name}`);
       // Send stop signals (only if OSC is available)
-      try {
-        if (this.oscService && this.oscService.isListening) {
-          this.leashOutput(0.0, 0.0, 0, leash.settings);
-        }
-      } catch (error) {
-        debug.warn(`OSCLeash: Could not send stop signals: ${error.message}`);
+      if (this.isOscAvailable()) {
+        this.leashOutput(0.0, 0.0, 0, leash.settings);
       }
       // Reset leash state
       leash.Active = false;
@@ -303,9 +306,8 @@ class OSCLeashProgram {
       return;
     }
     // Check if OSC service is still available and listening
-    if (!this.oscService || !this.oscService.isListening) {
-      debug.info(`Stopping movement processing - OSC service not available`);
-      this.stopLeashMonitoring(leash);
+    // If OSC is not available, skip this cycle but don't stop monitoring (OSC might come back)
+    if (!this.isOscAvailable()) {
       return;
     }
     // Double-check that we should actually be processing
@@ -386,23 +388,14 @@ class OSCLeashProgram {
     this.startLeashMonitoring(leash);
   }
   leashOutput(vert, hori, runType, settings) {
-    if (!this.oscService) {
-      debug.warn('OSCLeash: OSC service not available');
-      return;
-    }
-    // Check if OSC service is actually running before sending
-    if (!this.oscService.isListening) {
-      debug.warn('OSCLeash: OSC service not listening - skipping output');
+    // Check if OSC service is available before attempting to send
+    if (!this.isOscAvailable()) {
       return;
     }
     // Send OSC messages to VRChat
-    try {
-      this.oscService.sendMessage('/input/Vertical', vert, 'f');
-      this.oscService.sendMessage('/input/Horizontal', hori, 'f');
-      this.oscService.sendMessage('/input/Run', runType, 'i');
-    } catch (error) {
-      debug.error(`OSCLeash: Error sending OSC messages: ${error.message}`);
-    }
+    this.oscService.sendMessage('/input/Vertical', vert, 'f');
+    this.oscService.sendMessage('/input/Horizontal', hori, 'f');
+    this.oscService.sendMessage('/input/Run', runType, 'i');
   }
   clamp(n) {
     return Math.max(-1.0, Math.min(n, 1.0));
