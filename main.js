@@ -561,7 +561,29 @@ function initOscClient() {
   console.log(`OSC Client targeting ${serverConfig.targetOscAddress}:${serverConfig.targetOscPort}`);
   debug.logOscClientInit(serverConfig.targetOscAddress, serverConfig.targetOscPort);
 }
-function sendToRenderer(channel, data) {
+// OSC IPC batching: accumulate high-frequency messages and flush at 10Hz
+const oscIpcBatch = {
+  received: new Map(),   // address -> latest {address, value, type, connectionId}
+  forwarded: new Map()   // address -> latest {address, value, type, connectionId}
+};
+function setupOscIpcBatching() {
+  if (global.oscIpcBatchInterval) {
+    clearInterval(global.oscIpcBatchInterval);
+  }
+  global.oscIpcBatchInterval = setInterval(() => {
+    if (oscIpcBatch.received.size > 0) {
+      const batch = Array.from(oscIpcBatch.received.values());
+      oscIpcBatch.received.clear();
+      sendToRendererDirect('osc-received-batch', batch);
+    }
+    if (oscIpcBatch.forwarded.size > 0) {
+      const batch = Array.from(oscIpcBatch.forwarded.values());
+      oscIpcBatch.forwarded.clear();
+      sendToRendererDirect('osc-forwarded-batch', batch);
+    }
+  }, 100); // 10Hz flush rate
+}
+function sendToRendererDirect(channel, data) {
   if (mainWindow && 
       !mainWindow.isDestroyed() && 
       mainWindow.webContents && 
@@ -569,12 +591,23 @@ function sendToRenderer(channel, data) {
     try {
       mainWindow.webContents.send(channel, data);
     } catch (error) {
-      // Silently fail if renderer is gone during shutdown
       if (!isShuttingDown) {
         debug.warn(`Failed to send ${channel} to renderer: ${error.message}`);
       }
     }
   }
+}
+function sendToRenderer(channel, data) {
+  // Batch high-frequency OSC channels to reduce IPC pressure on renderer
+  if (channel === 'osc-received') {
+    oscIpcBatch.received.set(data.address, data);
+    return;
+  }
+  if (channel === 'osc-forwarded') {
+    oscIpcBatch.forwarded.set(data.address, data);
+    return;
+  }
+  sendToRendererDirect(channel, data);
 }
 ipcMain.handle('get-config', () => {
   return configManager.getConfig();
@@ -1639,6 +1672,8 @@ app.whenReady().then(async () => {
   
   // Create splash window immediately after log cleanup
   createWindow();
+  // Start OSC IPC batching and memory management
+  setupOscIpcBatching();
   // Initialize addons
   updateSplashProgress(20, 'Initializing addons');
   hyperateAddon = new HyperateAddon();
@@ -1793,6 +1828,22 @@ function setupMemoryManagement() {
           }
         }
       }
+      // Monitor renderer process memory (the OOM crash happens here, not in main)
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        try {
+          const rendererMetrics = mainWindow.webContents.getProcessMemoryInfo();
+          rendererMetrics.then((info) => {
+            const rendererPrivateMB = Math.round(info.private / 1024); // KB to MB
+            if (rendererPrivateMB > 512) {
+              debug.warn(`Renderer memory high: ${rendererPrivateMB}MB - triggering proactive cleanup`);
+              // Tell the renderer to clean up its DOM and Maps
+              sendToRenderer('memory-pressure', { level: 'high', memoryMB: rendererPrivateMB });
+            }
+          }).catch(() => {}); // Silently ignore if renderer is gone
+        } catch (e) {
+          // Renderer may be unavailable during shutdown
+        }
+      }
     } catch (error) {
       debug.error(`Memory management error: ${error.message}`);
     }
@@ -1942,6 +1993,33 @@ function cleanup(source = 'unknown') {
     }
   } catch (error) {
     debug.error(`Error stopping VRChat API container: ${error.message}`);
+  }
+  try {
+    if (oscGoesBrrrAddon) {
+      debug.info('Stopping OscGoesBrrr addon during cleanup...');
+      oscGoesBrrrAddon.stop();
+      oscGoesBrrrAddon = null;
+      debug.info('OscGoesBrrr addon cleanup completed');
+    }
+  } catch (error) {
+    debug.error(`Error stopping OscGoesBrrr addon: ${error.message}`);
+    oscGoesBrrrAddon = null;
+  }
+  try {
+    if (oscLeashAddon) {
+      debug.info('Stopping OSCLeash addon during cleanup...');
+      oscLeashAddon.stop();
+      oscLeashAddon = null;
+      debug.info('OSCLeash addon cleanup completed');
+    }
+  } catch (error) {
+    debug.error(`Error stopping OSCLeash addon: ${error.message}`);
+    oscLeashAddon = null;
+  }
+  // Clear OSC IPC batch interval
+  if (global.oscIpcBatchInterval) {
+    clearInterval(global.oscIpcBatchInterval);
+    global.oscIpcBatchInterval = null;
   }
   // Force garbage collection before exit
   if (global.gc) {

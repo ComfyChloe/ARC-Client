@@ -273,33 +273,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             flushOscLogBuffer();
         }
     }, OSC_LOG_FLUSH_INTERVAL);
-    // Add periodic memory cleanup every 30 minutes
+    // Periodic memory cleanup (every 10 seconds)
     setInterval(() => {
         // Clear float rate limiting data periodically
         clearFloatRateLimitingData();
+        // Enforce Map size limits
+        enforceMapSizeLimits();
         // If OSC received logs are getting too large, rotate them
         const receivedContainer = document.getElementById('osc-received-log-container');
         if (receivedContainer && receivedContainer.children.length > MAX_LOG_ENTRIES/2) {
             rotateLogContainers();
-        }
-        //debugLog('Performed periodic memory cleanup');
-    }, 10000); // Every 30 minutes
-    // Add UI responsiveness monitoring
-    let lastHeartbeatTime = Date.now();
-    function uiHeartbeat() {
-        lastHeartbeatTime = Date.now();
-    }
-    // Call this on common UI interactions
-    document.addEventListener('click', uiHeartbeat);
-    document.addEventListener('keydown', uiHeartbeat);
-    // Monitor UI responsiveness
-    setInterval(() => {
-        const now = Date.now();
-        if (now - lastHeartbeatTime > 10000) {  // 30 minutes without UI interaction
-            // Force cleanup
-            clearFloatRateLimitingData();
-            rotateLogContainers();
-            if (window.gc) window.gc();
         }
     }, 10000);
     // Initialize OscGoesBrrr view
@@ -340,6 +323,34 @@ function setupEventListeners() {
     window.electronAPI.onOscForwarded((data) => {
         oscForwardedLog(data.address, data.value, data.connectionId);
     });
+    // batched OSC messages
+    if (window.electronAPI.onOscReceivedBatch) {
+        window.electronAPI.onOscReceivedBatch((batch) => {
+            for (const data of batch) {
+                trackOscParameter(data.address);
+                oscReceivedLog(data.address, data.value, data.connectionId);
+            }
+        });
+    }
+    if (window.electronAPI.onOscForwardedBatch) {
+        window.electronAPI.onOscForwardedBatch((batch) => {
+            for (const data of batch) {
+                oscForwardedLog(data.address, data.value, data.connectionId);
+            }
+        });
+    }
+    // Handle memory pressure signals
+    if (window.electronAPI.onMemoryPressure) {
+        window.electronAPI.onMemoryPressure((data) => {
+            debugLog(`⚠️ Memory pressure: ${data.memoryMB}MB - performing emergency cleanup`, 'warn');
+            rotateLogContainers();
+            clearFloatRateLimitingData();
+            enforceMapSizeLimits();
+            oscParameterFrequency.clear();
+            oscParameterLastUpdate.clear();
+            if (window.gc) window.gc();
+        });
+    }
     window.electronAPI.onOscServerStatus((data) => {
         console.log('OSC Server status update:', data);
         if (data.status === 'connection-ready' || data.status === 'connection-error') {
@@ -1190,12 +1201,16 @@ function enforceMapSizeLimits() {
 }
 function rotateLogContainers() {
     document.getElementById('osc-received-log-container').innerHTML = 'Log rotation performed<br>';
+    const fwdContainer = document.getElementById('osc-forwarded-log-container');
+    if (fwdContainer) fwdContainer.innerHTML = 'Log rotation performed<br>';
+    const arcContainer = document.getElementById('osc-arc-received-log-container');
+    if (arcContainer) arcContainer.innerHTML = 'Log rotation performed<br>';
     clearFloatRateLimitingData();
     // Explicitly clear buffer to free memory immediately
-    oscLogBuffer = oscLogBuffer.filter(msg => msg.type !== 'received');
+    oscLogBuffer = [];
     // Force garbage collection if available
     if (window.gc) window.gc();
-    //debugLog('OSC received log container rotated to prevent memory issues');
+    //debugLog('OSC log containers rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
     // Check if this is a float value and apply rate limiting
