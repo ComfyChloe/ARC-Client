@@ -19,6 +19,7 @@ class ConfigManager {
         hyperateAutostart: false,
         oscleashAutostart: false,
         ogbAutostart: false,
+        oscAutostart: false,
         theme: 'light',
         lastUsername: '',
         savedPassword: '',
@@ -145,6 +146,7 @@ class ConfigManager {
       hyperateAutostart: this.config.appSettings?.hyperateAutostart || false,
       oscleashAutostart: this.config.appSettings?.oscleashAutostart || false,
       ogbAutostart: this.config.appSettings?.ogbAutostart || false,
+      oscAutostart: this.config.appSettings?.oscAutostart || false,
       theme: this.config.appSettings?.theme || 'light',
       lastUsername: this.config.appSettings?.lastUsername || '',
       savedPassword: this.config.appSettings?.savedPassword || '',
@@ -172,6 +174,10 @@ class ConfigManager {
     // Update OscGoesBrrr autostart setting
     if (settings.ogbAutostart !== undefined) {
       this.config.appSettings.ogbAutostart = settings.ogbAutostart;
+    }
+    // Update OSC autostart setting
+    if (settings.oscAutostart !== undefined) {
+      this.config.appSettings.oscAutostart = settings.oscAutostart;
     }
     // Update theme setting
     if (settings.theme !== undefined) {

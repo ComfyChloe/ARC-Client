@@ -1045,6 +1045,7 @@ ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
   debug.info('OSC explicitly enabled by user');
+  configManager.updateAppSettings({ oscAutostart: true });
   // Ensure any existing service is properly cleaned up before creating new one
   if (oscService) {
     debug.info('Cleaning up existing OSC service before enabling...');
@@ -1064,6 +1065,7 @@ ipcMain.handle('enable-osc', () => {
 ipcMain.handle('disable-osc', async () => {
   oscEnabled = false;
   debug.logOscServerStateChange(false);
+  configManager.updateAppSettings({ oscAutostart: false });
   // Immediately notify UI that we're stopping
   sendToRenderer('osc-server-status', { 
     status: 'stopping', 
@@ -1731,6 +1733,11 @@ app.whenReady().then(async () => {
     serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
   
+  // Restore OSC enabled state from saved config
+  if (appSettings.oscAutostart) {
+    oscEnabled = true;
+    debug.info('OSC autostart enabled from saved config');
+  }
   // Check if OSC should be enabled for autostart features
   const needsOscForAutostart = appSettings.hyperateAutostart || appSettings.oscleashAutostart;
   // Wait for main window to finish loading
@@ -1745,10 +1752,14 @@ app.whenReady().then(async () => {
   // Send settings to renderer now that window is ready
   updateSplashProgress(50, 'Configuring settings');
   sendToRenderer('app-settings', appSettings);
-  sendToRenderer('osc-server-status', { 
-    status: 'disabled', 
-    port: serverConfig.legacyOscPort 
-  });
+  // Only send disabled status now if OSC won't be starting — if it will start,
+  // initOscServer()'s 'ready' event sends 'connected' which sets the correct state.
+  if (!oscEnabled) {
+    sendToRenderer('osc-server-status', { 
+      status: 'disabled', 
+      port: serverConfig.legacyOscPort 
+    });
+  }
   sendToRenderer('websocket-status', {
     status: 'disconnected'
   });
@@ -1761,18 +1772,27 @@ app.whenReady().then(async () => {
     debug.info('Starting OSC service...');
     initOscServer();
     initOscClient();
-    // Inform user if autostart features are enabled but OSC is disabled
+  } else {
+    // Warn if autostart addons need OSC but it's disabled
     if (needsOscForAutostart) {
       debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
     }
-  } else {
-    sendToRenderer('osc-server-status', { 
-      status: 'disabled', 
-      port: serverConfig.legacyOscPort 
-    });
   }
-  
   updateSplashProgress(90, 'Finishing up');
+  // Deferred status sync: the renderer's DOMContentLoaded is async (IPC awaits for
+  setTimeout(() => {
+    if (oscEnabled && oscService) {
+      sendToRenderer('osc-server-status', {
+        status: 'connected',
+        port: serverConfig.legacyOscPort
+      });
+    } else {
+      sendToRenderer('osc-server-status', {
+        status: 'disabled',
+        port: serverConfig.legacyOscPort
+      });
+    }
+  }, 1500);
   // Schedule mDNS discovery after UI is fully loaded
   setTimeout(() => {
     if (oscQueryService && oscQueryService.isRunning) {
