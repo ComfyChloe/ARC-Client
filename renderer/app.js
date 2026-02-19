@@ -279,11 +279,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         clearFloatRateLimitingData();
         // Enforce Map size limits
         enforceMapSizeLimits();
-        // If OSC received logs are getting too large, rotate them
-        const receivedContainer = document.getElementById('osc-received-log-container');
-        if (receivedContainer && receivedContainer.children.length > MAX_LOG_ENTRIES/2) {
-            rotateLogContainers();
-        }
     }, 10000);
     // Initialize OscGoesBrrr view
     if (typeof initOgbView === 'function') {
@@ -1200,17 +1195,11 @@ function enforceMapSizeLimits() {
     }
 }
 function rotateLogContainers() {
-    document.getElementById('osc-received-log-container').innerHTML = 'Log rotation performed<br>';
-    const fwdContainer = document.getElementById('osc-forwarded-log-container');
-    if (fwdContainer) fwdContainer.innerHTML = 'Log rotation performed<br>';
-    const arcContainer = document.getElementById('osc-arc-received-log-container');
-    if (arcContainer) arcContainer.innerHTML = 'Log rotation performed<br>';
     clearFloatRateLimitingData();
     // Explicitly clear buffer to free memory immediately
     oscLogBuffer = [];
     // Force garbage collection if available
     if (window.gc) window.gc();
-    //debugLog('OSC log containers rotated to prevent memory issues');
 }
 function oscReceivedLog(address, value, connectionId = null) {
     // Check if this is a float value and apply rate limiting
@@ -1263,8 +1252,6 @@ function flushOscLogBuffer() {
         oscLogBuffer = forwardedOnly;
         lastOscLogFlush = Date.now();
         if (window.gc) window.gc();
-        // Clear DOM elements as well for complete reset
-        document.getElementById('osc-received-log-container').innerHTML = 'Emergency buffer cleanup performed<br>';
         return;
     }
     const receivedContainer = document.getElementById('osc-received-log-container');
