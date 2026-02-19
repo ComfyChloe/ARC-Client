@@ -1375,11 +1375,12 @@ function showMainView() {
     const navHyperate = document.getElementById('nav-Hyperate');
     const arclinkView = document.getElementById('arclink-view');
     const openshockView = document.getElementById('openshock-view');
+    const lovenseView = document.getElementById('lovense-view');
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
     const vrcTimelineView = document.getElementById('vrc-timeline-view');
     const oscGoesBrrrView = document.getElementById('oscgoesbrrr-view');
-    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
+    [oscView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, lovenseView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1421,6 +1422,7 @@ function showOscView() {
     const autoInviterView = document.getElementById('auto-inviter-view');
     const arclinkView = document.getElementById('arclink-view');
     const openshockView = document.getElementById('openshock-view');
+    const lovenseView = document.getElementById('lovense-view');
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
     const vrcTimelineView = document.getElementById('vrc-timeline-view');
@@ -1431,7 +1433,7 @@ function showOscView() {
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
+    [mainView, logsView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, lovenseView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1479,13 +1481,14 @@ function showSettingsView() {
     const autoInviterView = document.getElementById('auto-inviter-view');
     const arclinkView = document.getElementById('arclink-view');
     const openshockView = document.getElementById('openshock-view');
+    const lovenseView = document.getElementById('lovense-view');
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
     const vrcTimelineView = document.getElementById('vrc-timeline-view');
     const oscGoesBrrrView = document.getElementById('oscgoesbrrr-view');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
+    [mainView, oscView, logsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, lovenseView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -1527,6 +1530,7 @@ function showLogsView() {
     const autoInviterView = document.getElementById('auto-inviter-view');
     const arclinkView = document.getElementById('arclink-view');
     const openshockView = document.getElementById('openshock-view');
+    const lovenseView = document.getElementById('lovense-view');
     const autoStatusView = document.getElementById('auto-status-view');
     const calendarView = document.getElementById('calendar-view');
     const vrcTimelineView = document.getElementById('vrc-timeline-view');
@@ -1537,7 +1541,7 @@ function showLogsView() {
     const navSettings = document.getElementById('nav-settings');
     const navVosk = document.getElementById('nav-vosk');
     const navHyperate = document.getElementById('nav-Hyperate');
-    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
+    [mainView, oscView, settingsView, voskView, hyperateView, arcfeedbackView, chatboxView, vrchatapiView, oscLeashView, oscGoesBrrrView, autoInviterView, arclinkView, openshockView, lovenseView, autoStatusView, calendarView, vrcTimelineView].forEach(view => {
         if (view) {
             view.style.opacity = '0';
             setTimeout(() => view.style.display = 'none', 300);
@@ -2449,6 +2453,16 @@ function showLovenseView() {
     if (navLovense) {
         navLovense.classList.add('active');
         navLovense.disabled = true;
+    }
+    const treeToggle = document.getElementById('nav-extras');
+    const treeContent = treeToggle?.nextElementSibling;
+    if (treeToggle && treeContent) {
+        treeContent.classList.add('expanded');
+        treeToggle.classList.add('expanded');
+        const arrow = treeToggle.querySelector('.arrow');
+        if (arrow) {
+            arrow.textContent = '▼';
+        }
     }
     debugLog('Switched to Lovense view');
 }
