@@ -97,6 +97,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOscForwarded: (callback) => {
     ipcRenderer.on('osc-forwarded', (event, data) => callback(data));
   },
+  onOscReceivedBatch: (callback) => {
+    ipcRenderer.on('osc-received-batch', (event, data) => callback(data));
+  },
+  onOscForwardedBatch: (callback) => {
+    ipcRenderer.on('osc-forwarded-batch', (event, data) => callback(data));
+  },
+  onMemoryPressure: (callback) => {
+    ipcRenderer.on('memory-pressure', (event, data) => callback(data));
+  },
   onOscServerStatus: (callback) => {
     ipcRenderer.on('osc-server-status', (event, data) => callback(data));
   },

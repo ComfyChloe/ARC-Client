@@ -1,6 +1,6 @@
 {
   "name": "arc-osc-client",
-  "version": "0.87.2",
+  "version": "0.89.5",
   "author": "ComfyChloe",
   "description": "Standalone OSC Client for ARC-OSC",
   "main": "main.js",
@@ -20,8 +20,8 @@
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "24.9.1"
+    "electron": "33.0.0",
+    "electron-builder": "25.1.0"
   },
   "build": {
     "appId": "com.arcrosc.oscclient",

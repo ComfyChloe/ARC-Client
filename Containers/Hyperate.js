@@ -395,21 +395,12 @@ class HyperateAddon {
     }
   }
   sendHeartRateToVRChat(heartRate) {
-    if (!this.oscService) {
-      // OSC service is optional - just log and continue
-      debug.info(`HypeRate: OSC service not available, heart rate: ${heartRate}`);
+    // Check if OSC service is available and listening before attempting to send
+    if (!this.oscService || !this.oscService.isListening) {
       return;
     }
-    try {
-      const address = '/avatar/parameters/ARCOSC/Heartrate/Value';
-      const success = this.oscService.sendMessage(address, heartRate, 'f');
-      if (success) {
-      } else {
-        debug.warn(`Failed to send heart rate to VRChat: ${heartRate}`);
-      }
-    } catch (error) {
-      debug.logError(`Error sending heart rate to VRChat: ${error.message}`);
-    }
+    const address = '/avatar/parameters/ARCOSC/Heartrate/Value';
+    this.oscService.sendMessage(address, heartRate, 'f');
   }
   addTracker(deviceId, deviceName = null) {
     if (!deviceId || typeof deviceId !== 'string') {

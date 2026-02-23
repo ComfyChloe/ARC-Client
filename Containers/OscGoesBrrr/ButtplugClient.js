@@ -35,14 +35,15 @@ class DeviceFeature {
   setLevel(level, duration = 0) {
     if (!this.parent.wsReady()) return;
 
+    let sendPromise;
     if (this.type === 'linear') {
-      this.parent.send({
+      sendPromise = this.parent.send({
         type: 'LinearCmd',
         DeviceIndex: this.bioDeviceIndex,
         Vectors: [{ Index: this.bioSubIndex, Duration: duration || 100, Position: level }]
       });
     } else if (this.type === 'rotate') {
-      this.parent.send({
+      sendPromise = this.parent.send({
         type: 'RotateCmd',
         DeviceIndex: this.bioDeviceIndex,
         Rotations: [{ Index: this.bioSubIndex, Speed: Math.abs(level), Clockwise: level >= 0 }]
@@ -55,8 +56,11 @@ class DeviceFeature {
           DeviceIndex: this.bioDeviceIndex,
           Scalars: [{ Index: this.bioSubIndex, Scalar: level, ActuatorType: this.actuatorType }]
         };
-        this.parent.send(cmd);
+        sendPromise = this.parent.send(cmd);
       }
+    }
+    if (sendPromise) {
+      sendPromise.catch(() => {});
     }
     this.lastLevel = level;
   }
@@ -288,12 +292,17 @@ class ButtplugClient extends EventEmitter {
       this.handleSensorReading(params);
     }
 
-    // Handle callbacks
+    // Handle callbacks (check for Id !== undefined/null, not just truthy,
+    // since Buttplug protocol uses Id=0)
     const id = params.Id;
-    if (id && this.activeCallbacks.has(id)) {
+    if (id != null && this.activeCallbacks.has(id)) {
       const cb = this.activeCallbacks.get(id);
       this.activeCallbacks.delete(id);
-      cb(params);
+      if (type === 'Error') {
+        cb(null, new Error(params.ErrorMessage || 'Unknown error'));
+      } else {
+        cb(params);
+      }
     }
   }
 
@@ -327,11 +336,14 @@ class ButtplugClient extends EventEmitter {
         reject(new Error('Timeout after 5000ms'));
       }, 5000);
 
-      this.activeCallbacks.set(id, (data, error) => {
+      const callback = (data, error) => {
         clearTimeout(timeout);
         if (error) reject(error);
         else resolve(data);
-      });
+      };
+      // Track device index so removeDevice() can reject pending callbacks
+      callback.deviceIndex = params.DeviceIndex;
+      this.activeCallbacks.set(id, callback);
     });
   }
 
@@ -487,6 +499,14 @@ class ButtplugClient extends EventEmitter {
    * Remove a device by index
    */
   removeDevice(bioDeviceIndex) {
+    // Reject any pending callbacks for this device to prevent timeout-based
+    // unhandled promise rejections (commands sent right before disconnect)
+    for (const [id, callback] of this.activeCallbacks.entries()) {
+      if (callback.deviceIndex === bioDeviceIndex) {
+        this.activeCallbacks.delete(id);
+        callback(null, new Error('Device removed'));
+      }
+    }
     const removing = [];
     for (const [id, feature] of this.features.entries()) {
       if (feature.bioDeviceIndex === bioDeviceIndex) {

@@ -16,8 +16,6 @@ const HyperateAddon = require('./Containers/Hyperate');
 const OSCLeashAddon = require('./Containers/OSCLeash');
 const VRChatAPIContainer = require('./Containers/VRC-API');
 const OscGoesBrrrAddon = require('./Containers/OscGoesBrrr');
-// Logger will be loaded after app is ready
-let logger;
 const WebSocketManager = require('./utils/websocketManager');
 const configManager = require('./utils/configManager');
 let mainWindow;
@@ -74,7 +72,6 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      enableRemoteModule: false,
       webviewTag: true,
       preload: path.join(__dirname, 'preload.js')
     },
@@ -204,8 +201,16 @@ function createWindow() {
     // Only force quit on actual crashes, not clean exits
     if (details.reason !== 'clean-exit') {
       cleanup('renderer-process-gone');
-      dialog.showErrorBox('Application Error', 'The application has encountered an error and will now close.');
-      process.exit(1);
+      const errorMessage = debug.formatCrashDialogMessage(
+        'Renderer Process Crashed',
+        `Reason: ${details.reason}\nExit Code: ${details.exitCode}`
+      );
+      const shouldRestart = showCrashDialog('Application Error', errorMessage);
+      if (shouldRestart) {
+        relaunchApp();
+      } else {
+        process.exit(1);
+      }
     }
   });
   mainWindow.on('unresponsive', () => {
@@ -220,8 +225,16 @@ function createWindow() {
     });
     debug.logCriticalShutdown('Renderer process unresponsive', 'window.unresponsive');
     cleanup('renderer-unresponsive');
-    dialog.showErrorBox('Application Unresponsive', 'The application is not responding and will now close.');
-    process.exit(1);
+    const errorMessage = debug.formatCrashDialogMessage(
+      'Application Unresponsive',
+      'The application stopped responding and could not recover.'
+    );
+    const shouldRestart = showCrashDialog('Application Unresponsive', errorMessage);
+    if (shouldRestart) {
+      relaunchApp();
+    } else {
+      process.exit(1);
+    }
   });
 }
 function initWebSocket() {
@@ -376,7 +389,7 @@ function initOscServer() {
     });
   });
   oscService.on('error', (err) => {
-    const status = logger ? logger.handleOscError(err) : { status: 'error', error: err.message };
+    const status = debug.handleOscError(err);
     sendToRenderer('osc-server-status', status);
   });
   // Initialize and start the service
@@ -548,7 +561,29 @@ function initOscClient() {
   console.log(`OSC Client targeting ${serverConfig.targetOscAddress}:${serverConfig.targetOscPort}`);
   debug.logOscClientInit(serverConfig.targetOscAddress, serverConfig.targetOscPort);
 }
-function sendToRenderer(channel, data) {
+// OSC IPC batching: accumulate high-frequency messages and flush at 10Hz
+const oscIpcBatch = {
+  received: new Map(),   // address -> latest {address, value, type, connectionId}
+  forwarded: new Map()   // address -> latest {address, value, type, connectionId}
+};
+function setupOscIpcBatching() {
+  if (global.oscIpcBatchInterval) {
+    clearInterval(global.oscIpcBatchInterval);
+  }
+  global.oscIpcBatchInterval = setInterval(() => {
+    if (oscIpcBatch.received.size > 0) {
+      const batch = Array.from(oscIpcBatch.received.values());
+      oscIpcBatch.received.clear();
+      sendToRendererDirect('osc-received-batch', batch);
+    }
+    if (oscIpcBatch.forwarded.size > 0) {
+      const batch = Array.from(oscIpcBatch.forwarded.values());
+      oscIpcBatch.forwarded.clear();
+      sendToRendererDirect('osc-forwarded-batch', batch);
+    }
+  }, 100); // 10Hz flush rate
+}
+function sendToRendererDirect(channel, data) {
   if (mainWindow && 
       !mainWindow.isDestroyed() && 
       mainWindow.webContents && 
@@ -556,12 +591,23 @@ function sendToRenderer(channel, data) {
     try {
       mainWindow.webContents.send(channel, data);
     } catch (error) {
-      // Silently fail if renderer is gone during shutdown
       if (!isShuttingDown) {
         debug.warn(`Failed to send ${channel} to renderer: ${error.message}`);
       }
     }
   }
+}
+function sendToRenderer(channel, data) {
+  // Batch high-frequency OSC channels to reduce IPC pressure on renderer
+  if (channel === 'osc-received') {
+    oscIpcBatch.received.set(data.address, data);
+    return;
+  }
+  if (channel === 'osc-forwarded') {
+    oscIpcBatch.forwarded.set(data.address, data);
+    return;
+  }
+  sendToRendererDirect(channel, data);
 }
 ipcMain.handle('get-config', () => {
   return configManager.getConfig();
@@ -999,6 +1045,7 @@ ipcMain.handle('enable-osc', () => {
   oscEnabled = true;
   debug.logOscServerStateChange(true);
   debug.info('OSC explicitly enabled by user');
+  configManager.updateAppSettings({ oscAutostart: true });
   // Ensure any existing service is properly cleaned up before creating new one
   if (oscService) {
     debug.info('Cleaning up existing OSC service before enabling...');
@@ -1018,6 +1065,7 @@ ipcMain.handle('enable-osc', () => {
 ipcMain.handle('disable-osc', async () => {
   oscEnabled = false;
   debug.logOscServerStateChange(false);
+  configManager.updateAppSettings({ oscAutostart: false });
   // Immediately notify UI that we're stopping
   sendToRenderer('osc-server-status', { 
     status: 'stopping', 
@@ -1626,9 +1674,8 @@ app.whenReady().then(async () => {
   
   // Create splash window immediately after log cleanup
   createWindow();
-  // Load logger after app is ready
-  updateSplashProgress(10, 'Loading logger');
-  logger = require('./utils/logger');
+  // Start OSC IPC batching and memory management
+  setupOscIpcBatching();
   // Initialize addons
   updateSplashProgress(20, 'Initializing addons');
   hyperateAddon = new HyperateAddon();
@@ -1686,6 +1733,11 @@ app.whenReady().then(async () => {
     serverConfig.appSettings = { ...appSettings, ...serverConfig.appSettings };
   }
   
+  // Restore OSC enabled state from saved config
+  if (appSettings.oscAutostart) {
+    oscEnabled = true;
+    debug.info('OSC autostart enabled from saved config');
+  }
   // Check if OSC should be enabled for autostart features
   const needsOscForAutostart = appSettings.hyperateAutostart || appSettings.oscleashAutostart;
   // Wait for main window to finish loading
@@ -1700,10 +1752,14 @@ app.whenReady().then(async () => {
   // Send settings to renderer now that window is ready
   updateSplashProgress(50, 'Configuring settings');
   sendToRenderer('app-settings', appSettings);
-  sendToRenderer('osc-server-status', { 
-    status: 'disabled', 
-    port: serverConfig.legacyOscPort 
-  });
+  // Only send disabled status now if OSC won't be starting — if it will start,
+  // initOscServer()'s 'ready' event sends 'connected' which sets the correct state.
+  if (!oscEnabled) {
+    sendToRenderer('osc-server-status', { 
+      status: 'disabled', 
+      port: serverConfig.legacyOscPort 
+    });
+  }
   sendToRenderer('websocket-status', {
     status: 'disconnected'
   });
@@ -1716,18 +1772,27 @@ app.whenReady().then(async () => {
     debug.info('Starting OSC service...');
     initOscServer();
     initOscClient();
-    // Inform user if autostart features are enabled but OSC is disabled
+  } else {
+    // Warn if autostart addons need OSC but it's disabled
     if (needsOscForAutostart) {
       debug.info('Autostart features are enabled but OSC is disabled. Please enable OSC to use autostart functionality.');
     }
-  } else {
-    sendToRenderer('osc-server-status', { 
-      status: 'disabled', 
-      port: serverConfig.legacyOscPort 
-    });
   }
-  
   updateSplashProgress(90, 'Finishing up');
+  // Deferred status sync: the renderer's DOMContentLoaded is async (IPC awaits for
+  setTimeout(() => {
+    if (oscEnabled && oscService) {
+      sendToRenderer('osc-server-status', {
+        status: 'connected',
+        port: serverConfig.legacyOscPort
+      });
+    } else {
+      sendToRenderer('osc-server-status', {
+        status: 'disabled',
+        port: serverConfig.legacyOscPort
+      });
+    }
+  }, 1500);
   // Schedule mDNS discovery after UI is fully loaded
   setTimeout(() => {
     if (oscQueryService && oscQueryService.isRunning) {
@@ -1783,11 +1848,72 @@ function setupMemoryManagement() {
           }
         }
       }
+      // Monitor renderer process memory (the OOM crash happens here, not in main)
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        try {
+          const rendererMetrics = mainWindow.webContents.getProcessMemoryInfo();
+          rendererMetrics.then((info) => {
+            const rendererPrivateMB = Math.round(info.private / 1024); // KB to MB
+            if (rendererPrivateMB > 512) {
+              debug.warn(`Renderer memory high: ${rendererPrivateMB}MB - triggering proactive cleanup`);
+              // Tell the renderer to clean up its DOM and Maps
+              sendToRenderer('memory-pressure', { level: 'high', memoryMB: rendererPrivateMB });
+            }
+          }).catch(() => {}); // Silently ignore if renderer is gone
+        } catch (e) {
+          // Renderer may be unavailable during shutdown
+        }
+      }
     } catch (error) {
       debug.error(`Memory management error: ${error.message}`);
     }
   }, 20000); // 20 seconds
 }
+
+/**
+ * Shows a crash dialog with restart/close options
+ * Uses synchronous dialog to ensure user can interact before app exits
+ * @param {string} title - Dialog title
+ * @param {string} message - Formatted crash message
+ * @returns {boolean} True if user chose to restart
+ */
+function showCrashDialog(title, message) {
+  try {
+    const result = dialog.showMessageBoxSync({
+      type: 'error',
+      title: title,
+      message: title,
+      detail: message,
+      buttons: ['Restart Application', 'Close'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true
+    });
+    return result === 0; // User clicked "Restart Application"
+  } catch (dialogError) {
+    // Fallback to showErrorBox if showMessageBoxSync fails
+    dialog.showErrorBox(title, message);
+    return true; // Default to restart
+  }
+}
+
+/**
+ * Attempts to relaunch the application after a crash
+ * Uses the original executable path to restart
+ */
+function relaunchApp() {
+  try {
+    debug.info('Attempting to relaunch application...');
+    // Use app.relaunch() which works for both packaged and dev modes
+    app.relaunch();
+    app.exit(0);
+  } catch (relaunchError) {
+    debug.error(`Failed to relaunch application: ${relaunchError.message}`);
+    // If relaunch fails, just exit
+    process.exit(1);
+  }
+}
+
 function cleanup(source = 'unknown') {
   if (isShuttingDown) {
     return;
@@ -1888,6 +2014,33 @@ function cleanup(source = 'unknown') {
   } catch (error) {
     debug.error(`Error stopping VRChat API container: ${error.message}`);
   }
+  try {
+    if (oscGoesBrrrAddon) {
+      debug.info('Stopping OscGoesBrrr addon during cleanup...');
+      oscGoesBrrrAddon.stop();
+      oscGoesBrrrAddon = null;
+      debug.info('OscGoesBrrr addon cleanup completed');
+    }
+  } catch (error) {
+    debug.error(`Error stopping OscGoesBrrr addon: ${error.message}`);
+    oscGoesBrrrAddon = null;
+  }
+  try {
+    if (oscLeashAddon) {
+      debug.info('Stopping OSCLeash addon during cleanup...');
+      oscLeashAddon.stop();
+      oscLeashAddon = null;
+      debug.info('OSCLeash addon cleanup completed');
+    }
+  } catch (error) {
+    debug.error(`Error stopping OSCLeash addon: ${error.message}`);
+    oscLeashAddon = null;
+  }
+  // Clear OSC IPC batch interval
+  if (global.oscIpcBatchInterval) {
+    clearInterval(global.oscIpcBatchInterval);
+    global.oscIpcBatchInterval = null;
+  }
   // Force garbage collection before exit
   if (global.gc) {
     global.gc();
@@ -1925,8 +2078,16 @@ process.on('uncaughtException', (error) => {
       console.error('Cleanup error:', cleanupError);
     }
   }
-  dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
-  process.exit(1);
+  const errorMessage = debug.formatCrashDialogMessage(
+    'Uncaught Exception',
+    error.message || String(error)
+  );
+  const shouldRestart = showCrashDialog('Critical Error', errorMessage);
+  if (shouldRestart) {
+    relaunchApp();
+  } else {
+    process.exit(1);
+  }
 });
 process.on('unhandledRejection', (reason, promise) => {
   if (hasShownCriticalError) {
@@ -1951,6 +2112,15 @@ process.on('unhandledRejection', (reason, promise) => {
       console.error('Cleanup error:', cleanupError);
     }
   }
-  dialog.showErrorBox('Critical Error', 'An unexpected error occurred. The application will now close.');
-  process.exit(1);
+  const reasonMessage = reason && reason.message ? reason.message : String(reason);
+  const errorMessage = debug.formatCrashDialogMessage(
+    'Unhandled Promise Rejection',
+    reasonMessage
+  );
+  const shouldRestart = showCrashDialog('Critical Error', errorMessage);
+  if (shouldRestart) {
+    relaunchApp();
+  } else {
+    process.exit(1);
+  }
 });
