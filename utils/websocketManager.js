@@ -38,7 +38,7 @@ class WebSocketManager {
             const clientVersion = app.getVersion();
             const socketUrl = this.connectionConfig.serverUrl;
             // In dev mode (non-official servers), ignore SSL certificate validation
-            const isDevMode = !socketUrl.includes('arcosc.app') && !socketUrl.includes('beta.avatar.comfychloe.uk');
+            const isDevMode = !socketUrl.includes('arcosc.app') && !socketUrl.includes('beta.arcosc.app');
             this.socket = io(socketUrl, {
                 query: { username, password, clientVersion },
                 transports: ['websocket'],
