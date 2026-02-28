@@ -313,6 +313,39 @@ function initWebSocket() {
       sendToRenderer('feedback-update', data);
       debug.info(`Feedback update received: ${data.action} for feedback ${data.feedbackId || 'unknown'}`);
     });
+    // Handle server-managed parameter blocklist
+    wsManager.on('parameter-blocklist', (data) => {
+      if (oscQueryService && data && Array.isArray(data.patterns)) {
+        oscQueryService.setServerBlocklist(data.patterns);
+        debug.info(`Server blocklist received: ${data.patterns.length} pattern(s)`);
+        sendToRenderer('parameter-blocklist-updated', {
+          patterns: data.patterns,
+          source: 'server'
+        });
+      }
+    });
+    // Handle server-managed parameter suppressions (rate monitoring)
+    wsManager.on('suppress-parameters', (data) => {
+      if (oscQueryService && data && Array.isArray(data.addresses)) {
+        oscQueryService.addServerSuppressions(data.addresses);
+        debug.info(`Server suppressed ${data.addresses.length} parameter(s): ${data.addresses.join(', ')}`);
+        sendToRenderer('parameters-suppressed', {
+          addresses: data.addresses,
+          source: 'server'
+        });
+      }
+    });
+    // Handle server-managed parameter unsuppressions (staff action)
+    wsManager.on('unsuppress-parameters', (data) => {
+      if (oscQueryService && data && Array.isArray(data.addresses)) {
+        oscQueryService.removeServerSuppressions(data.addresses);
+        debug.info(`Server unsuppressed ${data.addresses.length} parameter(s): ${data.addresses.join(', ')}`);
+        sendToRenderer('parameters-unsuppressed', {
+          addresses: data.addresses,
+          source: 'server'
+        });
+      }
+    });
   }
 }
 
@@ -1221,6 +1254,19 @@ ipcMain.handle('remove-oscquery-unsubscription', (event, path) => {
     debug.error(`Failed to remove OSC Query unsubscription: ${error.message}`);
     return { success: false, error: error.message };
   }
+});
+// Server-managed blocklist/suppression query handlers
+ipcMain.handle('get-server-blocklist', () => {
+  if (!oscQueryService) return { patterns: [] };
+  return { patterns: oscQueryService.getServerBlocklist() };
+});
+ipcMain.handle('get-server-suppressions', () => {
+  if (!oscQueryService) return { addresses: [] };
+  return { addresses: oscQueryService.getServerSuppressions() };
+});
+ipcMain.handle('get-hardcoded-unsubscriptions', () => {
+  if (!oscQueryService) return { patterns: [] };
+  return { patterns: oscQueryService.getHardcodedUnsubscriptions() };
 });
 ipcMain.handle('get-saved-password', () => {
   const savedPassword = configManager.getSavedPassword();

@@ -202,6 +202,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Load OSC Query unsubscriptions on app start (visible whether OSC is enabled or not)
     await loadOscQueryUnsubscriptions();
+    // Load blocked parameters display
+    await loadBlockedParameters();
     
     const navMain = document.getElementById('nav-main');
     const navOsc = document.getElementById('nav-osc');
@@ -374,6 +376,16 @@ function setupEventListeners() {
                 stopSuggestionUpdater();
             }
         });
+    }
+    // Handle server blocklist/suppression live updates
+    if (window.electronAPI.onParameterBlocklistUpdated) {
+        window.electronAPI.onParameterBlocklistUpdated(() => loadBlockedParameters());
+    }
+    if (window.electronAPI.onParametersSuppressed) {
+        window.electronAPI.onParametersSuppressed(() => loadBlockedParameters());
+    }
+    if (window.electronAPI.onParametersUnsuppressed) {
+        window.electronAPI.onParametersUnsuppressed(() => loadBlockedParameters());
     }
     // Handle app settings event from main process
     window.electronAPI.onAppSettings((settings) => {
@@ -599,7 +611,7 @@ async function updateConfigFromSettings() {
         const serverUrl = document.getElementById('server-url-settings').value;
         
         // Block official server URLs - use the Quick Server Selection buttons for those
-        if (serverUrl.includes('arcosc.app') || serverUrl.includes('beta.avatar.comfychloe.uk')) {
+        if (serverUrl.includes('arcosc.app') || serverUrl.includes('beta.arcosc.app')) {
             debugLog('Use Quick Server Selection buttons for Live/Beta servers', 'warning');
             return;
         }
@@ -648,7 +660,7 @@ async function switchToServer(serverType) {
                 serverName = 'ARC-Live';
                 break;
             case 'beta':
-                serverUrl = 'wss://beta.avatar.comfychloe.uk:48255';
+                serverUrl = 'wss://beta.arcosc.app:48255';
                 serverName = 'ARC-Beta';
                 break;
             case 'custom':
@@ -767,7 +779,7 @@ function updateServerButtonStates(activeServerType) {
 function detectCurrentServer() {
     const serverUrl = document.getElementById('server-url-settings').value;
     
-    if (serverUrl.includes('beta.avatar.comfychloe.uk')) {
+    if (serverUrl.includes('beta.arcosc.app')) {
         updateCurrentServerStatus('ARC-Beta', 'beta');
     } else if (serverUrl.includes('arcosc.app')) {
         updateCurrentServerStatus('ARC-Live', 'live');
@@ -3017,6 +3029,96 @@ async function removeOscQueryUnsubscription(path) {
         }
     } catch (error) {
         debugLog(`Error removing unsubscription: ${error.message}`, 'error');
+    }
+}
+
+// Server-Managed Blocked Parameters Display
+// Shows hardcoded blocks, server blocklist, and server suppressions with simple indicators
+
+async function loadBlockedParameters() {
+    try {
+        const [blocklistResult, suppressionsResult, hardcodedResult] = await Promise.all([
+            window.electronAPI.getServerBlocklist(),
+            window.electronAPI.getServerSuppressions(),
+            window.electronAPI.getHardcodedUnsubscriptions()
+        ]);
+        renderBlockedParameters(
+            hardcodedResult?.patterns || [],
+            blocklistResult?.patterns || [],
+            suppressionsResult?.addresses || []
+        );
+    } catch (error) {
+        debugLog(`Error loading blocked parameters: ${error.message}`, 'error');
+    }
+}
+
+function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions) {
+    const container = document.getElementById('blocked-parameters-list');
+    if (!container) return;
+    const isDarkTheme = document.body.classList.contains('dark-theme');
+    const itemBg = isDarkTheme ? '#3a2020' : '#fff';
+    const textColor = isDarkTheme ? '#e0b0b0' : '#721c24';
+    const emptyColor = isDarkTheme ? '#a0a0a0' : '#666';
+    const badgeServerBg = isDarkTheme ? '#5a3030' : '#ffc107';
+    const badgeServerColor = isDarkTheme ? '#ffd700' : '#856404';
+    const badgeUserBg = isDarkTheme ? '#2a3a5a' : '#cce5ff';
+    const badgeUserColor = isDarkTheme ? '#6cacff' : '#004085';
+    const totalCount = hardcoded.length + serverBlocklist.length + serverSuppressions.length;
+    if (totalCount === 0) {
+        container.innerHTML = `<p style="color: ${emptyColor}; font-size: 0.9em; font-style: italic; text-align: center; padding: 10px;">
+            No blocked parameters. All data is being forwarded normally.
+        </p>`;
+        return;
+    }
+    const renderItem = (path, source) => {
+        const isServer = source === 'Server';
+        const bg = isServer ? badgeServerBg : badgeUserBg;
+        const color = isServer ? badgeServerColor : badgeUserColor;
+        return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px;
+                    background-color: ${itemBg}; border-radius: 4px; margin-bottom: 4px; border-left: 3px solid #dc3545;">
+            <span style="font-family: monospace; font-size: 0.85em; color: ${textColor};">${path}</span>
+            <span style="font-size: 11px; padding: 2px 8px; border-radius: 3px; background: ${bg}; color: ${color}; font-weight: 600;">${source}</span>
+        </div>`;
+    };
+    let html = '';
+    if (hardcoded.length > 0) {
+        html += hardcoded.map(p => renderItem(p, 'User')).join('');
+    }
+    if (serverBlocklist.length > 0) {
+        html += serverBlocklist.map(p => renderItem(p, 'Server')).join('');
+    }
+    if (serverSuppressions.length > 0) {
+        html += serverSuppressions.map(p => renderItem(p, 'Server')).join('');
+    }
+    container.innerHTML = `
+        <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: ${isDarkTheme ? '#b0b0b0' : '#666'}; font-size: 0.85em;">
+                <strong>${totalCount} blocked path(s)</strong>
+            </span>
+            <button class="btn btn-secondary" onclick="toggleBlockedParametersList()"
+                    style="padding: 2px 8px; font-size: 11px;" id="toggle-blocked-list-btn">
+                <span id="toggle-blocked-arrow">▶</span> Expand
+            </button>
+        </div>
+        <div id="blocked-parameters-items" style="display: none;">
+            ${html}
+        </div>
+    `;
+}
+
+function toggleBlockedParametersList() {
+    const items = document.getElementById('blocked-parameters-items');
+    const btn = document.getElementById('toggle-blocked-list-btn');
+    const arrow = document.getElementById('toggle-blocked-arrow');
+    if (!items || !btn || !arrow) return;
+    if (items.style.display === 'none') {
+        items.style.display = 'block';
+        arrow.textContent = '▼';
+        btn.innerHTML = '<span id="toggle-blocked-arrow">▼</span> Collapse';
+    } else {
+        items.style.display = 'none';
+        arrow.textContent = '▶';
+        btn.innerHTML = '<span id="toggle-blocked-arrow">▶</span> Expand';
     }
 }
 

@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setOscQueryUnsubscriptions: (unsubscriptions) => ipcRenderer.invoke('set-oscquery-unsubscriptions', unsubscriptions),
   addOscQueryUnsubscription: (path) => ipcRenderer.invoke('add-oscquery-unsubscription', path),
   removeOscQueryUnsubscription: (path) => ipcRenderer.invoke('remove-oscquery-unsubscription', path),
+  // Server-managed blocklist/suppression query API
+  getServerBlocklist: () => ipcRenderer.invoke('get-server-blocklist'),
+  getServerSuppressions: () => ipcRenderer.invoke('get-server-suppressions'),
+  getHardcodedUnsubscriptions: () => ipcRenderer.invoke('get-hardcoded-unsubscriptions'),
   // OSC Query status and control
   getOscQueryStatus: () => ipcRenderer.invoke('get-oscquery-status'),
   oscQueryForceReconnect: () => ipcRenderer.invoke('oscquery-force-reconnect'),
@@ -111,6 +115,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onOscQueryStatus: (callback) => {
     ipcRenderer.on('oscquery-status', (event, data) => callback(data));
+  },
+  onParameterBlocklistUpdated: (callback) => {
+    ipcRenderer.on('parameter-blocklist-updated', (event, data) => callback(data));
+  },
+  onParametersSuppressed: (callback) => {
+    ipcRenderer.on('parameters-suppressed', (event, data) => callback(data));
+  },
+  onParametersUnsuppressed: (callback) => {
+    ipcRenderer.on('parameters-unsuppressed', (event, data) => callback(data));
   },
   onVRChatConnectionStatus: (callback) => {
     ipcRenderer.on('vrchat-connection-status', (event, data) => callback(data));
