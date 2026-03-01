@@ -3056,13 +3056,13 @@ function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions)
     const container = document.getElementById('blocked-parameters-list');
     if (!container) return;
     const isDarkTheme = document.body.classList.contains('dark-theme');
-    const itemBg = isDarkTheme ? '#3a2020' : '#fff';
-    const textColor = isDarkTheme ? '#e0b0b0' : '#721c24';
+    const itemBg = isDarkTheme ? '#3a3520' : '#fff8e1';
+    const textColor = isDarkTheme ? '#e0d8a0' : '#856404';
     const emptyColor = isDarkTheme ? '#a0a0a0' : '#666';
-    const badgeServerBg = isDarkTheme ? '#5a3030' : '#ffc107';
+    const badgeServerBg = isDarkTheme ? '#4a4020' : '#ffc107';
     const badgeServerColor = isDarkTheme ? '#ffd700' : '#856404';
-    const badgeUserBg = isDarkTheme ? '#2a3a5a' : '#cce5ff';
-    const badgeUserColor = isDarkTheme ? '#6cacff' : '#004085';
+    const badgeUserBg = isDarkTheme ? '#2a3a4a' : '#d1ecf1';
+    const badgeUserColor = isDarkTheme ? '#8cc8e0' : '#0c5460';
     const totalCount = hardcoded.length + serverBlocklist.length + serverSuppressions.length;
     if (totalCount === 0) {
         container.innerHTML = `<p style="color: ${emptyColor}; font-size: 0.9em; font-style: italic; text-align: center; padding: 10px;">
@@ -3075,7 +3075,7 @@ function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions)
         const bg = isServer ? badgeServerBg : badgeUserBg;
         const color = isServer ? badgeServerColor : badgeUserColor;
         return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px;
-                    background-color: ${itemBg}; border-radius: 4px; margin-bottom: 4px; border-left: 3px solid #dc3545;">
+                    background-color: ${itemBg}; border-radius: 4px; margin-bottom: 4px; border-left: 3px solid #ffc107;">
             <span style="font-family: monospace; font-size: 0.85em; color: ${textColor};">${path}</span>
             <span style="font-size: 11px; padding: 2px 8px; border-radius: 3px; background: ${bg}; color: ${color}; font-weight: 600;">${source}</span>
         </div>`;
