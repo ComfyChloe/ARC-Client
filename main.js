@@ -1185,33 +1185,6 @@ ipcMain.handle('get-oscquery-unsubscriptions', () => {
   }
 });
 
-ipcMain.handle('set-oscquery-unsubscriptions', (event, unsubscriptions) => {
-  try {
-    if (!Array.isArray(unsubscriptions)) {
-      throw new Error('Unsubscriptions must be an array');
-    }
-    
-    // Update config
-    serverConfig.oscQueryUnsubscriptions = unsubscriptions;
-    const result = configManager.updateConfig({ oscQueryUnsubscriptions: unsubscriptions });
-    
-    if (!result) {
-      throw new Error('Failed to save unsubscriptions to config');
-    }
-    
-    // Update active service if running
-    if (oscQueryService && oscQueryService.isRunning) {
-      oscQueryService.setUnsubscriptions(unsubscriptions);
-      debug.info(`OSC Query unsubscriptions updated: ${unsubscriptions.length === 0 ? 'None (listening to all)' : unsubscriptions.join(', ')}`);
-    }
-    
-    return { success: true, unsubscriptions };
-  } catch (error) {
-    debug.error(`Failed to set OSC Query unsubscriptions: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-});
-
 ipcMain.handle('add-oscquery-unsubscription', (event, path) => {
   try {
     const currentUnsubs = serverConfig.oscQueryUnsubscriptions || [];

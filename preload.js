@@ -30,7 +30,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setSavedPassword: (password) => ipcRenderer.invoke('set-saved-password', password),
   // OSC Query unsubscription API
   getOscQueryUnsubscriptions: () => ipcRenderer.invoke('get-oscquery-unsubscriptions'),
-  setOscQueryUnsubscriptions: (unsubscriptions) => ipcRenderer.invoke('set-oscquery-unsubscriptions', unsubscriptions),
   addOscQueryUnsubscription: (path) => ipcRenderer.invoke('add-oscquery-unsubscription', path),
   removeOscQueryUnsubscription: (path) => ipcRenderer.invoke('remove-oscquery-unsubscription', path),
   // Server-managed blocklist/suppression query API

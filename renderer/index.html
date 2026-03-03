@@ -130,10 +130,6 @@
                     <span class="status-indicator status-disconnected" id="ws-forwarding-status"></span>
                     <span id="ws-forwarding-status-text">ARC Server Transmit: Off</span>
                 </div>
-                <div class="connection-status">
-                    <span style="opacity: 0.8; font-size: 0.85em;">OSC Traffic:</span>
-                    <span id="osc-traffic-status" style="margin-left: 4px; font-weight: bold; color: #6c757d;">Unknown</span>
-                </div>
                 <button class="btn btn-primary" id="osc-toggle-btn" onclick="toggleOscServer()" style="width: 100%; margin-top: 10px;">Enable OSC</button>
                 <button class="btn btn-primary" id="ws-forwarding-toggle-btn" onclick="toggleWebSocketForwarding()" style="width: 100%; margin-top: 10px;">Enable ARC Server Transmit</button>
             </div>
@@ -1186,32 +1182,16 @@
                         <!-- Unsubscription list will be populated here -->
                     </div>
                 </div>
-                
-                <!-- Suggested Unsubscriptions based on frequent parameters -->
-                <div style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107;">
-                    <h4 style="margin-top: 0; color: #856404;">Suggested Unsubscriptions (High-Frequency Parameters)</h4>
-                    <p style="color: #856404; font-size: 0.85em; margin-bottom: 10px;">
-                        These parameters are being sent very frequently and may impact performance.
-                        Click "Ignore" to stop receiving them.
+            </div>
+            <div class="card">
+                <h3>Blocked Parameters</h3>
+                <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
+                    These paths are blocked and will not be forwarded to VRChat. Hardcoded blocks are always active. Server blocks are managed automatically.
+                </p>
+                <div id="blocked-parameters-list">
+                    <p style="color: #666; font-size: 0.9em; font-style: italic;">
+                        Loading blocked parameters...
                     </p>
-                    <div id="oscquery-suggestions" style="margin-top: 10px;">
-                        <p style="color: #666; font-size: 0.9em; font-style: italic;">
-                            No high-frequency parameters detected yet. Enable OSC and wait for data...
-                        </p>
-                    </div>
-                </div>
-
-                <!-- Server-Managed Blocked Parameters -->
-                <div style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107;">
-                    <h4 style="margin-top: 0; color: #856404;">Blocked Parameters</h4>
-                    <p style="color: #856404; font-size: 0.85em; margin-bottom: 10px;">
-                        These paths are blocked and will not be forwarded. Hardcoded blocks are always active. Server blocks are managed automatically.
-                    </p>
-                    <div id="blocked-parameters-list" style="margin-top: 10px;">
-                        <p style="color: #666; font-size: 0.9em; font-style: italic;">
-                            Loading blocked parameters...
-                        </p>
-                    </div>
                 </div>
             </div>
         </div>
