@@ -2874,10 +2874,6 @@ function renderOscQueryUnsubscriptions(unsubscriptions) {
     const itemBgColor = isDarkTheme ? '#2c2c2c' : '#fff';
     const pathColor = isDarkTheme ? '#e0e0e0' : '#495057';
     const emptyTextColor = isDarkTheme ? '#a0a0a0' : '#666';
-    const headerColor = isDarkTheme ? '#b0b0b0' : '#666';
-    // Check if list is currently expanded (not collapsed) before re-rendering
-    const itemsContainer = document.getElementById('unsubscription-items-container');
-    const wasExpanded = itemsContainer && itemsContainer.style.display !== 'none';
 
     if (unsubscriptions.length === 0) {
         container.innerHTML = `
@@ -2888,60 +2884,14 @@ function renderOscQueryUnsubscriptions(unsubscriptions) {
         return;
     }
 
-    const unsubsHtml = unsubscriptions.map(path => `
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; 
+    container.innerHTML = unsubscriptions.map(path => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px;
                     background-color: ${itemBgColor}; border-radius: 4px; margin-bottom: 5px; border-left: 3px solid #dc3545;">
             <span style="font-family: monospace; color: ${pathColor};">${path}</span>
-            <button class="btn btn-success" onclick="removeOscQueryUnsubscription('${path}')" 
+            <button class="btn btn-success" onclick="removeOscQueryUnsubscription('${path}')"
                     style="padding: 2px 8px; font-size: 12px;">Remove (Listen Again)</button>
         </div>
     `).join('');
-
-    container.innerHTML = `
-        <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-            <span style="color: ${headerColor}; font-size: 0.85em;">
-                <strong>Ignoring ${unsubscriptions.length} path(s):</strong>
-            </span>
-            <button class="btn btn-secondary" onclick="toggleUnsubscriptionList()" 
-                    style="padding: 2px 8px; font-size: 11px;" id="toggle-unsub-list-btn">
-                <span id="toggle-unsub-arrow">▶</span> Expand
-            </button>
-        </div>
-        <div id="unsubscription-items-container" style="display: none;">
-            ${unsubsHtml}
-        </div>
-    `;
-    
-    // Restore expanded state only if it was expanded before
-    if (wasExpanded) {
-        const newItemsContainer = document.getElementById('unsubscription-items-container');
-        const newToggleBtn = document.getElementById('toggle-unsub-list-btn');
-        const newArrow = document.getElementById('toggle-unsub-arrow');
-        
-        if (newItemsContainer && newToggleBtn && newArrow) {
-            newItemsContainer.style.display = 'block';
-            newArrow.textContent = '▼';
-            newToggleBtn.innerHTML = '<span id="toggle-unsub-arrow">▼</span> Collapse';
-        }
-    }
-}
-
-function toggleUnsubscriptionList() {
-    const itemsContainer = document.getElementById('unsubscription-items-container');
-    const toggleBtn = document.getElementById('toggle-unsub-list-btn');
-    const arrow = document.getElementById('toggle-unsub-arrow');
-    
-    if (!itemsContainer || !toggleBtn || !arrow) return;
-    
-    if (itemsContainer.style.display === 'none') {
-        itemsContainer.style.display = 'block';
-        arrow.textContent = '▼';
-        toggleBtn.innerHTML = '<span id="toggle-unsub-arrow">▼</span> Collapse';
-    } else {
-        itemsContainer.style.display = 'none';
-        arrow.textContent = '▶';
-        toggleBtn.innerHTML = '<span id="toggle-unsub-arrow">▶</span> Expand';
-    }
 }
 
 async function addOscQueryUnsubscription() {
