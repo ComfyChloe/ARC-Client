@@ -1171,7 +1171,7 @@ ipcMain.handle('get-oscquery-unsubscriptions', () => {
     if (oscQueryService) {
       return { 
         success: true, 
-        unsubscriptions: oscQueryService.getUnsubscriptions() 
+        unsubscriptions: oscQueryService.getUserUnsubscriptions() 
       };
     }
     // Return from config if service isn't running
