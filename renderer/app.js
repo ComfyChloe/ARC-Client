@@ -27,10 +27,20 @@ const FLOAT_THROTTLE_INTERVAL = 750; // ms
 let lastFloatLogTimes = new Map(); // Track last log time per address
 let pendingFloatTimeouts = new Map(); // Track pending timeouts for float logging
 let lastFloatValues = new Map(); // Store latest values for delayed logging
+// Interval handles (stored so they can be cleared on shutdown)
+let oscFlushInterval = null;
+let cleanupInterval = null;
+// Parameter list diffing - keep a map of existing DOM rows keyed by param name
+let parameterElements = new Map();
+let paramUpdateTimer = null;
+// OSC log container visibility tracking for scroll gating
+let logsViewVisible = false;
 // Websocket connection states end
 
 // Stop all view-specific intervals to prevent memory leaks
 function stopAllViewIntervals() {
+    // Mark logs view as hidden for scroll gating
+    logsViewVisible = false;
     // Stop Hyperate status updates
     if (typeof stopHyperateStatusUpdates === 'function') {
         stopHyperateStatusUpdates();
@@ -239,13 +249,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadSavedPasswordSetting();
     }, 100);
     // Set up periodic OSC log buffer flushing
-    setInterval(() => {
+    oscFlushInterval = setInterval(() => {
         if (oscLogBuffer.length > 0) {
             flushOscLogBuffer();
         }
     }, OSC_LOG_FLUSH_INTERVAL);
     // Periodic memory cleanup (every 10 seconds)
-    setInterval(() => {
+    cleanupInterval = setInterval(() => {
         // Clear float rate limiting data periodically
         clearFloatRateLimitingData();
         // Enforce Map size limits
@@ -372,6 +382,7 @@ function setupEventListeners() {
             currentUser = null;
             currentAvatar = null;
             parameters = {};
+            parameterElements.clear();
             // Clear float rate limiting data on WebSocket disconnect and perform log rotation
             clearFloatRateLimitingData();
             rotateLogContainers();
@@ -406,6 +417,7 @@ function setupEventListeners() {
         if (!data.id || data.id === null) {
             currentAvatar = null;
             parameters = {}; // Clear parameters when avatar is unloaded
+            parameterElements.clear();
             updateAvatarDisplay();
             updateParameterList();
             debugLog(`Avatar unloaded for user ${data.username}`);
@@ -425,8 +437,13 @@ function setupEventListeners() {
     });
     window.electronAPI.onWebSocketParameterUpdate((data) => {
         if (data.parameters) {
-            parameters = { ...parameters, ...data.parameters };
-            updateParameterList();
+            Object.assign(parameters, data.parameters);
+            // Debounce DOM update — batch rapid-fire parameter changes into one render pass
+            if (paramUpdateTimer) clearTimeout(paramUpdateTimer);
+            paramUpdateTimer = setTimeout(() => {
+                paramUpdateTimer = null;
+                updateParameterList();
+            }, 250);
         }
     });
     window.electronAPI.onWebSocketServerMessage((data) => {
@@ -894,6 +911,7 @@ async function disconnect() {
         currentUser = null;
         currentAvatar = null;
         parameters = {};
+        parameterElements.clear();
         // Clear float rate limiting data on disconnect
         clearFloatRateLimitingData();
         updateUI();
@@ -980,27 +998,49 @@ function updateParameterList() {
     const parameterList = document.getElementById('parameter-list');
     if (!isAuthenticated) {
         parameterList.innerHTML = '<p>Connect and authenticate to view parameters</p>';
+        parameterElements.clear();
         return;
     }
     if (Object.keys(parameters).length === 0) {
         parameterList.innerHTML = '<p>No parameters detected. Make sure VRChat is running and avatar has parameters.</p>';
+        parameterElements.clear();
         return;
     }
-    parameterList.innerHTML = '';
-    Object.entries(parameters).forEach(([name, value]) => {
-        const paramDiv = document.createElement('div');
-        paramDiv.className = 'parameter-item';
-        paramDiv.style.cssText = 'display: flex; justify-content: space-between; padding: 8px; border: 1px solid #ddd; margin-bottom: 5px; border-radius: 3px; background: #f9f9f9;';
-        const nameSpan = document.createElement('span');
-        nameSpan.style.fontWeight = 'bold';
-        nameSpan.textContent = name;
-        const valueSpan = document.createElement('span');
-        valueSpan.style.color = '#666';
-        valueSpan.textContent = typeof value === 'number' ? value.toFixed(3) : value.toString();
-        paramDiv.appendChild(nameSpan);
-        paramDiv.appendChild(valueSpan);
-        parameterList.appendChild(paramDiv);
-    });
+    const currentKeys = new Set(Object.keys(parameters));
+    // Remove rows for deleted parameters
+    for (const [name, el] of parameterElements) {
+        if (!currentKeys.has(name)) {
+            el.div.remove();
+            parameterElements.delete(name);
+        }
+    }
+    // Add or update rows
+    for (const [name, value] of Object.entries(parameters)) {
+        const displayValue = typeof value === 'number' ? value.toFixed(3) : value.toString();
+        const existing = parameterElements.get(name);
+        if (existing) {
+            // Only touch DOM if value actually changed
+            if (existing.lastValue !== displayValue) {
+                existing.valueSpan.textContent = displayValue;
+                existing.lastValue = displayValue;
+            }
+        } else {
+            // Create new row
+            const paramDiv = document.createElement('div');
+            paramDiv.className = 'parameter-item';
+            paramDiv.style.cssText = 'display: flex; justify-content: space-between; padding: 8px; border: 1px solid #ddd; margin-bottom: 5px; border-radius: 3px; background: #f9f9f9;';
+            const nameSpan = document.createElement('span');
+            nameSpan.style.fontWeight = 'bold';
+            nameSpan.textContent = name;
+            const valueSpan = document.createElement('span');
+            valueSpan.style.color = '#666';
+            valueSpan.textContent = displayValue;
+            paramDiv.appendChild(nameSpan);
+            paramDiv.appendChild(valueSpan);
+            parameterList.appendChild(paramDiv);
+            parameterElements.set(name, { div: paramDiv, valueSpan, lastValue: displayValue });
+        }
+    }
 }
 async function sendOscMessage() {
     const address = document.getElementById('osc-address').value;
@@ -1062,14 +1102,18 @@ function debugLog(message, type = 'info') {
     let color = '#00ff00'; // Default green
     if (type === 'error') color = '#ff0000';
     else if (type === 'warning') color = '#ffff00';
-    const logEntry = document.createElement('div');
+    let logEntry;
+    if (container.children.length >= 100) {
+        // Recycle the oldest node instead of create+destroy
+        logEntry = container.firstChild;
+        container.removeChild(logEntry);
+    } else {
+        logEntry = document.createElement('div');
+    }
     logEntry.style.color = color;
-    logEntry.innerHTML = `[${timestamp}] ${message}`;
+    logEntry.textContent = `[${timestamp}] ${message}`;
     container.appendChild(logEntry);
     container.scrollTop = container.scrollHeight;
-    while (container.children.length > 100) {
-        container.removeChild(container.firstChild);
-    }
 }
 // Helper function to determine if a value is a float
 function isFloatValue(value) {
@@ -1132,16 +1176,21 @@ function logFloatValueImmediate(type, address, value, connectionId) {
             return;
     }
     if (container) {
-        const logEntry = document.createElement('div');
-        logEntry.style.color = color;
-        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}`;
-        container.appendChild(logEntry);
-        // Auto-scroll to bottom
-        container.scrollTop = container.scrollHeight;
-        // Limit log entries to prevent memory issues
         const maxEntries = type === 'arc-received' ? 500 : MAX_LOG_ENTRIES;
-        while (container.children.length > maxEntries) {
-            container.removeChild(container.firstChild);
+        let logEntry;
+        if (container.children.length >= maxEntries) {
+            // Recycle the oldest node instead of create+destroy
+            logEntry = container.firstChild;
+            container.removeChild(logEntry);
+        } else {
+            logEntry = document.createElement('div');
+        }
+        logEntry.style.color = color;
+        logEntry.textContent = `[${timestamp}] ${address} = ${value}`;
+        container.appendChild(logEntry);
+        // Only force scroll if the logs view is currently visible
+        if (logsViewVisible) {
+            container.scrollTop = container.scrollHeight;
         }
     }
 }
@@ -1232,16 +1281,20 @@ function flushOscLogBuffer() {
         const fragment = document.createDocumentFragment();
         received.forEach(msg => {
             const timestamp = new Date(msg.timestamp).toLocaleTimeString();
-            const logEntry = document.createElement('div');
+            let logEntry;
+            if (receivedContainer.children.length >= MAX_LOG_ENTRIES) {
+                logEntry = receivedContainer.firstChild;
+                receivedContainer.removeChild(logEntry);
+            } else {
+                logEntry = document.createElement('div');
+            }
             logEntry.style.color = '#00ff00';
-            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}`;
+            logEntry.textContent = `[${timestamp}] ${msg.address} = ${msg.value}`;
             fragment.appendChild(logEntry);
         });
         receivedContainer.appendChild(fragment);
-        receivedContainer.scrollTop = receivedContainer.scrollHeight;
-        // Trim logs to prevent memory bloat - use MAX_LOG_ENTRIES
-        while (receivedContainer.children.length > MAX_LOG_ENTRIES) {
-            receivedContainer.removeChild(receivedContainer.firstChild);
+        if (logsViewVisible) {
+            receivedContainer.scrollTop = receivedContainer.scrollHeight;
         }
     }
     // Batch update forwarded logs
@@ -1249,16 +1302,20 @@ function flushOscLogBuffer() {
         const fragment = document.createDocumentFragment();
         forwarded.forEach(msg => {
             const timestamp = new Date(msg.timestamp).toLocaleTimeString();
-            const logEntry = document.createElement('div');
+            let logEntry;
+            if (forwardedContainer.children.length >= MAX_LOG_ENTRIES) {
+                logEntry = forwardedContainer.firstChild;
+                forwardedContainer.removeChild(logEntry);
+            } else {
+                logEntry = document.createElement('div');
+            }
             logEntry.style.color = '#00aaff';
-            logEntry.innerHTML = `[${timestamp}] ${msg.address} = ${msg.value}`;
+            logEntry.textContent = `[${timestamp}] ${msg.address} = ${msg.value}`;
             fragment.appendChild(logEntry);
         });
         forwardedContainer.appendChild(fragment);
-        forwardedContainer.scrollTop = forwardedContainer.scrollHeight;
-        // Trim logs to prevent memory bloat - use MAX_LOG_ENTRIES
-        while (forwardedContainer.children.length > MAX_LOG_ENTRIES) {
-            forwardedContainer.removeChild(forwardedContainer.firstChild);
+        if (logsViewVisible) {
+            forwardedContainer.scrollTop = forwardedContainer.scrollHeight;
         }
     }
     // Clear buffer and update flush time
@@ -1286,16 +1343,19 @@ function addToOscArcReceivedLog(address, value) {
     const container = document.getElementById('osc-arc-received-log-container');
     if (container) {
         const timestamp = new Date().toLocaleTimeString();
-        const logEntry = document.createElement('div');
+        let logEntry;
+        if (container.children.length >= 500) {
+            logEntry = container.firstChild;
+            container.removeChild(logEntry);
+        } else {
+            logEntry = document.createElement('div');
+        }
         logEntry.style.color = '#ff8c00'; // Orange color to distinguish from regular OSC
-        logEntry.innerHTML = `[${timestamp}] ${address} = ${value}`;
+        logEntry.textContent = `[${timestamp}] ${address} = ${value}`;
         container.appendChild(logEntry);
-        // Auto-scroll to bottom
-        container.scrollTop = container.scrollHeight;
-        // Limit log entries to prevent memory issues
-        const entries = container.children;
-        if (entries.length > 500) {
-            container.removeChild(entries[0]);
+        // Only force scroll if the logs view is currently visible
+        if (logsViewVisible) {
+            container.scrollTop = container.scrollHeight;
         }
     }
 }
@@ -1507,6 +1567,12 @@ function showLogsView() {
         logsView.style.opacity = '0';
         requestAnimationFrame(() => {
             logsView.style.opacity = '1';
+        });
+        // Mark logs view as visible and scroll all log containers to bottom
+        logsViewVisible = true;
+        ['osc-received-log-container', 'osc-forwarded-log-container', 'osc-arc-received-log-container', 'client-log-container'].forEach(id => {
+            const c = document.getElementById(id);
+            if (c) c.scrollTop = c.scrollHeight;
         });
     }, 300);
     // Reset all navigation buttons
@@ -1765,6 +1831,7 @@ function showVRCTimelineView() {
                     menu.style.cssText = 'position: fixed; background: #2c2c2c; border: 1px solid #444; border-radius: 4px; padding: 4px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 100000; min-width: 180px;';
                     currentContextMenu = menu;
                     
+                    let activeCloseOnEscape = null;
                     const closeContextMenu = () => {
                         if (currentContextMenu) {
                             currentContextMenu.remove();
@@ -1775,6 +1842,10 @@ function showVRCTimelineView() {
                             currentContextMenuOverlay = null;
                         }
                         contextMenuVisible = false;
+                        if (activeCloseOnEscape) {
+                            document.removeEventListener('keydown', activeCloseOnEscape);
+                            activeCloseOnEscape = null;
+                        }
                     };
                     
                     const addMenuItem = (label, onClick, enabled = true) => {
@@ -1864,13 +1935,12 @@ function showVRCTimelineView() {
                     };
                     
                     // Also close on Escape key
-                    const closeOnEscape = (event) => {
+                    activeCloseOnEscape = (event) => {
                         if (event.key === 'Escape') {
                             closeContextMenu();
-                            document.removeEventListener('keydown', closeOnEscape);
                         }
                     };
-                    document.addEventListener('keydown', closeOnEscape);
+                    document.addEventListener('keydown', activeCloseOnEscape);
                 });
             }
             
@@ -2563,6 +2633,22 @@ window.addEventListener('beforeunload', () => {
     if (runtimeInterval) {
         clearInterval(runtimeInterval);
     }
+    // Clear OSC log flush and cleanup intervals
+    if (oscFlushInterval) {
+        clearInterval(oscFlushInterval);
+        oscFlushInterval = null;
+    }
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+        cleanupInterval = null;
+    }
+    // Clear pending parameter update debounce
+    if (paramUpdateTimer) {
+        clearTimeout(paramUpdateTimer);
+        paramUpdateTimer = null;
+    }
+    // Clear float rate limiting data and pending timeouts
+    clearFloatRateLimitingData();
     window.electronAPI.removeAllListeners('osc-received');
     window.electronAPI.removeAllListeners('osc-server-status');
     window.electronAPI.removeAllListeners('websocket-status');
