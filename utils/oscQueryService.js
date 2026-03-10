@@ -88,6 +88,21 @@ class OSCQueryService extends EventEmitter {
         this.READVERTISE_INTERVAL = 30000; // Re-advertise every 30 seconds
         // Hardcode heartrate parameter to never be forwarded to ARC
         this.hardcodedUnsubscriptions.add('/avatar/parameters/ARCOSC/Heartrate/*');
+        // Hardcode face tracking parameters
+        this.hardcodedUnsubscriptions.add('/avatar/parameters/v2/*');
+        this.hardcodedUnsubscriptions.add('/avatar/parameters/FT/*');
+        this.hardcodedUnsubscriptions.add('/avatar/parameters/EyeTracking*');
+        this.hardcodedUnsubscriptions.add('/avatar/parameters/LipTracking*');
+        // SRanipal / Vive face tracking parameters
+        this.hardcodedUnsubscriptions.add('/avatar/parameters/Face/*');
+        this.hardcodedUnsubscriptions.add('/avatar/parameters/Eye/*');
+        this.hardcodedUnsubscriptions.add('/avatar/parameters/Lip/*');
+        // OSC Trackers / body tracking
+        this.hardcodedUnsubscriptions.add('/tracking/*');
+        // Server-managed blocklist (pushed from ARC-OSC server, cannot be removed by user)
+        this.serverBlocklist = new Set();
+        // Server-managed suppressions (dynamic, from rate monitoring)
+        this.serverSuppressions = new Set();
         // Root node for OSC parameter tree
         this.rootNode = {
             description: "ARC OSC Client - VRChat Integration",
@@ -319,6 +334,18 @@ class OSCQueryService extends EventEmitter {
         for (const pattern of this.hardcodedUnsubscriptions) {
             if (this._matchPattern(address, pattern)) {
                 return true; // Hardcoded match found, always ignore
+            }
+        }
+        // Check server-managed blocklist (pushed from ARC-OSC server)
+        for (const pattern of this.serverBlocklist) {
+            if (this._matchPattern(address, pattern)) {
+                return true; // Server blocklist match, always ignore
+            }
+        }
+        // Check server-managed suppressions (dynamic rate-based)
+        for (const pattern of this.serverSuppressions) {
+            if (this._matchPattern(address, pattern)) {
+                return true; // Server suppression match, ignore
             }
         }
         // Check user-defined unsubscriptions
@@ -1094,10 +1121,10 @@ class OSCQueryService extends EventEmitter {
         }
     }
     /**
-     * Get all current unsubscriptions (includes hardcoded and user-defined)
+     * Get all current unsubscriptions (includes hardcoded, server-managed, and user-defined)
      */
     getUnsubscriptions() {
-        const all = new Set([...this.hardcodedUnsubscriptions, ...this.unsubscriptions]);
+        const all = new Set([...this.hardcodedUnsubscriptions, ...this.serverBlocklist, ...this.serverSuppressions, ...this.unsubscriptions]);
         return Array.from(all);
     }
     /**
@@ -1193,6 +1220,64 @@ class OSCQueryService extends EventEmitter {
         this.assignedAppName = null;
         this.appName = null;
         return true;
+    }
+    /**
+     * Set server-managed blocklist patterns (pushed from ARC-OSC server)
+     * These cannot be removed by the user
+     */
+    setServerBlocklist(patterns) {
+        this.serverBlocklist.clear();
+        if (Array.isArray(patterns)) {
+            patterns.forEach(pattern => this.serverBlocklist.add(pattern));
+        }
+        console.log(`[OSCQuery] Server blocklist updated: ${this.serverBlocklist.size} pattern(s)`);
+        this.emit('server-blocklist-updated', Array.from(this.serverBlocklist));
+    }
+    /**
+     * Get server-managed blocklist patterns
+     */
+    getServerBlocklist() {
+        return Array.from(this.serverBlocklist);
+    }
+    /**
+     * Get hardcoded unsubscription patterns (cannot be removed)
+     */
+    getHardcodedUnsubscriptions() {
+        return Array.from(this.hardcodedUnsubscriptions);
+    }
+    /**
+     * Add server-managed suppression addresses (from rate monitoring)
+     */
+    addServerSuppressions(addresses) {
+        if (Array.isArray(addresses)) {
+            addresses.forEach(addr => this.serverSuppressions.add(addr));
+            console.log(`[OSCQuery] Server suppressions added: ${addresses.length} address(es), total: ${this.serverSuppressions.size}`);
+            this.emit('server-suppressions-updated', Array.from(this.serverSuppressions));
+        }
+    }
+    /**
+     * Remove server-managed suppression addresses (staff unsuppressed)
+     */
+    removeServerSuppressions(addresses) {
+        if (Array.isArray(addresses)) {
+            addresses.forEach(addr => this.serverSuppressions.delete(addr));
+            console.log(`[OSCQuery] Server suppressions removed: ${addresses.length} address(es), remaining: ${this.serverSuppressions.size}`);
+            this.emit('server-suppressions-updated', Array.from(this.serverSuppressions));
+        }
+    }
+    /**
+     * Clear all server suppressions (e.g., on avatar change)
+     */
+    clearServerSuppressions() {
+        this.serverSuppressions.clear();
+        console.log('[OSCQuery] Server suppressions cleared');
+        this.emit('server-suppressions-updated', []);
+    }
+    /**
+     * Get server-managed suppression addresses
+     */
+    getServerSuppressions() {
+        return Array.from(this.serverSuppressions);
     }
     /**
      * Reset everything (ports and service name)
