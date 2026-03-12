@@ -26,21 +26,21 @@ if (window.electronAPI && window.electronAPI.onVRChatPipelineEvent) {
  * Handle VRChat WebSocket pipeline events
  */
 function handleVRChatPipelineEvent(event, data) {
-    debugLog(`Pipeline event: ${event}`, 'info');
+    // debugLog(`Pipeline event: ${event}`, 'info');
     
     switch (event) {
-        case 'friend-online':
-            debugLog(`Friend Online: ${data.user?.displayName || data.userId}`, 'info');
-            break;
-        case 'friend-offline':
-            debugLog(`Friend Offline: ${data.user?.displayName || data.userId}`, 'info');
-            break;
-        case 'notification':
-            debugLog(`VRChat: ${data.message || data.type}`, 'info');
-            break;
-        case 'user-update':
-            debugLog(`User update: ${data.userId}`, 'info');
-            break;
+        // case 'friend-online':
+        //     debugLog(`Friend Online: ${data.user?.displayName || data.userId}`, 'info');
+        //     break;
+        // case 'friend-offline':
+        //     debugLog(`Friend Offline: ${data.user?.displayName || data.userId}`, 'info');
+        //     break;
+        // case 'notification':
+        //     debugLog(`VRChat: ${data.message || data.type}`, 'info');
+        //     break;
+        // case 'user-update':
+        //     debugLog(`User update: ${data.userId}`, 'info');
+        //     break;
     }
 }
 

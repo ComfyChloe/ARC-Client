@@ -148,6 +148,21 @@ class WebSocketManager {
         this.socket.on('feedback-update', (data) => {
             this.emit('feedback-update', data);
         });
+        // Server-managed parameter blocklist (pushed on connect and updates)
+        this.socket.on('parameter-blocklist', (data) => {
+            console.log('WebSocket received parameter-blocklist:', data?.patterns?.length || 0, 'patterns');
+            this.emit('parameter-blocklist', data);
+        });
+        // Server-managed parameter suppressions (from rate monitoring)
+        this.socket.on('suppress-parameters', (data) => {
+            console.log('WebSocket received suppress-parameters:', data?.addresses?.length || 0, 'addresses');
+            this.emit('suppress-parameters', data);
+        });
+        // Server-managed parameter unsuppressions (staff action)
+        this.socket.on('unsuppress-parameters', (data) => {
+            console.log('WebSocket received unsuppress-parameters:', data?.addresses?.length || 0, 'addresses');
+            this.emit('unsuppress-parameters', data);
+        });
     }
     disconnect() {
         if (this.socket) {
