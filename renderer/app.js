@@ -1096,6 +1096,9 @@ function showTab(tabName) {
     });
     event.target.classList.add('active');
 }
+function isScrolledNearBottom(container, threshold = 20) {
+    return container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+}
 function debugLog(message, type = 'info') {
     const container = document.getElementById('client-log-container');
     const timestamp = new Date().toLocaleTimeString();
@@ -1103,6 +1106,7 @@ function debugLog(message, type = 'info') {
     if (type === 'error') color = '#ff0000';
     else if (type === 'warning') color = '#ffff00';
     let logEntry;
+    const atBottom = isScrolledNearBottom(container);
     if (container.children.length >= 100) {
         // Recycle the oldest node instead of create+destroy
         logEntry = container.firstChild;
@@ -1113,7 +1117,7 @@ function debugLog(message, type = 'info') {
     logEntry.style.color = color;
     logEntry.textContent = `[${timestamp}] ${message}`;
     container.appendChild(logEntry);
-    container.scrollTop = container.scrollHeight;
+    if (atBottom) container.scrollTop = container.scrollHeight;
 }
 // Helper function to determine if a value is a float
 function isFloatValue(value) {
@@ -1188,8 +1192,8 @@ function logFloatValueImmediate(type, address, value, connectionId) {
         logEntry.style.color = color;
         logEntry.textContent = `[${timestamp}] ${address} = ${value}`;
         container.appendChild(logEntry);
-        // Only force scroll if the logs view is currently visible
-        if (logsViewVisible) {
+        // Only auto-scroll if the logs view is visible and the user is already at the bottom
+        if (logsViewVisible && isScrolledNearBottom(container)) {
             container.scrollTop = container.scrollHeight;
         }
     }
@@ -1293,7 +1297,7 @@ function flushOscLogBuffer() {
             fragment.appendChild(logEntry);
         });
         receivedContainer.appendChild(fragment);
-        if (logsViewVisible) {
+        if (logsViewVisible && isScrolledNearBottom(receivedContainer)) {
             receivedContainer.scrollTop = receivedContainer.scrollHeight;
         }
     }
@@ -1314,7 +1318,7 @@ function flushOscLogBuffer() {
             fragment.appendChild(logEntry);
         });
         forwardedContainer.appendChild(fragment);
-        if (logsViewVisible) {
+        if (logsViewVisible && isScrolledNearBottom(forwardedContainer)) {
             forwardedContainer.scrollTop = forwardedContainer.scrollHeight;
         }
     }
@@ -1353,8 +1357,8 @@ function addToOscArcReceivedLog(address, value) {
         logEntry.style.color = '#ff8c00'; // Orange color to distinguish from regular OSC
         logEntry.textContent = `[${timestamp}] ${address} = ${value}`;
         container.appendChild(logEntry);
-        // Only force scroll if the logs view is currently visible
-        if (logsViewVisible) {
+        // Only auto-scroll if the logs view is visible and the user is already at the bottom
+        if (logsViewVisible && isScrolledNearBottom(container)) {
             container.scrollTop = container.scrollHeight;
         }
     }
