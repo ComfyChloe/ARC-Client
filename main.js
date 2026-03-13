@@ -327,15 +327,16 @@ function initWebSocket() {
     // Handle server-managed parameter suppressions (rate monitoring)
     wsManager.on('suppress-parameters', (data) => {
       if (oscQueryService && data && Array.isArray(data.addresses)) {
-        oscQueryService.addServerSuppressions(data.addresses);
+        oscQueryService.addServerSuppressions(data.addresses, data.metadata);
         debug.info(`Server suppressed ${data.addresses.length} parameter(s): ${data.addresses.join(', ')}`);
         sendToRenderer('parameters-suppressed', {
           addresses: data.addresses,
+          metadata: data.metadata || {},
           source: 'server'
         });
       }
     });
-    // Handle server-managed parameter unsuppressions (staff action)
+    // Handle server-managed parameter unsuppressions (staff action or approved client request)
     wsManager.on('unsuppress-parameters', (data) => {
       if (oscQueryService && data && Array.isArray(data.addresses)) {
         oscQueryService.removeServerSuppressions(data.addresses);
@@ -345,6 +346,11 @@ function initWebSocket() {
           source: 'server'
         });
       }
+    });
+    // Handle server denying an unsuppress request
+    wsManager.on('unsuppress-denied', (data) => {
+      debug.info(`Unsuppress denied for ${data?.address}: ${data?.reason}`);
+      sendToRenderer('unsuppress-denied', data);
     });
   }
 }
@@ -1234,8 +1240,20 @@ ipcMain.handle('get-server-blocklist', () => {
   return { patterns: oscQueryService.getServerBlocklist() };
 });
 ipcMain.handle('get-server-suppressions', () => {
-  if (!oscQueryService) return { addresses: [] };
-  return { addresses: oscQueryService.getServerSuppressions() };
+  if (!oscQueryService) return { addresses: [], metadata: {} };
+  return {
+    addresses: oscQueryService.getServerSuppressions(),
+    metadata: oscQueryService.getServerSuppressionMetadata(),
+  };
+});
+ipcMain.handle('request-unsuppress', (event, address) => {
+  if (!wsManager) return { success: false, error: 'Not connected to server' };
+  try {
+    wsManager.requestUnsuppress(address);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 ipcMain.handle('get-hardcoded-unsubscriptions', () => {
   if (!oscQueryService) return { patterns: [] };

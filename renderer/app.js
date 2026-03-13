@@ -358,6 +358,11 @@ function setupEventListeners() {
     if (window.electronAPI.onParametersUnsuppressed) {
         window.electronAPI.onParametersUnsuppressed(() => loadBlockedParameters());
     }
+    if (window.electronAPI.onUnsuppressDenied) {
+        window.electronAPI.onUnsuppressDenied((data) => {
+            debugLog(`⚠️ Unsuppress denied for ${data?.address}: ${data?.reason}`, 'error');
+        });
+    }
     // Handle app settings event from main process
     window.electronAPI.onAppSettings((settings) => {
         console.log('Received app settings from main process:', settings);
@@ -3041,24 +3046,31 @@ async function loadBlockedParameters() {
         renderBlockedParameters(
             hardcodedResult?.patterns || [],
             blocklistResult?.patterns || [],
-            suppressionsResult?.addresses || []
+            suppressionsResult?.addresses || [],
+            suppressionsResult?.metadata || {}
         );
     } catch (error) {
         debugLog(`Error loading blocked parameters: ${error.message}`, 'error');
     }
 }
 
-function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions) {
+function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions, suppressionMetadata) {
     const container = document.getElementById('blocked-parameters-list');
     if (!container) return;
     const isDarkTheme = document.body.classList.contains('dark-theme');
     const itemBg = isDarkTheme ? '#3a3520' : '#fff8e1';
     const textColor = isDarkTheme ? '#e0d8a0' : '#856404';
     const emptyColor = isDarkTheme ? '#a0a0a0' : '#666';
-    const badgeServerBg = isDarkTheme ? '#4a4020' : '#ffc107';
-    const badgeServerColor = isDarkTheme ? '#ffd700' : '#856404';
+    const badgeBlockedBg = isDarkTheme ? '#4a4020' : '#ffc107';
+    const badgeBlockedColor = isDarkTheme ? '#ffd700' : '#856404';
     const badgeUserBg = isDarkTheme ? '#2a3a4a' : '#d1ecf1';
     const badgeUserColor = isDarkTheme ? '#8cc8e0' : '#0c5460';
+    const badgeSuppressedBg = isDarkTheme ? '#4a2020' : '#f8d7da';
+    const badgeSuppressedColor = isDarkTheme ? '#e08080' : '#721c24';
+    const badgePanelBg = isDarkTheme ? '#1a3a2a' : '#cce5ff';
+    const badgePanelColor = isDarkTheme ? '#70c0a0' : '#004085';
+    const badgeAvatarJsonBg = isDarkTheme ? '#1a3a1a' : '#d4edda';
+    const badgeAvatarJsonColor = isDarkTheme ? '#70c070' : '#155724';
     const totalCount = hardcoded.length + serverBlocklist.length + serverSuppressions.length;
     if (totalCount === 0) {
         container.innerHTML = `<p style="color: ${emptyColor}; font-size: 0.9em; font-style: italic; text-align: center; padding: 10px;">
@@ -3066,25 +3078,50 @@ function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions)
         </p>`;
         return;
     }
-    const renderItem = (path, source) => {
-        const isServer = source === 'Server';
-        const bg = isServer ? badgeServerBg : badgeUserBg;
-        const color = isServer ? badgeServerColor : badgeUserColor;
+    const renderStaticItem = (path, source) => {
+        const isServer = source === 'Blocked';
+        const bg = isServer ? badgeBlockedBg : badgeUserBg;
+        const color = isServer ? badgeBlockedColor : badgeUserColor;
         return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px;
                     background-color: ${itemBg}; border-radius: 4px; margin-bottom: 4px; border-left: 3px solid #ffc107;">
             <span style="font-family: monospace; font-size: 0.85em; color: ${textColor};">${path}</span>
             <span style="font-size: 11px; padding: 2px 8px; border-radius: 3px; background: ${bg}; color: ${color}; font-weight: 600;">${source}</span>
         </div>`;
     };
+    const renderSuppressedItem = (path, meta) => {
+        const isPanelParam = meta?.isPanelParam || false;
+        const isInAvatarJson = meta?.isInAvatarJson || false;
+        const canUnsuppress = isPanelParam || isInAvatarJson;
+        const hoverBg = isDarkTheme ? '#4a3a20' : '#fff0c0';
+        let badges = `<span style="font-size: 11px; padding: 2px 8px; border-radius: 3px; background: ${badgeSuppressedBg}; color: ${badgeSuppressedColor}; font-weight: 600;">Suppressed</span>`;
+        if (isPanelParam) {
+            badges += ` <span style="font-size: 10px; padding: 1px 6px; border-radius: 3px; background: ${badgePanelBg}; color: ${badgePanelColor}; font-weight: 600;">Panel</span>`;
+        }
+        if (isInAvatarJson) {
+            badges += ` <span style="font-size: 10px; padding: 1px 6px; border-radius: 3px; background: ${badgeAvatarJsonBg}; color: ${badgeAvatarJsonColor}; font-weight: 600;">Avatar JSON</span>`;
+        }
+        const cursorStyle = canUnsuppress ? 'cursor: pointer;' : '';
+        const hoverAttr = canUnsuppress ? `onmouseenter="this.style.backgroundColor='${hoverBg}'" onmouseleave="this.style.backgroundColor='${itemBg}'"` : '';
+        const clickAttr = canUnsuppress ? `onclick="handleUnsuppressClick('${path.replace(/'/g, "\\'")}')"` : '';
+        const unsuppressHint = canUnsuppress
+            ? `<span style="font-size: 10px; color: ${isDarkTheme ? '#a0a080' : '#888'}; margin-left: 8px;">Click to unsuppress</span>`
+            : '';
+        return `<div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px;
+                    background-color: ${itemBg}; border-radius: 4px; margin-bottom: 4px; border-left: 3px solid #dc3545; ${cursorStyle}"
+                    ${hoverAttr} ${clickAttr}>
+            <span style="font-family: monospace; font-size: 0.85em; color: ${textColor};">${path}${unsuppressHint}</span>
+            <span style="white-space: nowrap;">${badges}</span>
+        </div>`;
+    };
     let html = '';
     if (hardcoded.length > 0) {
-        html += hardcoded.map(p => renderItem(p, 'User')).join('');
+        html += hardcoded.map(p => renderStaticItem(p, 'User')).join('');
     }
     if (serverBlocklist.length > 0) {
-        html += serverBlocklist.map(p => renderItem(p, 'Server')).join('');
+        html += serverBlocklist.map(p => renderStaticItem(p, 'Blocked')).join('');
     }
     if (serverSuppressions.length > 0) {
-        html += serverSuppressions.map(p => renderItem(p, 'Server')).join('');
+        html += serverSuppressions.map(p => renderSuppressedItem(p, suppressionMetadata?.[p])).join('');
     }
     container.innerHTML = `
         <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -3100,6 +3137,17 @@ function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions)
             ${html}
         </div>
     `;
+}
+
+async function handleUnsuppressClick(address) {
+    try {
+        const result = await window.electronAPI.requestUnsuppress(address);
+        if (!result.success) {
+            debugLog(`Unsuppress request failed: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        debugLog(`Error requesting unsuppress: ${error.message}`, 'error');
+    }
 }
 
 function toggleBlockedParametersList() {

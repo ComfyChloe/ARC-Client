@@ -103,6 +103,8 @@ class OSCQueryService extends EventEmitter {
         this.serverBlocklist = new Set();
         // Server-managed suppressions (dynamic, from rate monitoring)
         this.serverSuppressions = new Set();
+        // Per-address metadata from server (isPanelParam, isInAvatarJson)
+        this.serverSuppressionMetadata = {};
         // Root node for OSC parameter tree
         this.rootNode = {
             description: "ARC OSC Client - VRChat Integration",
@@ -1248,9 +1250,13 @@ class OSCQueryService extends EventEmitter {
     /**
      * Add server-managed suppression addresses (from rate monitoring)
      */
-    addServerSuppressions(addresses) {
+    addServerSuppressions(addresses, metadata) {
         if (Array.isArray(addresses)) {
             addresses.forEach(addr => this.serverSuppressions.add(addr));
+            // Store per-address metadata if provided
+            if (metadata && typeof metadata === 'object') {
+                Object.assign(this.serverSuppressionMetadata, metadata);
+            }
             console.log(`[OSCQuery] Server suppressions added: ${addresses.length} address(es), total: ${this.serverSuppressions.size}`);
             this.emit('server-suppressions-updated', Array.from(this.serverSuppressions));
         }
@@ -1260,7 +1266,10 @@ class OSCQueryService extends EventEmitter {
      */
     removeServerSuppressions(addresses) {
         if (Array.isArray(addresses)) {
-            addresses.forEach(addr => this.serverSuppressions.delete(addr));
+            addresses.forEach(addr => {
+                this.serverSuppressions.delete(addr);
+                delete this.serverSuppressionMetadata[addr];
+            });
             console.log(`[OSCQuery] Server suppressions removed: ${addresses.length} address(es), remaining: ${this.serverSuppressions.size}`);
             this.emit('server-suppressions-updated', Array.from(this.serverSuppressions));
         }
@@ -1270,6 +1279,7 @@ class OSCQueryService extends EventEmitter {
      */
     clearServerSuppressions() {
         this.serverSuppressions.clear();
+        this.serverSuppressionMetadata = {};
         console.log('[OSCQuery] Server suppressions cleared');
         this.emit('server-suppressions-updated', []);
     }
@@ -1278,6 +1288,12 @@ class OSCQueryService extends EventEmitter {
      */
     getServerSuppressions() {
         return Array.from(this.serverSuppressions);
+    }
+    /**
+     * Get per-address metadata for server suppressions
+     */
+    getServerSuppressionMetadata() {
+        return { ...this.serverSuppressionMetadata };
     }
     /**
      * Reset everything (ports and service name)

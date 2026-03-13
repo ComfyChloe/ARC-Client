@@ -163,6 +163,11 @@ class WebSocketManager {
             console.log('WebSocket received unsuppress-parameters:', data?.addresses?.length || 0, 'addresses');
             this.emit('unsuppress-parameters', data);
         });
+        // Server denied an unsuppress request from client
+        this.socket.on('unsuppress-denied', (data) => {
+            console.log('WebSocket received unsuppress-denied:', data?.address, 'reason:', data?.reason);
+            this.emit('unsuppress-denied', data);
+        });
     }
     disconnect() {
         if (this.socket) {
@@ -187,6 +192,16 @@ class WebSocketManager {
         }
         this.socket.emit('osc-data', data);
         return { success: true };
+    }
+    /**
+     * Request the server to unsuppress a parameter address.
+     * Server validates against panel controls and avatar JSON before approving.
+     */
+    requestUnsuppress(address) {
+        if (!this.isConnected || !this.socket) {
+            throw new Error('Not connected to server');
+        }
+        this.socket.emit('request-unsuppress', { address });
     }
     sendMessage(event, data) {
         return new Promise((resolve, reject) => {

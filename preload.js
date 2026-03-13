@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getServerBlocklist: () => ipcRenderer.invoke('get-server-blocklist'),
   getServerSuppressions: () => ipcRenderer.invoke('get-server-suppressions'),
   getHardcodedUnsubscriptions: () => ipcRenderer.invoke('get-hardcoded-unsubscriptions'),
+  requestUnsuppress: (address) => ipcRenderer.invoke('request-unsuppress', address),
   // OSC Query status and control
   getOscQueryStatus: () => ipcRenderer.invoke('get-oscquery-status'),
   oscQueryForceReconnect: () => ipcRenderer.invoke('oscquery-force-reconnect'),
@@ -123,6 +124,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onParametersUnsuppressed: (callback) => {
     ipcRenderer.on('parameters-unsuppressed', (event, data) => callback(data));
+  },
+  onUnsuppressDenied: (callback) => {
+    ipcRenderer.on('unsuppress-denied', (event, data) => callback(data));
   },
   onVRChatConnectionStatus: (callback) => {
     ipcRenderer.on('vrchat-connection-status', (event, data) => callback(data));
