@@ -3123,6 +3123,11 @@ function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions,
     if (serverSuppressions.length > 0) {
         html += serverSuppressions.map(p => renderSuppressedItem(p, suppressionMetadata?.[p])).join('');
     }
+    const existingItems = document.getElementById('blocked-parameters-items');
+    const wasExpanded = existingItems && existingItems.style.display !== 'none';
+    const displayStyle = wasExpanded ? 'block' : 'none';
+    const arrowChar = wasExpanded ? '▼' : '▶';
+    const toggleLabel = wasExpanded ? 'Collapse' : 'Expand';
     container.innerHTML = `
         <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
             <span style="color: ${isDarkTheme ? '#b0b0b0' : '#666'}; font-size: 0.85em;">
@@ -3130,10 +3135,10 @@ function renderBlockedParameters(hardcoded, serverBlocklist, serverSuppressions,
             </span>
             <button class="btn btn-secondary" onclick="toggleBlockedParametersList()"
                     style="padding: 2px 8px; font-size: 11px;" id="toggle-blocked-list-btn">
-                <span id="toggle-blocked-arrow">▶</span> Expand
+                <span id="toggle-blocked-arrow">${arrowChar}</span> ${toggleLabel}
             </button>
         </div>
-        <div id="blocked-parameters-items" style="display: none;">
+        <div id="blocked-parameters-items" style="display: ${displayStyle};">
             ${html}
         </div>
     `;
