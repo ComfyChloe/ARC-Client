@@ -28,6 +28,7 @@ class AutoStatus {
         this.lastAppliedPresetId = null;
         this.lastSchedulePresetId = null;
         this.scheduleInterval = null;
+        this.guardUpdateInterval = null;
         this.onStatusChange = null;
         this.lastOscValue = 0;
         // External status tracking
@@ -62,6 +63,7 @@ class AutoStatus {
      */
     stop() {
         this.stopScheduleEngine();
+        this.stopGuardUpdateInterval();
         this.vrchatApi = null;
         debug.info('[AutoStatus] Service stopped');
         return { success: true };
@@ -90,6 +92,38 @@ class AutoStatus {
         this.lastAvatarChangeTime = Date.now();
         this.lastOscValue = 0;
         debug.info('[AutoStatus] Avatar change detected, status changes blocked for 30s');
+        this.startGuardUpdateInterval();
+    }
+
+    /**
+     * Start periodic status updates while the avatar guard is active.
+     * This ensures the UI updates when the guard expires (30 seconds pass).
+     */
+    startGuardUpdateInterval() {
+        if (this.guardUpdateInterval) {
+            clearInterval(this.guardUpdateInterval);
+        }
+        this.guardUpdateInterval = setInterval(() => {
+            const IsGuardActive = Date.now() - this.lastAvatarChangeTime < AVATAR_CHANGE_GUARD_MS;
+            if (IsGuardActive) {
+                // Guard still active, notify UI to keep banner in sync
+                this.notifyStatusChange();
+            } else {
+                // Guard expired, notify final update and stop polling
+                this.notifyStatusChange();
+                this.stopGuardUpdateInterval();
+            }
+        }, 500); // Check every 500ms for smooth updates
+    }
+
+    /**
+     * Stop periodic guard status updates.
+     */
+    stopGuardUpdateInterval() {
+        if (this.guardUpdateInterval) {
+            clearInterval(this.guardUpdateInterval);
+            this.guardUpdateInterval = null;
+        }
     }
     /**
      * Handle an external status change detected via VRChat pipeline.
