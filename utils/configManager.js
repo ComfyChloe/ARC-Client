@@ -83,7 +83,8 @@ class ConfigManager {
         schedule: [],
         settings: {
           cooldownSeconds: 10,
-          timeFormat: '24h'
+          timeFormat: '24h',
+          alwaysAllowOverride: false
         }
       },
       // Version for future migration support

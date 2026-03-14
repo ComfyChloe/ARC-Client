@@ -1814,6 +1814,13 @@ app.whenReady().then(async () => {
   
   // Set up pipeline event forwarding
   vrchatApiContainer.setPipelineEventCallback((event, data) => {
+    // Detect external status changes for AutoStatus
+    if (event === 'user-update' && autoStatusContainer && data?.user) {
+      autoStatusContainer.handleExternalStatusChange(
+        data.user.status || null,
+        data.user.statusDescription || null
+      );
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('vrchatapi-pipeline-event', { event, data });
     }

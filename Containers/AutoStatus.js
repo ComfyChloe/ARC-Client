@@ -30,6 +30,11 @@ class AutoStatus {
         this.scheduleInterval = null;
         this.onStatusChange = null;
         this.lastOscValue = 0;
+        // External status tracking
+        this.externallySet = false;
+        this.lastSetStatus = null;
+        this.lastSetStatusDescription = null;
+        this.lastActiveScheduleEntryId = null;
         debug.info('[AutoStatus] Container initialized');
     }
 
@@ -86,7 +91,24 @@ class AutoStatus {
         this.lastOscValue = 0;
         debug.info('[AutoStatus] Avatar change detected, status changes blocked for 30s');
     }
-
+    /**
+     * Handle an external status change detected via VRChat pipeline.
+     * Compares incoming status against what ARC last set to determine
+     * whether the change was made externally (website, in-game).
+     * @param {string|null} newStatus - Current VRChat status type
+     * @param {string|null} newStatusDescription - Current VRChat status message
+     */
+    handleExternalStatusChange(newStatus, newStatusDescription) {
+        // If ARC hasn't set any status yet, nothing to compare against
+        if (this.lastSetStatus === null && this.lastSetStatusDescription === null) return;
+        const statusDiffers = this.lastSetStatus !== null && newStatus !== this.lastSetStatus;
+        const descDiffers = this.lastSetStatusDescription !== null && newStatusDescription !== this.lastSetStatusDescription;
+        if (statusDiffers || descDiffers) {
+            this.externallySet = true;
+            debug.info(`[AutoStatus] External status change detected: ${newStatus} — "${newStatusDescription || ''}" (ARC last set: ${this.lastSetStatus} — "${this.lastSetStatusDescription || ''}")`);
+            this.notifyStatusChange();
+        }
+    }
     /**
      * Handle an incoming OSC message.
      * Processes two addresses:
@@ -105,6 +127,8 @@ class AutoStatus {
                 debug.info(`[AutoStatus] Ignoring OSC preset ${value} — avatar changed within 30s`);
                 return true;
             }
+            // OSC trigger is intentional user action — clear external flag
+            this.externallySet = false;
             this.applyPreset(value, 'osc');
             return true;
         }
@@ -116,6 +140,8 @@ class AutoStatus {
                 debug.info(`[AutoStatus] Ignoring OSC direct status ${value} — avatar changed within 30s`);
                 return true;
             }
+            // OSC trigger is intentional user action — clear external flag
+            this.externallySet = false;
             this.applyDirectStatus(value);
             return true;
         }
@@ -133,6 +159,11 @@ class AutoStatus {
             debug.warn('[AutoStatus] VRChat API not available for direct status');
             return { success: false, error: 'VRChat API not available' };
         }
+        // External override protection
+        if (this.externallySet && !this.config.settings?.alwaysAllowOverride) {
+            debug.info(`[AutoStatus] Skipping direct status ${colorIndex} — status was changed externally`);
+            return { success: false, error: 'Status was changed externally' };
+        }
         const cooldown = (this.config.settings?.cooldownSeconds || 10) * 1000;
         const now = Date.now();
         if (now - this.lastStatusChangeTime < cooldown) {
@@ -143,6 +174,8 @@ class AutoStatus {
         if (result.success) {
             this.lastStatusChangeTime = now;
             this.lastAppliedPresetId = null;
+            this.lastSetStatus = statusType;
+            this.lastSetStatusDescription = null;
             debug.info(`[AutoStatus] Applied direct status: ${statusType} (color ${colorIndex})`);
             this.notifyStatusChange();
         } else {
@@ -171,6 +204,15 @@ class AutoStatus {
             debug.warn('[AutoStatus] VRChat API not authenticated');
             return { success: false, error: 'VRChat API not authenticated' };
         }
+        // Manual trigger is intentional user action — clear external flag
+        if (source === 'manual') {
+            this.externallySet = false;
+        }
+        // External override protection (skip for manual triggers)
+        if (source !== 'manual' && this.externallySet && !this.config.settings?.alwaysAllowOverride) {
+            debug.info(`[AutoStatus] Skipping preset ${presetId} — status was changed externally (source: ${source})`);
+            return { success: false, error: 'Status was changed externally' };
+        }
         // Cooldown check
         const cooldown = (this.config.settings?.cooldownSeconds || 10) * 1000;
         const now = Date.now();
@@ -183,6 +225,8 @@ class AutoStatus {
         if (result.success) {
             this.lastStatusChangeTime = now;
             this.lastAppliedPresetId = presetId;
+            this.lastSetStatus = preset.statusType || null;
+            this.lastSetStatusDescription = preset.statusMessage || null;
             debug.info(`[AutoStatus] Applied preset ${presetId} (${preset.name}): ${preset.statusType} — source: ${source}`);
             this.notifyStatusChange();
         } else {
@@ -251,10 +295,12 @@ class AutoStatus {
         }
         const scheduleEntry = {
             id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            name: entry.name || '',
             daysOfWeek: entry.daysOfWeek,
             startTime: entry.startTime,
             endTime: entry.endTime,
             presetId: entry.presetId,
+            fallbackStatusType: entry.fallbackStatusType || null,
             enabled: entry.enabled !== false
         };
         this.config.schedule.push(scheduleEntry);
@@ -299,6 +345,8 @@ class AutoStatus {
         if (!this.vrchatApi || !this.vrchatApi.isAuthenticated()) return;
         // Don't override active OSC-triggered presets
         if (this.lastOscValue > 0) return;
+        // Don't override externally set status
+        if (this.externallySet && !this.config.settings?.alwaysAllowOverride) return;
 
         const now = new Date();
         const currentDay = now.getDay(); // 0=Sun
@@ -323,15 +371,49 @@ class AutoStatus {
             }
 
             if (inRange) {
-                // Don't re-apply the same schedule preset
-                if (this.lastSchedulePresetId === entry.presetId) return;
-                this.lastSchedulePresetId = entry.presetId;
-                this.applyPreset(entry.presetId, 'schedule');
+                const alreadyActive = this.lastSchedulePresetId === entry.presetId && this.lastActiveScheduleEntryId === entry.id;
+                if (!alreadyActive) {
+                    this.lastActiveScheduleEntryId = entry.id;
+                    this.lastSchedulePresetId = entry.presetId;
+                    this.applyPreset(entry.presetId, 'schedule');
+                }
                 return;
             }
         }
-        // No schedule matched — clear last schedule preset so it can re-trigger
+        // No schedule matched — apply fallback if a timed entry just ended
+        if (this.lastActiveScheduleEntryId !== null) {
+            const prevEntry = this.config.schedule.find(s => s.id === this.lastActiveScheduleEntryId);
+            const fallback = prevEntry?.fallbackStatusType || null;
+            this.lastActiveScheduleEntryId = null;
+            this.lastSchedulePresetId = null;
+            if (fallback) {
+                this._applyFallbackStatus(fallback);
+            }
+            return;
+        }
         this.lastSchedulePresetId = null;
+    }
+
+    async _applyFallbackStatus(statusType) {
+        if (!this.vrchatApi || !this.vrchatApi.isAuthenticated()) return;
+        if (this.externallySet && !this.config.settings?.alwaysAllowOverride) return;
+        const cooldown = (this.config.settings?.cooldownSeconds || 10) * 1000;
+        const now = Date.now();
+        if (now - this.lastStatusChangeTime < cooldown) {
+            debug.info(`[AutoStatus] Cooldown active, skipping fallback status ${statusType}`);
+            return;
+        }
+        const result = await this.vrchatApi.setStatus(statusType, null);
+        if (result.success) {
+            this.lastStatusChangeTime = Date.now();
+            this.lastAppliedPresetId = null;
+            this.lastSetStatus = statusType;
+            this.lastSetStatusDescription = null;
+            debug.info(`[AutoStatus] Applied schedule fallback status: ${statusType}`);
+            this.notifyStatusChange();
+        } else {
+            debug.error(`[AutoStatus] Failed to apply fallback status: ${result.error}`);
+        }
     }
 
     // --- Settings ---
@@ -357,7 +439,8 @@ class AutoStatus {
             presetCount: this.config.presets.length,
             scheduleCount: this.config.schedule.length,
             avatarGuardActive: Date.now() - this.lastAvatarChangeTime < AVATAR_CHANGE_GUARD_MS,
-            vrchatApiAvailable: !!(this.vrchatApi && this.vrchatApi.isAuthenticated())
+            vrchatApiAvailable: !!(this.vrchatApi && this.vrchatApi.isAuthenticated()),
+            externallySet: this.externallySet
         };
     }
 

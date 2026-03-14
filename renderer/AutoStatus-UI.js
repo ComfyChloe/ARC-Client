@@ -19,6 +19,40 @@ let autoStatusState = {
     status: {}
 };
 
+// --- Custom Confirm Modal ---
+
+function showConfirmModal(title, message) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header"><h3>${title}</h3></div>
+                <div class="modal-body"><p>${message}</p></div>
+                <div class="modal-footer" style="display:flex;gap:10px;justify-content:flex-end;">
+                    <button class="btn btn-secondary" id="autostatus-modal-cancel">Cancel</button>
+                    <button class="btn btn-primary" id="autostatus-modal-confirm" style="background:#e74c3c;border-color:#e74c3c;">Delete</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.querySelector('#autostatus-modal-confirm').addEventListener('click', () => {
+            overlay.remove();
+            resolve(true);
+        });
+        overlay.querySelector('#autostatus-modal-cancel').addEventListener('click', () => {
+            overlay.remove();
+            resolve(false);
+        });
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+                resolve(false);
+            }
+        });
+    });
+}
+
 // --- Initialization ---
 
 async function initAutoStatusUI() {
@@ -80,6 +114,7 @@ function renderStatusBanner() {
                 </div>
             </div>
             <div class="autostatus-banner-right">
+                ${s.externallySet ? '<span class="autostatus-badge autostatus-badge-warn">External Status</span>' : ''}
                 ${guardActive ? '<span class="autostatus-badge autostatus-badge-warn">Avatar Guard</span>' : ''}
                 <span class="autostatus-badge ${apiAvailable ? 'autostatus-badge-ok' : 'autostatus-badge-err'}">${apiAvailable ? 'API Ready' : 'API Offline'}</span>
                 <span class="autostatus-badge autostatus-badge-info">OSC: ${s.lastOscValue || 0}</span>
@@ -185,6 +220,10 @@ function renderScheduleSection() {
             <div class="autostatus-schedule-list">${rows}</div>
             <div class="autostatus-schedule-add card">
                 <div class="autostatus-schedule-add-row">
+                    <div class="autostatus-field">
+                        <label>Name</label>
+                        <input type="text" id="new-schedule-name" placeholder="Schedule name (optional)" maxlength="32">
+                    </div>
                     <div class="autostatus-field autostatus-field-days">
                         <label>Days</label>
                         <div class="autostatus-day-picker" id="new-schedule-days">
@@ -203,6 +242,13 @@ function renderScheduleSection() {
                         <label>Preset</label>
                         <select id="new-schedule-preset">${presetOptions || '<option disabled>No presets configured</option>'}</select>
                     </div>
+                    <div class="autostatus-field">
+                        <label>Fallback</label>
+                        <select id="new-schedule-fallback">
+                            <option value="">None</option>
+                            ${STATUS_TYPES.filter(t => t.value !== null).map(t => `<option value="${t.value}">${t.icon} ${t.label}</option>`).join('')}
+                        </select>
+                    </div>
                     <div class="autostatus-field autostatus-field-action">
                         <button class="btn btn-primary btn-small" onclick="AutoStatusUI.addScheduleEntry()" ${!presetOptions ? 'disabled' : ''}>Add</button>
                     </div>
@@ -217,13 +263,22 @@ function renderScheduleRow(entry) {
     const statusType = preset ? STATUS_TYPES.find(t => t.value === preset.statusType) : null;
     const days = entry.daysOfWeek.map(d => DAY_LABELS[d]).join(', ');
     const isOvernight = entry.endTime <= entry.startTime;
+    const displayName = entry.name || 'Untitled';
 
     return `
         <div class="autostatus-schedule-row ${!entry.enabled ? 'autostatus-schedule-disabled' : ''}" data-entry-id="${entry.id}">
             <div class="autostatus-schedule-color" style="background: ${statusType?.color || '#95a5a6'}"></div>
             <div class="autostatus-schedule-details">
+                <div class="autostatus-schedule-name" onclick="AutoStatusUI.editScheduleName('${entry.id}', this)" title="Click to rename">${displayName}</div>
                 <div class="autostatus-schedule-time">${entry.startTime} — ${entry.endTime} ${isOvernight ? '<small>(overnight)</small>' : ''}</div>
                 <div class="autostatus-schedule-days">${days}</div>
+                <div class="autostatus-schedule-fallback">
+                    <label>Fallback:</label>
+                    <select class="autostatus-fallback-select" onchange="AutoStatusUI.updateScheduleFallback('${entry.id}', this.value)">
+                        <option value="">None</option>
+                        ${STATUS_TYPES.filter(t => t.value !== null).map(t => `<option value="${t.value}" ${entry.fallbackStatusType === t.value ? 'selected' : ''}>${t.icon} ${t.label}</option>`).join('')}
+                    </select>
+                </div>
             </div>
             <div class="autostatus-schedule-preset">
                 ${statusType?.icon || '⚪'} ${preset?.name || 'Unknown'}
@@ -260,6 +315,13 @@ function renderSettingsSection() {
                             <option value="24h" ${settings.timeFormat === '24h' ? 'selected' : ''}>24-hour</option>
                             <option value="12h" ${settings.timeFormat === '12h' ? 'selected' : ''}>12-hour</option>
                         </select>
+                    </div>
+                    <div class="autostatus-field">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" ${settings.alwaysAllowOverride ? 'checked' : ''} onchange="AutoStatusUI.updateSetting('alwaysAllowOverride', this.checked)" style="width:auto;margin:0;">
+                            Always allow status override
+                        </label>
+                        <small>When enabled, ARC will change your status even if it was set externally (via VRChat website or in-game). When disabled, ARC pauses automatic status changes until the next manual or OSC trigger.</small>
                     </div>
                 </div>
                 <div class="autostatus-info-box">
@@ -328,13 +390,15 @@ const AutoStatusUI = {
         const result = await window.electronAPI.autoStatusSetPreset(preset);
         if (result.success) {
             autoStatusState.presets = (await window.electronAPI.autoStatusGetConfig()).presets || [];
+            renderAutoStatusUI();
         }
     },
 
     async deletePreset(id) {
         const preset = autoStatusState.presets.find(p => p.id === id);
         if (!preset) return;
-        if (!confirm(`Delete preset "${preset.name}"? Schedule entries using it will also be removed.`)) return;
+        const confirmed = await showConfirmModal('Delete Preset', `Delete preset "${preset.name}"? Schedule entries using it will also be removed.`);
+        if (!confirmed) return;
         await window.electronAPI.autoStatusDeletePreset(id);
         await refreshAutoStatusData();
     },
@@ -358,12 +422,14 @@ const AutoStatusUI = {
         const startTime = document.getElementById('new-schedule-start')?.value;
         const endTime = document.getElementById('new-schedule-end')?.value;
         const presetId = parseInt(document.getElementById('new-schedule-preset')?.value);
+        const name = document.getElementById('new-schedule-name')?.value || '';
+        const fallbackStatusType = document.getElementById('new-schedule-fallback')?.value || null;
 
         if (daysOfWeek.length === 0) { alert('Select at least one day'); return; }
         if (!startTime || !endTime) { alert('Start and end times are required'); return; }
         if (isNaN(presetId)) { alert('Select a preset'); return; }
 
-        const result = await window.electronAPI.autoStatusAddSchedule({ daysOfWeek, startTime, endTime, presetId });
+        const result = await window.electronAPI.autoStatusAddSchedule({ daysOfWeek, startTime, endTime, presetId, name, fallbackStatusType });
         if (result.success) {
             await refreshAutoStatusData();
         } else {
@@ -381,6 +447,38 @@ const AutoStatusUI = {
     async deleteScheduleEntry(entryId) {
         await window.electronAPI.autoStatusDeleteSchedule(entryId);
         await refreshAutoStatusData();
+    },
+
+    editScheduleName(entryId, el) {
+        const entry = autoStatusState.schedule.find(s => s.id === entryId);
+        if (!entry) return;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'autostatus-schedule-name-input';
+        input.value = entry.name || '';
+        input.placeholder = 'Schedule name';
+        input.maxLength = 32;
+        const save = async () => {
+            const newName = input.value.trim();
+            await window.electronAPI.autoStatusUpdateSchedule(entryId, { name: newName });
+            await refreshAutoStatusData();
+        };
+        input.addEventListener('blur', save);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            if (e.key === 'Escape') { input.removeEventListener('blur', save); el.textContent = entry.name || 'Untitled'; }
+        });
+        el.textContent = '';
+        el.appendChild(input);
+        input.focus();
+        input.select();
+    },
+
+    async updateScheduleFallback(entryId, value) {
+        const fallbackStatusType = value || null;
+        await window.electronAPI.autoStatusUpdateSchedule(entryId, { fallbackStatusType });
+        const entry = autoStatusState.schedule.find(s => s.id === entryId);
+        if (entry) entry.fallbackStatusType = fallbackStatusType;
     },
 
     async updateSetting(key, value) {
