@@ -82,6 +82,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   vrchatApiLogout: () => ipcRenderer.invoke('vrchatapi-logout'),
   vrchatApiRestoreSession: () => ipcRenderer.invoke('vrchatapi-restore-session'),
   vrchatApiGetStats: () => ipcRenderer.invoke('vrchatapi-get-stats'),
+  // AutoStatus API
+  autoStatusGetConfig: () => ipcRenderer.invoke('autostatus-get-config'),
+  autoStatusGetStatus: () => ipcRenderer.invoke('autostatus-get-status'),
+  autoStatusSetPreset: (preset) => ipcRenderer.invoke('autostatus-set-preset', preset),
+  autoStatusDeletePreset: (id) => ipcRenderer.invoke('autostatus-delete-preset', id),
+  autoStatusTestPreset: (id) => ipcRenderer.invoke('autostatus-test-preset', id),
+  autoStatusAddSchedule: (entry) => ipcRenderer.invoke('autostatus-add-schedule', entry),
+  autoStatusUpdateSchedule: (entryId, updates) => ipcRenderer.invoke('autostatus-update-schedule', entryId, updates),
+  autoStatusDeleteSchedule: (entryId) => ipcRenderer.invoke('autostatus-delete-schedule', entryId),
+  autoStatusUpdateSettings: (settings) => ipcRenderer.invoke('autostatus-update-settings', settings),
   // VRChat account linking
   sendVRChatLink: (vrchatUserId, vrchatUsername) => ipcRenderer.invoke('send-vrchat-link', vrchatUserId, vrchatUsername),
   checkVRChatLink: () => ipcRenderer.invoke('check-vrchat-link'),
@@ -172,6 +182,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onOgbStatusUpdate: (callback) => {
     ipcRenderer.on('ogb-status-update', (event, data) => callback(data));
+  },
+  onAutoStatusUpdate: (callback) => {
+    ipcRenderer.on('autostatus-update', (event, data) => callback(data));
   },
   onFeedbackUpdate: (callback) => {
     ipcRenderer.on('feedback-update', (event, data) => callback(data));

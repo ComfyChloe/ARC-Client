@@ -77,6 +77,15 @@ class ConfigManager {
         audioMultiplier: 1.0,
         maxLevelParam: null
       },
+      // AutoStatus configuration
+      autostatus: {
+        presets: [],
+        schedule: [],
+        settings: {
+          cooldownSeconds: 10,
+          timeFormat: '24h'
+        }
+      },
       // Version for future migration support
       configVersion: 1
     };
@@ -337,6 +346,31 @@ class ConfigManager {
     return this.saveConfig();
   }
   // OscGoesBrrr configuration methods
+  // AutoStatus configuration methods
+  getAutoStatusConfig() {
+    if (!this.config.autostatus) {
+      this.config.autostatus = {
+        presets: [],
+        schedule: [],
+        settings: {
+          cooldownSeconds: 10,
+          timeFormat: '24h'
+        }
+      };
+    }
+    return JSON.parse(JSON.stringify(this.config.autostatus));
+  }
+  updateAutoStatusConfig(autoStatusConfig) {
+    if (!this.config.autostatus) {
+      this.config.autostatus = {};
+    }
+    this.config.autostatus = {
+      ...this.config.autostatus,
+      ...autoStatusConfig
+    };
+    debug.info('AutoStatus config updated in configuration manager');
+    return this.saveConfig();
+  }
   getOgbConfig() {
     if (!this.config.oscgoesbrrr) {
       this.config.oscgoesbrrr = {

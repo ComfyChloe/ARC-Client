@@ -2515,6 +2515,7 @@ function showAutoStatusView() {
         requestAnimationFrame(() => {
             autoStatusView.style.opacity = '1';
         });
+        initAutoStatusUI();
     }, 300);
     const allMainNavButtons = ['nav-main', 'nav-osc', 'nav-logs', 'nav-settings'];
     allMainNavButtons.forEach(navId => {
