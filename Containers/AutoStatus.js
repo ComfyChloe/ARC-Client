@@ -28,11 +28,12 @@ class AutoStatus {
         this.lastAppliedPresetId = null;
         this.lastSchedulePresetId = null;
         this.scheduleInterval = null;
-        this.guardUpdateInterval = null;
+        this.guardExpiryTimeout = null;
         this.onStatusChange = null;
         this.lastOscValue = 0;
         // External status tracking
         this.externallySet = false;
+        this.hasLastSetStatus = false;
         this.lastSetStatus = null;
         this.lastSetStatusDescription = null;
         this.lastActiveScheduleEntryId = null;
@@ -63,7 +64,7 @@ class AutoStatus {
      */
     stop() {
         this.stopScheduleEngine();
-        this.stopGuardUpdateInterval();
+        this.stopGuardExpiryTimeout();
         this.vrchatApi = null;
         debug.info('[AutoStatus] Service stopped');
         return { success: true };
@@ -92,37 +93,28 @@ class AutoStatus {
         this.lastAvatarChangeTime = Date.now();
         this.lastOscValue = 0;
         debug.info('[AutoStatus] Avatar change detected, status changes blocked for 30s');
-        this.startGuardUpdateInterval();
+        this.notifyStatusChange();
+        this.startGuardExpiryTimeout();
     }
 
     /**
-     * Start periodic status updates while the avatar guard is active.
-     * This ensures the UI updates when the guard expires (30 seconds pass).
+     * Schedule a single update when the avatar guard expires.
      */
-    startGuardUpdateInterval() {
-        if (this.guardUpdateInterval) {
-            clearInterval(this.guardUpdateInterval);
-        }
-        this.guardUpdateInterval = setInterval(() => {
-            const IsGuardActive = Date.now() - this.lastAvatarChangeTime < AVATAR_CHANGE_GUARD_MS;
-            if (IsGuardActive) {
-                // Guard still active, notify UI to keep banner in sync
-                this.notifyStatusChange();
-            } else {
-                // Guard expired, notify final update and stop polling
-                this.notifyStatusChange();
-                this.stopGuardUpdateInterval();
-            }
-        }, 500); // Check every 500ms for smooth updates
+    startGuardExpiryTimeout() {
+        this.stopGuardExpiryTimeout();
+        this.guardExpiryTimeout = setTimeout(() => {
+            this.guardExpiryTimeout = null;
+            this.notifyStatusChange();
+        }, AVATAR_CHANGE_GUARD_MS + 50);
     }
 
     /**
-     * Stop periodic guard status updates.
+     * Stop the pending avatar guard expiry update.
      */
-    stopGuardUpdateInterval() {
-        if (this.guardUpdateInterval) {
-            clearInterval(this.guardUpdateInterval);
-            this.guardUpdateInterval = null;
+    stopGuardExpiryTimeout() {
+        if (this.guardExpiryTimeout) {
+            clearTimeout(this.guardExpiryTimeout);
+            this.guardExpiryTimeout = null;
         }
     }
     /**
@@ -133,13 +125,17 @@ class AutoStatus {
      * @param {string|null} newStatusDescription - Current VRChat status message
      */
     handleExternalStatusChange(newStatus, newStatusDescription) {
-        // If ARC hasn't set any status yet, nothing to compare against
-        if (this.lastSetStatus === null && this.lastSetStatusDescription === null) return;
-        const statusDiffers = this.lastSetStatus !== null && newStatus !== this.lastSetStatus;
-        const descDiffers = this.lastSetStatusDescription !== null && newStatusDescription !== this.lastSetStatusDescription;
+        if (!this.hasLastSetStatus) return;
+        const normalizedStatus = newStatus ?? null;
+        const normalizedDescription = newStatusDescription ?? null;
+        const statusDiffers = normalizedStatus !== this.lastSetStatus;
+        const descDiffers = normalizedDescription !== this.lastSetStatusDescription;
         if (statusDiffers || descDiffers) {
             this.externallySet = true;
-            debug.info(`[AutoStatus] External status change detected: ${newStatus} — "${newStatusDescription || ''}" (ARC last set: ${this.lastSetStatus} — "${this.lastSetStatusDescription || ''}")`);
+            debug.info(`[AutoStatus] External status change detected: ${normalizedStatus} — "${normalizedDescription || ''}" (ARC last set: ${this.lastSetStatus} — "${this.lastSetStatusDescription || ''}")`);
+            this.notifyStatusChange();
+        } else if (this.externallySet) {
+            this.externallySet = false;
             this.notifyStatusChange();
         }
     }
@@ -208,6 +204,7 @@ class AutoStatus {
         if (result.success) {
             this.lastStatusChangeTime = now;
             this.lastAppliedPresetId = null;
+            this.hasLastSetStatus = true;
             this.lastSetStatus = statusType;
             this.lastSetStatusDescription = null;
             debug.info(`[AutoStatus] Applied direct status: ${statusType} (color ${colorIndex})`);
@@ -259,6 +256,7 @@ class AutoStatus {
         if (result.success) {
             this.lastStatusChangeTime = now;
             this.lastAppliedPresetId = presetId;
+            this.hasLastSetStatus = true;
             this.lastSetStatus = preset.statusType || null;
             this.lastSetStatusDescription = preset.statusMessage || null;
             debug.info(`[AutoStatus] Applied preset ${presetId} (${preset.name}): ${preset.statusType} — source: ${source}`);
@@ -441,6 +439,7 @@ class AutoStatus {
         if (result.success) {
             this.lastStatusChangeTime = Date.now();
             this.lastAppliedPresetId = null;
+            this.hasLastSetStatus = true;
             this.lastSetStatus = statusType;
             this.lastSetStatusDescription = null;
             debug.info(`[AutoStatus] Applied schedule fallback status: ${statusType}`);

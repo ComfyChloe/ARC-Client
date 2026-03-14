@@ -243,7 +243,7 @@ function renderScheduleSection() {
                         <select id="new-schedule-preset">${presetOptions || '<option disabled>No presets configured</option>'}</select>
                     </div>
                     <div class="autostatus-field">
-                        <label>Fallback</label>
+                        <label>Status at end of schedule</label>
                         <select id="new-schedule-fallback">
                             <option value="">None</option>
                             ${STATUS_TYPES.filter(t => t.value !== null).map(t => `<option value="${t.value}">${t.icon} ${t.label}</option>`).join('')}
@@ -273,7 +273,7 @@ function renderScheduleRow(entry) {
                 <div class="autostatus-schedule-time">${entry.startTime} — ${entry.endTime} ${isOvernight ? '<small>(overnight)</small>' : ''}</div>
                 <div class="autostatus-schedule-days">${days}</div>
                 <div class="autostatus-schedule-fallback">
-                    <label>Fallback:</label>
+                    <label>Status at end:</label>
                     <select class="autostatus-fallback-select" onchange="AutoStatusUI.updateScheduleFallback('${entry.id}', this.value)">
                         <option value="">None</option>
                         ${STATUS_TYPES.filter(t => t.value !== null).map(t => `<option value="${t.value}" ${entry.fallbackStatusType === t.value ? 'selected' : ''}>${t.icon} ${t.label}</option>`).join('')}

@@ -2917,4 +2917,7 @@ body.dark-theme .autostatus-fallback-select {
     background: #2b2b2b;
     color: #ecf0f1;
 }
+body.dark-theme .autostatus-schedule-fallback label {
+    color: #b2bec3;
+}
 

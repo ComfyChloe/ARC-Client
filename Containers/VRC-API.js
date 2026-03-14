@@ -569,8 +569,15 @@ class VRChatAPIContainer {
     // Listen for user updates
     this.apiClient.on('user-update', (data) => {
       debug.info(`Pipeline: User update - ${data.userId}`);
+      const normalizedUser = this.normalizePipelineUserUpdate(data);
+      if (normalizedUser && this.currentUser && normalizedUser.id === this.currentUser.id) {
+        this.currentUser = { ...this.currentUser, ...normalizedUser };
+      }
       if (this.onPipelineEvent) {
-        this.onPipelineEvent('user-update', data);
+        this.onPipelineEvent('user-update', {
+          ...data,
+          user: normalizedUser
+        });
       }
     });
 
@@ -720,6 +727,22 @@ class VRChatAPIContainer {
    */
   setPipelineEventCallback(callback) {
     this.onPipelineEvent = callback;
+  }
+
+  normalizePipelineUserUpdate(data) {
+    if (!data || typeof data !== 'object') {
+      return null;
+    }
+    const sourceUser = data.user && typeof data.user === 'object' ? data.user : data;
+    const userId = sourceUser.id || sourceUser.userId || data.userId || null;
+    if (!userId) {
+      return null;
+    }
+    return {
+      id: userId,
+      status: sourceUser.status ?? this.currentUser?.status ?? null,
+      statusDescription: sourceUser.statusDescription ?? this.currentUser?.statusDescription ?? null
+    };
   }
 
   /**
