@@ -4,6 +4,7 @@
  */
 
 const STATUS_TYPES = [
+    { value: null, label: 'None (message only)', color: '#888888', icon: '⚫' },
     { value: 'join me', label: 'Join Me', color: '#3498db', icon: '🔵' },
     { value: 'active', label: 'Online', color: '#2ecc71', icon: '🟢' },
     { value: 'ask me', label: 'Ask Me', color: '#f39c12', icon: '🟠' },
@@ -90,18 +91,32 @@ function renderStatusBanner() {
 // --- Presets Section ---
 
 function renderPresetsSection() {
-    let cards = '';
-    for (let i = 1; i <= 6; i++) {
-        const preset = autoStatusState.presets.find(p => p.id === i);
-        cards += renderPresetCard(i, preset);
+    const presets = autoStatusState.presets;
+    const count = presets.length;
+    let content;
+    if (count === 0) {
+        content = `
+            <div class="autostatus-presets-empty">
+                <div class="autostatus-presets-empty-icon">⚙️</div>
+                <p>No status presets configured yet.</p>
+                <p><small>Add a preset to get started with automatic status changes.</small></p>
+                <button class="btn btn-primary" onclick="AutoStatusUI.createPreset()">+ Add Preset</button>
+            </div>
+        `;
+    } else {
+        const cards = presets.map(p => renderPresetCard(p.id, p)).join('');
+        const addBtn = count < 8
+            ? `<div class="autostatus-preset-add-card" onclick="AutoStatusUI.createPreset()"><span>+ Add Preset</span></div>`
+            : '';
+        content = `<div class="autostatus-presets-grid">${cards}${addBtn}</div>`;
     }
     return `
         <div class="autostatus-section">
             <div class="autostatus-section-header">
                 <h3>Status Presets</h3>
-                <span class="autostatus-section-hint">Configure up to 6 presets triggered by OSC parameter (int 1–6)</span>
+                <span class="autostatus-section-hint">Configure up to 8 presets triggered by OSC parameter (int 1–8)</span>
             </div>
-            <div class="autostatus-presets-grid">${cards}</div>
+            ${content}
         </div>
     `;
 }
@@ -109,26 +124,14 @@ function renderPresetsSection() {
 function renderPresetCard(id, preset) {
     const isActive = autoStatusState.status.lastAppliedPresetId === id;
     const statusType = preset ? STATUS_TYPES.find(t => t.value === preset.statusType) : null;
-    const statusOptions = STATUS_TYPES.map(t =>
-        `<option value="${t.value}" ${preset && preset.statusType === t.value ? 'selected' : ''}>${t.icon} ${t.label}</option>`
-    ).join('');
-
-    if (!preset) {
-        return `
-            <div class="autostatus-preset-card autostatus-preset-empty" data-preset-id="${id}">
-                <div class="autostatus-preset-header">
-                    <span class="autostatus-preset-number">${id}</span>
-                    <span class="autostatus-preset-label">Empty Slot</span>
-                </div>
-                <div class="autostatus-preset-body-empty">
-                    <button class="btn btn-primary btn-small" onclick="AutoStatusUI.createPreset(${id})">+ Add Preset</button>
-                </div>
-            </div>
-        `;
-    }
+    const statusOptions = STATUS_TYPES.map(t => {
+        const optValue = t.value === null ? '' : t.value;
+        const isSelected = preset && ((t.value === null && (preset.statusType === null || preset.statusType === '')) || t.value === preset.statusType);
+        return `<option value="${optValue}" ${isSelected ? 'selected' : ''}>${t.icon} ${t.label}</option>`;
+    }).join('');
 
     return `
-        <div class="autostatus-preset-card ${isActive ? 'autostatus-preset-active' : ''} ${!preset.enabled ? 'autostatus-preset-disabled' : ''}" data-preset-id="${id}" style="--preset-accent: ${statusType?.color || '#95a5a6'}">
+        <div class="autostatus-preset-card ${isActive ? 'autostatus-preset-active' : ''}" data-preset-id="${id}" style="--preset-accent: ${statusType?.color || '#888888'}">
             <div class="autostatus-preset-header">
                 <span class="autostatus-preset-number">${id}</span>
                 <span class="autostatus-preset-name-display">${preset.name}</span>
@@ -151,14 +154,6 @@ function renderPresetCard(id, preset) {
                 <div class="autostatus-field">
                     <label>Message <small class="autostatus-char-count">${(preset.statusMessage || '').length}/32</small></label>
                     <input type="text" value="${preset.statusMessage || ''}" maxlength="32" placeholder="Optional status message" data-field="statusMessage" data-preset-id="${id}" oninput="AutoStatusUI.onMessageInput(this)" onchange="AutoStatusUI.updatePresetField(${id}, 'statusMessage', this.value)">
-                </div>
-                <div class="autostatus-field-row">
-                    <label class="autostatus-toggle-label">
-                        <span>Enabled</span>
-                        <div class="autostatus-toggle ${preset.enabled ? 'autostatus-toggle-on' : ''}" onclick="AutoStatusUI.togglePresetEnabled(${id})">
-                            <div class="autostatus-toggle-knob"></div>
-                        </div>
-                    </label>
                 </div>
             </div>
         </div>
@@ -268,8 +263,18 @@ function renderSettingsSection() {
                     </div>
                 </div>
                 <div class="autostatus-info-box">
-                    <strong>OSC Parameter:</strong> <code>/avatar/parameters/ARCOSC/vrc-status</code> (Int, 0–6)<br>
-                    <small>Value 0 = no action. Values 1–6 trigger the corresponding preset. Status changes are blocked for 30 seconds after avatar changes.</small>
+                    <strong>OSC Parameters:</strong><br>
+                    <div class="autostatus-osc-params">
+                        <div class="autostatus-osc-param">
+                            <code>/avatar/parameters/ARCOSC/vrc-status/statuspreset</code> <small>(Int, 0–8)</small><br>
+                            <small>Value 0 = no action. Values 1–8 trigger the corresponding preset.</small>
+                        </div>
+                        <div class="autostatus-osc-param">
+                            <code>/avatar/parameters/ARCOSC/vrc-status</code> <small>(Int, 0–4)</small><br>
+                            <small>0 = off, 1 = 🔵 Join Me, 2 = 🟢 Online, 3 = 🟠 Ask Me, 4 = 🔴 Do Not Disturb</small>
+                        </div>
+                    </div>
+                    <small>Status changes are blocked for 30 seconds after avatar changes.</small>
                 </div>
             </div>
         </div>
@@ -295,13 +300,19 @@ function attachAutoStatusListeners() {
 // --- Actions (exposed as AutoStatusUI) ---
 
 const AutoStatusUI = {
-    async createPreset(id) {
+    async createPreset() {
+        // Find next unused ID in 1-8
+        const usedIds = autoStatusState.presets.map(p => p.id);
+        let nextId = null;
+        for (let i = 1; i <= 8; i++) {
+            if (!usedIds.includes(i)) { nextId = i; break; }
+        }
+        if (nextId === null) return;
         const result = await window.electronAPI.autoStatusSetPreset({
-            id,
-            name: `Preset ${id}`,
+            id: nextId,
+            name: `Preset ${nextId}`,
             statusType: 'active',
-            statusMessage: '',
-            enabled: true
+            statusMessage: ''
         });
         if (result.success) await refreshAutoStatusData();
     },
@@ -309,20 +320,15 @@ const AutoStatusUI = {
     async updatePresetField(id, field, value) {
         const preset = autoStatusState.presets.find(p => p.id === id);
         if (!preset) return;
-        preset[field] = value;
+        if (field === 'statusType') {
+            preset[field] = value === '' ? null : value;
+        } else {
+            preset[field] = value;
+        }
         const result = await window.electronAPI.autoStatusSetPreset(preset);
         if (result.success) {
-            // Lightweight update without full re-render
             autoStatusState.presets = (await window.electronAPI.autoStatusGetConfig()).presets || [];
         }
-    },
-
-    async togglePresetEnabled(id) {
-        const preset = autoStatusState.presets.find(p => p.id === id);
-        if (!preset) return;
-        preset.enabled = !preset.enabled;
-        await window.electronAPI.autoStatusSetPreset(preset);
-        await refreshAutoStatusData();
     },
 
     async deletePreset(id) {

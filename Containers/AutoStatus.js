@@ -2,18 +2,22 @@
  * Auto-Status Container
  * Automatic VRChat status management via OSC parameters and time-based scheduling.
  *
- * Always active — listens for OSC parameter /avatar/parameters/ARCOSC/vrc-status (int 0-6)
- * to apply user-configured presets. Supports a timetable schedule for time-of-day automation.
+ * Always active — listens for two OSC parameters:
+ *   /avatar/parameters/ARCOSC/vrc-status/statuspreset (int 0-8) — triggers saved presets
+ *   /avatar/parameters/ARCOSC/vrc-status (int 0-4) — sets status color directly
+ * Supports a timetable schedule for time-of-day automation.
  *
  * Guards against avatar-change parameter resets with a 30-second cooldown.
  */
 const debug = require('../utils/debugger');
 const configManager = require('../utils/configManager');
 
-const OSC_ADDRESS = '/avatar/parameters/ARCOSC/vrc-status';
+const OSC_ADDRESS_PRESET = '/avatar/parameters/ARCOSC/vrc-status/statuspreset';
+const OSC_ADDRESS_STATUS = '/avatar/parameters/ARCOSC/vrc-status';
 const AVATAR_CHANGE_GUARD_MS = 30000;
 const SCHEDULE_CHECK_INTERVAL_MS = 60000;
-const VALID_STATUSES = ['active', 'join me', 'ask me', 'busy'];
+const VALID_STATUSES = [null, 'active', 'join me', 'ask me', 'busy'];
+const DIRECT_STATUS_MAP = { 1: 'join me', 2: 'active', 3: 'ask me', 4: 'busy' };
 
 class AutoStatus {
     constructor() {
@@ -84,31 +88,71 @@ class AutoStatus {
     }
 
     /**
-     * Handle an incoming OSC message. Only processes the ARCOSC/vrc-status address.
+     * Handle an incoming OSC message.
+     * Processes two addresses:
+     *   /avatar/parameters/ARCOSC/vrc-status/statuspreset (int 0-8) — preset trigger
+     *   /avatar/parameters/ARCOSC/vrc-status (int 0-4) — direct status color
      * @param {Object} oscData - { address, value, type }
      * @returns {boolean} true if the message was consumed by AutoStatus
      */
     handleOscMessage(oscData) {
-        if (oscData.address !== OSC_ADDRESS) return false;
-
-        const value = parseInt(oscData.value, 10);
-        if (isNaN(value) || value < 0 || value > 6) return true;
-
-        this.lastOscValue = value;
-        if (value === 0) return true;
-
-        // Avatar change guard
-        if (Date.now() - this.lastAvatarChangeTime < AVATAR_CHANGE_GUARD_MS) {
-            debug.info(`[AutoStatus] Ignoring OSC preset ${value} — avatar changed within 30s`);
+        if (oscData.address === OSC_ADDRESS_PRESET) {
+            const value = parseInt(oscData.value, 10);
+            if (isNaN(value) || value < 0 || value > 8) return true;
+            this.lastOscValue = value;
+            if (value === 0) return true;
+            if (Date.now() - this.lastAvatarChangeTime < AVATAR_CHANGE_GUARD_MS) {
+                debug.info(`[AutoStatus] Ignoring OSC preset ${value} — avatar changed within 30s`);
+                return true;
+            }
+            this.applyPreset(value, 'osc');
             return true;
         }
-
-        this.applyPreset(value, 'osc');
-        return true;
+        if (oscData.address === OSC_ADDRESS_STATUS) {
+            const value = parseInt(oscData.value, 10);
+            if (isNaN(value) || value < 0 || value > 4) return true;
+            if (value === 0) return true;
+            if (Date.now() - this.lastAvatarChangeTime < AVATAR_CHANGE_GUARD_MS) {
+                debug.info(`[AutoStatus] Ignoring OSC direct status ${value} — avatar changed within 30s`);
+                return true;
+            }
+            this.applyDirectStatus(value);
+            return true;
+        }
+        return false;
     }
 
     /**
-     * Apply a preset by its ID (1-6).
+     * Apply a direct status color change (no preset).
+     * @param {number} colorIndex - 1=join me, 2=active, 3=ask me, 4=busy
+     */
+    async applyDirectStatus(colorIndex) {
+        const statusType = DIRECT_STATUS_MAP[colorIndex];
+        if (!statusType) return { success: false, error: `Invalid color index: ${colorIndex}` };
+        if (!this.vrchatApi || !this.vrchatApi.isAuthenticated()) {
+            debug.warn('[AutoStatus] VRChat API not available for direct status');
+            return { success: false, error: 'VRChat API not available' };
+        }
+        const cooldown = (this.config.settings?.cooldownSeconds || 10) * 1000;
+        const now = Date.now();
+        if (now - this.lastStatusChangeTime < cooldown) {
+            debug.info(`[AutoStatus] Cooldown active, skipping direct status ${colorIndex}`);
+            return { success: false, error: 'Cooldown active' };
+        }
+        const result = await this.vrchatApi.setStatus(statusType, null);
+        if (result.success) {
+            this.lastStatusChangeTime = now;
+            this.lastAppliedPresetId = null;
+            debug.info(`[AutoStatus] Applied direct status: ${statusType} (color ${colorIndex})`);
+            this.notifyStatusChange();
+        } else {
+            debug.error(`[AutoStatus] Failed to apply direct status: ${result.error}`);
+        }
+        return result;
+    }
+
+    /**
+     * Apply a preset by its ID (1-8).
      * @param {number} presetId
      * @param {string} source - 'osc', 'schedule', or 'manual'
      * @returns {Promise<Object>}
@@ -118,10 +162,6 @@ class AutoStatus {
         if (!preset) {
             debug.warn(`[AutoStatus] Preset ${presetId} not found`);
             return { success: false, error: `Preset ${presetId} not found` };
-        }
-        if (!preset.enabled) {
-            debug.info(`[AutoStatus] Preset ${presetId} (${preset.name}) is disabled`);
-            return { success: false, error: `Preset ${presetId} is disabled` };
         }
         if (!this.vrchatApi) {
             debug.warn('[AutoStatus] VRChat API not available');
@@ -139,7 +179,7 @@ class AutoStatus {
             return { success: false, error: 'Cooldown active' };
         }
 
-        const result = await this.vrchatApi.setStatus(preset.statusType, preset.statusMessage || null);
+        const result = await this.vrchatApi.setStatus(preset.statusType || null, preset.statusMessage || null);
         if (result.success) {
             this.lastStatusChangeTime = now;
             this.lastAppliedPresetId = presetId;
@@ -159,9 +199,10 @@ class AutoStatus {
 
     setPreset(presetData) {
         const id = presetData.id;
-        if (id < 1 || id > 6) return { success: false, error: 'Preset ID must be 1-6' };
-        if (!VALID_STATUSES.includes(presetData.statusType)) {
-            return { success: false, error: `Invalid status type: ${presetData.statusType}` };
+        if (id < 1 || id > 8) return { success: false, error: 'Preset ID must be 1-8' };
+        const statusType = presetData.statusType === '' ? null : presetData.statusType;
+        if (!VALID_STATUSES.includes(statusType)) {
+            return { success: false, error: `Invalid status type: ${statusType}` };
         }
         if (presetData.statusMessage && presetData.statusMessage.length > 32) {
             presetData.statusMessage = presetData.statusMessage.slice(0, 32);
@@ -170,9 +211,8 @@ class AutoStatus {
         const preset = {
             id,
             name: presetData.name || `Preset ${id}`,
-            statusType: presetData.statusType,
-            statusMessage: presetData.statusMessage || '',
-            enabled: presetData.enabled !== false
+            statusType,
+            statusMessage: presetData.statusMessage || ''
         };
         if (idx >= 0) {
             this.config.presets[idx] = preset;

@@ -2453,17 +2453,62 @@ body.dark-theme .autostatus-preset-card:hover {
     border-color: var(--preset-accent, #3498db) !important;
     box-shadow: 0 0 0 1px var(--preset-accent, #3498db), 0 4px 16px rgba(0,0,0,0.1) !important;
 }
-.autostatus-preset-disabled {
-    opacity: 0.55;
+.autostatus-presets-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #7f8c8d;
+    border: 2px dashed #bdc3c7;
+    border-radius: 12px;
+    margin: 8px 0;
 }
-.autostatus-preset-empty {
-    border-style: dashed;
-    border-color: #bdc3c7;
-}
-body.dark-theme .autostatus-preset-empty {
+body.dark-theme .autostatus-presets-empty {
+    color: #999;
     border-color: #555;
 }
-.autostatus-preset-header {
+.autostatus-presets-empty-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+.autostatus-presets-empty .btn {
+    margin-top: 12px;
+}
+.autostatus-preset-add-card {
+    border: 2px dashed #bdc3c7;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    cursor: pointer;
+    color: #7f8c8d;
+    font-weight: 600;
+    font-size: 15px;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+.autostatus-preset-add-card:hover {
+    border-color: #3498db;
+    color: #3498db;
+    background: rgba(52, 152, 219, 0.05);
+}
+body.dark-theme .autostatus-preset-add-card {
+    border-color: #555;
+    color: #999;
+}
+body.dark-theme .autostatus-preset-add-card:hover {
+    border-color: #3498db;
+    color: #3498db;
+    background: rgba(52, 152, 219, 0.1);
+}
+.autostatus-osc-params {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 8px 0;
+}
+.autostatus-osc-param {
+    padding: 6px 0;
+}
+.autostatus-preset-card {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -2486,9 +2531,6 @@ body.dark-theme .autostatus-preset-header {
     font-weight: 700;
     font-size: 14px;
     flex-shrink: 0;
-}
-.autostatus-preset-empty .autostatus-preset-number {
-    background: #bdc3c7;
 }
 .autostatus-preset-name-display {
     font-weight: 600;
