@@ -12,5 +12,5 @@
     "useDefineForClassFields": true,
     "types": ["vite/client"]
   },
-  "include": ["src/renderer/src/**/*", "src/renderer/src/**/*.vue"]
+  "include": ["renderer/src/**/*", "renderer/src/**/*.vue"]
 }
