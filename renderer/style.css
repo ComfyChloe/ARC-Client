@@ -2340,3 +2340,584 @@ body.dark-theme .ogb-settings-row input[type="number"] {
     color: #ecf0f1;
 }
 
+/* ============================================
+   AutoStatus UI Styles
+   ============================================ */
+
+/* --- Banner --- */
+.autostatus-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    color: #fff;
+    border-radius: 12px;
+    padding: 18px 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    transition: background 0.3s ease;
+}
+body.dark-theme .autostatus-banner {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.autostatus-banner-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.autostatus-banner-icon {
+    font-size: 32px;
+    line-height: 1;
+}
+.autostatus-banner-title {
+    font-size: 18px;
+    font-weight: 700;
+}
+.autostatus-banner-subtitle {
+    font-size: 13px;
+    opacity: 0.8;
+    margin-top: 2px;
+}
+.autostatus-banner-right {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.autostatus-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.autostatus-badge-ok { background: rgba(46, 204, 113, 0.2); color: #2ecc71; }
+.autostatus-badge-err { background: rgba(231, 76, 60, 0.2); color: #e74c3c; }
+.autostatus-badge-warn { background: rgba(243, 156, 18, 0.2); color: #f39c12; }
+.autostatus-badge-info { background: rgba(52, 152, 219, 0.2); color: #3498db; }
+
+/* --- Section Headers --- */
+.autostatus-section {
+    margin-bottom: 24px;
+}
+.autostatus-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 12px;
+}
+.autostatus-section-header h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0;
+    transition: color 0.3s ease;
+}
+body.dark-theme .autostatus-section-header h3 {
+    color: #ecf0f1;
+}
+.autostatus-section-hint {
+    font-size: 12px;
+    color: #95a5a6;
+}
+
+/* --- Preset Grid --- */
+.autostatus-presets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+.autostatus-preset-card {
+    background: #fff;
+    border-radius: 10px;
+    border: 2px solid #ecf0f1;
+    overflow: hidden;
+    transition: all 0.25s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+body.dark-theme .autostatus-preset-card {
+    background: #2b2b2b;
+    border-color: #454545;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.autostatus-preset-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+}
+body.dark-theme .autostatus-preset-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.autostatus-preset-active {
+    border-color: var(--preset-accent, #3498db) !important;
+    box-shadow: 0 0 0 1px var(--preset-accent, #3498db), 0 4px 16px rgba(0,0,0,0.1) !important;
+}
+.autostatus-presets-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #7f8c8d;
+    border: 2px dashed #bdc3c7;
+    border-radius: 12px;
+    margin: 8px 0;
+}
+body.dark-theme .autostatus-presets-empty {
+    color: #999;
+    border-color: #555;
+}
+.autostatus-presets-empty-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+.autostatus-presets-empty .btn {
+    margin-top: 12px;
+}
+.autostatus-preset-add-card {
+    border: 2px dashed #bdc3c7;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    cursor: pointer;
+    color: #7f8c8d;
+    font-weight: 600;
+    font-size: 15px;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+.autostatus-preset-add-card:hover {
+    border-color: #3498db;
+    color: #3498db;
+    background: rgba(52, 152, 219, 0.05);
+}
+body.dark-theme .autostatus-preset-add-card {
+    border-color: #555;
+    color: #999;
+}
+body.dark-theme .autostatus-preset-add-card:hover {
+    border-color: #3498db;
+    color: #3498db;
+    background: rgba(52, 152, 219, 0.1);
+}
+.autostatus-osc-params {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 8px 0;
+}
+.autostatus-osc-param {
+    padding: 6px 0;
+}
+.autostatus-preset-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    transition: border-color 0.3s ease;
+}
+body.dark-theme .autostatus-preset-header {
+    border-bottom-color: #454545;
+}
+.autostatus-preset-number {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--preset-accent, #95a5a6);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+.autostatus-preset-name-display {
+    font-weight: 600;
+    font-size: 14px;
+    flex: 1;
+    color: #2c3e50;
+    transition: color 0.3s ease;
+}
+body.dark-theme .autostatus-preset-name-display {
+    color: #ecf0f1;
+}
+.autostatus-preset-label {
+    font-size: 13px;
+    color: #95a5a6;
+    flex: 1;
+}
+.autostatus-preset-actions {
+    display: flex;
+    gap: 4px;
+}
+.autostatus-preset-body {
+    padding: 14px 16px;
+}
+.autostatus-preset-body-empty {
+    padding: 30px 16px;
+    text-align: center;
+}
+
+/* --- Fields --- */
+.autostatus-field {
+    margin-bottom: 12px;
+}
+.autostatus-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #7f8c8d;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: color 0.3s ease;
+}
+body.dark-theme .autostatus-field label {
+    color: #95a5a6;
+}
+.autostatus-field input,
+.autostatus-field select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fafafa;
+    color: #2c3e50;
+    transition: all 0.2s ease;
+}
+body.dark-theme .autostatus-field input,
+body.dark-theme .autostatus-field select {
+    background: #1e1e1e;
+    border-color: #454545;
+    color: #ecf0f1;
+}
+.autostatus-field input:focus,
+.autostatus-field select:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.15);
+}
+.autostatus-field small {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #95a5a6;
+}
+.autostatus-char-count {
+    float: right;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: #95a5a6;
+}
+.autostatus-field-row {
+    margin-bottom: 4px;
+}
+
+/* --- Toggle Switch --- */
+.autostatus-toggle-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: #2c3e50;
+    transition: color 0.3s ease;
+}
+body.dark-theme .autostatus-toggle-label {
+    color: #ecf0f1;
+}
+.autostatus-toggle {
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: #ccc;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.25s ease;
+    flex-shrink: 0;
+}
+.autostatus-toggle-on {
+    background: #2ecc71;
+}
+.autostatus-toggle-knob {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.25s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.autostatus-toggle-on .autostatus-toggle-knob {
+    transform: translateX(20px);
+}
+
+/* --- Icon Buttons --- */
+.autostatus-icon-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: rgba(0,0,0,0.05);
+    color: #7f8c8d;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+body.dark-theme .autostatus-icon-btn {
+    background: rgba(255,255,255,0.08);
+    color: #bdc3c7;
+}
+.autostatus-icon-btn:hover {
+    background: rgba(52, 152, 219, 0.15);
+    color: #3498db;
+}
+.autostatus-icon-btn-danger:hover {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+}
+
+/* --- Schedule --- */
+.autostatus-schedule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.autostatus-schedule-empty {
+    text-align: center;
+    padding: 24px;
+    color: #95a5a6;
+    font-size: 13px;
+    background: #fafafa;
+    border-radius: 8px;
+    border: 1px dashed #ddd;
+    transition: all 0.3s ease;
+}
+body.dark-theme .autostatus-schedule-empty {
+    background: #1e1e1e;
+    border-color: #454545;
+    color: #7f8c8d;
+}
+.autostatus-schedule-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #ecf0f1;
+    transition: all 0.25s ease;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+body.dark-theme .autostatus-schedule-row {
+    background: #2b2b2b;
+    border-color: #454545;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.autostatus-schedule-disabled {
+    opacity: 0.5;
+}
+.autostatus-schedule-color {
+    width: 6px;
+    height: 40px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.autostatus-schedule-details {
+    flex: 1;
+    min-width: 0;
+}
+.autostatus-schedule-time {
+    font-size: 15px;
+    font-weight: 700;
+    color: #2c3e50;
+    transition: color 0.3s ease;
+}
+body.dark-theme .autostatus-schedule-time {
+    color: #ecf0f1;
+}
+.autostatus-schedule-time small {
+    font-weight: 400;
+    color: #f39c12;
+    margin-left: 4px;
+}
+.autostatus-schedule-days {
+    font-size: 12px;
+    color: #95a5a6;
+    margin-top: 2px;
+}
+.autostatus-schedule-preset {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2c3e50;
+    white-space: nowrap;
+    transition: color 0.3s ease;
+}
+body.dark-theme .autostatus-schedule-preset {
+    color: #ecf0f1;
+}
+.autostatus-schedule-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* --- Schedule Add Form --- */
+.autostatus-schedule-add {
+    padding: 16px !important;
+}
+.autostatus-schedule-add-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+.autostatus-field-days {
+    min-width: 200px;
+}
+.autostatus-day-picker {
+    display: flex;
+    gap: 4px;
+}
+.autostatus-day-btn {
+    width: 36px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1.5px solid #ddd;
+    background: #fafafa;
+    color: #7f8c8d;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+body.dark-theme .autostatus-day-btn {
+    background: #1e1e1e;
+    border-color: #454545;
+    color: #95a5a6;
+}
+.autostatus-day-btn:hover {
+    border-color: #3498db;
+    color: #3498db;
+}
+.autostatus-day-active {
+    background: #3498db !important;
+    border-color: #3498db !important;
+    color: #fff !important;
+}
+.autostatus-field-action {
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 2px;
+}
+
+/* --- Settings --- */
+.autostatus-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.autostatus-info-box {
+    padding: 14px 16px;
+    background: #f0f7ff;
+    border-radius: 8px;
+    border-left: 4px solid #3498db;
+    font-size: 13px;
+    color: #2c3e50;
+    line-height: 1.6;
+    transition: all 0.3s ease;
+}
+body.dark-theme .autostatus-info-box {
+    background: #1a2a3a;
+    color: #bdc3c7;
+}
+.autostatus-info-box code {
+    background: rgba(52, 152, 219, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    color: #2980b9;
+}
+body.dark-theme .autostatus-info-box code {
+    background: rgba(52, 152, 219, 0.2);
+    color: #5dade2;
+}
+/* --- Schedule Name --- */
+.autostatus-schedule-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: #2c3e50;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    transition: background 0.15s ease;
+}
+.autostatus-schedule-name:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+body.dark-theme .autostatus-schedule-name {
+    color: #ecf0f1;
+}
+body.dark-theme .autostatus-schedule-name:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+.autostatus-schedule-name-input {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 2px 4px;
+    border: 1px solid #3498db;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    outline: none;
+    width: 100%;
+    max-width: 200px;
+}
+/* --- Schedule Fallback --- */
+.autostatus-schedule-fallback {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+.autostatus-schedule-fallback label {
+    font-size: 11px;
+    color: #7f8c8d;
+    white-space: nowrap;
+    margin: 0;
+    font-weight: 500;
+}
+.autostatus-fallback-select {
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    border: 1px solid #dfe6e9;
+    background: #fff;
+    color: #2c3e50;
+    cursor: pointer;
+    outline: none;
+    max-width: 150px;
+}
+body.dark-theme .autostatus-fallback-select {
+    border-color: #4a5a6a;
+    background: #2b2b2b;
+    color: #ecf0f1;
+}
+body.dark-theme .autostatus-schedule-fallback label {
+    color: #b2bec3;
+}
+

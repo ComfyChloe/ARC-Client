@@ -16,6 +16,7 @@ const HyperateAddon = require('./Containers/Hyperate');
 const OSCLeashAddon = require('./Containers/OSCLeash');
 const VRChatAPIContainer = require('./Containers/VRC-API');
 const OscGoesBrrrAddon = require('./Containers/OscGoesBrrr');
+const AutoStatusContainer = require('./Containers/AutoStatus');
 const WebSocketManager = require('./utils/websocketManager');
 const configManager = require('./utils/configManager');
 let mainWindow;
@@ -30,6 +31,7 @@ let hyperateAddon;
 let oscLeashAddon;
 let vrchatApiContainer;
 let oscGoesBrrrAddon;
+let autoStatusContainer;
 // Custom WebSocket URLs are now persisted across restarts
 let isShuttingDown = false;
 let hasShownCriticalError = false;
@@ -516,6 +518,14 @@ async function initOscQueryService() {
       });
       // Setup OSC message forwarding to WebSocket
       oscQueryService.on('osc-message', (oscData) => {
+        // AutoStatus: intercept vrc-status parameter (non-blocking, processes before forwarding)
+        if (autoStatusContainer) {
+          // Detect avatar change to activate 30s guard
+          if (oscData.address === '/avatar/change') {
+            autoStatusContainer.recordAvatarChange();
+          }
+          autoStatusContainer.handleOscMessage(oscData);
+        }
         // Send to renderer for logging (always, regardless of forwarding status)
         sendToRenderer('osc-received', {
           address: oscData.address,
@@ -1706,6 +1716,48 @@ ipcMain.handle('vrchatapi-get-stats', async () => {
   }
 });
 
+// --- AutoStatus IPC Handlers ---
+ipcMain.handle('autostatus-get-config', () => {
+  if (!autoStatusContainer) return { presets: [], schedule: [], settings: {} };
+  return {
+    presets: autoStatusContainer.getPresets(),
+    schedule: autoStatusContainer.getSchedule(),
+    settings: autoStatusContainer.getSettings()
+  };
+});
+ipcMain.handle('autostatus-get-status', () => {
+  if (!autoStatusContainer) return {};
+  return autoStatusContainer.getStatus();
+});
+ipcMain.handle('autostatus-set-preset', async (event, presetData) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' };
+  return autoStatusContainer.setPreset(presetData);
+});
+ipcMain.handle('autostatus-delete-preset', async (event, presetId) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' };
+  return autoStatusContainer.deletePreset(presetId);
+});
+ipcMain.handle('autostatus-test-preset', async (event, presetId) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' };
+  return autoStatusContainer.applyPreset(presetId, 'manual');
+});
+ipcMain.handle('autostatus-add-schedule', async (event, entry) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' };
+  return autoStatusContainer.addScheduleEntry(entry);
+});
+ipcMain.handle('autostatus-update-schedule', async (event, entryId, updates) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' };
+  return autoStatusContainer.updateScheduleEntry(entryId, updates);
+});
+ipcMain.handle('autostatus-delete-schedule', async (event, entryId) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' };
+  return autoStatusContainer.deleteScheduleEntry(entryId);
+});
+ipcMain.handle('autostatus-update-settings', async (event, settings) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' };
+  return autoStatusContainer.updateSettings(settings);
+});
+
 app.whenReady().then(async () => {
   debug.logAppStartup();
   
@@ -1719,6 +1771,7 @@ app.whenReady().then(async () => {
   oscLeashAddon = new OSCLeashAddon();
   vrchatApiContainer = new VRChatAPIContainer();
   oscGoesBrrrAddon = new OscGoesBrrrAddon();
+  autoStatusContainer = new AutoStatusContainer();
   
   // Set up HypeRate status and heart rate callbacks to update renderer in real-time
   hyperateAddon.setStatusChangeCallback((status) => {
@@ -1751,8 +1804,23 @@ app.whenReady().then(async () => {
     }
   });
   
+  // Set up AutoStatus: always active, wire callbacks and start
+  autoStatusContainer.setStatusChangeCallback((status) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('autostatus-update', status);
+    }
+  });
+  autoStatusContainer.start(vrchatApiContainer);
+  
   // Set up pipeline event forwarding
   vrchatApiContainer.setPipelineEventCallback((event, data) => {
+    // Detect external status changes for AutoStatus
+    if (event === 'user-update' && autoStatusContainer && data?.user) {
+      autoStatusContainer.handleExternalStatusChange(
+        data.user.status || null,
+        data.user.statusDescription || null
+      );
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('vrchatapi-pipeline-event', { event, data });
     }

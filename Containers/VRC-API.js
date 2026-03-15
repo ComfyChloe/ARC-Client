@@ -427,6 +427,66 @@ class VRChatAPIContainer {
   }
 
   /**
+   * Sets the user's VRChat status type and/or status message.
+   * @param {string|null} status - One of: 'active', 'join me', 'ask me', 'busy', or null to keep current
+   * @param {string|null} statusDescription - Status message (max 32 chars), or null to keep current
+   * @returns {Object} Result with success status, previous/new values
+   */
+  async setStatus(status, statusDescription) {
+    if (!this.authenticated || !this.apiClient || !this.currentUser) {
+      return { success: false, error: 'Not authenticated' };
+    }
+    // Rate limiting: max 6 status changes per minute
+    const now = Date.now();
+    if (!this._statusChangeTimestamps) this._statusChangeTimestamps = [];
+    this._statusChangeTimestamps = this._statusChangeTimestamps.filter(t => now - t < 60000);
+    if (this._statusChangeTimestamps.length >= 6) {
+      return { success: false, error: 'Rate limit exceeded (max 6 status changes per minute)' };
+    }
+    // Validate status type
+    const validStatuses = ['active', 'join me', 'ask me', 'busy'];
+    if (status !== null && !validStatuses.includes(status)) {
+      return { success: false, error: `Invalid status type: ${status}` };
+    }
+    // Sanitize status description
+    if (statusDescription !== null) {
+      statusDescription = String(statusDescription).replace(/\s+/g, ' ').trim().slice(0, 32);
+    }
+    const previousStatus = this.currentUser.status;
+    const previousStatusDescription = this.currentUser.statusDescription;
+    // Build update body with only changed fields
+    const body = {};
+    if (status !== null) body.status = status;
+    if (statusDescription !== null) body.statusDescription = statusDescription;
+    if (Object.keys(body).length === 0) {
+      return { success: false, error: 'No changes specified' };
+    }
+    try {
+      const result = await this.apiClient.updateUser({
+        path: { userId: this.currentUser.id },
+        body
+      });
+      if (result.data) {
+        this.currentUser = result.data;
+        this._statusChangeTimestamps.push(now);
+        debug.info(`VRChat status updated: ${status || '(unchanged)'} - "${statusDescription || '(unchanged)'}"`);
+        return {
+          success: true,
+          previousStatus,
+          previousStatusDescription,
+          newStatus: result.data.status,
+          newStatusDescription: result.data.statusDescription
+        };
+      }
+      return { success: false, error: 'Update returned no data' };
+    } catch (error) {
+      const errorMessage = error.response?.data?.error?.message || error.message;
+      debug.error(`Failed to update VRChat status: ${errorMessage}`);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
    * Connect to VRChat WebSocket pipeline for real-time events.
    */
   async connectPipeline() {
@@ -509,8 +569,15 @@ class VRChatAPIContainer {
     // Listen for user updates
     this.apiClient.on('user-update', (data) => {
       debug.info(`Pipeline: User update - ${data.userId}`);
+      const normalizedUser = this.normalizePipelineUserUpdate(data);
+      if (normalizedUser && this.currentUser && normalizedUser.id === this.currentUser.id) {
+        this.currentUser = { ...this.currentUser, ...normalizedUser };
+      }
       if (this.onPipelineEvent) {
-        this.onPipelineEvent('user-update', data);
+        this.onPipelineEvent('user-update', {
+          ...data,
+          user: normalizedUser
+        });
       }
     });
 
@@ -660,6 +727,22 @@ class VRChatAPIContainer {
    */
   setPipelineEventCallback(callback) {
     this.onPipelineEvent = callback;
+  }
+
+  normalizePipelineUserUpdate(data) {
+    if (!data || typeof data !== 'object') {
+      return null;
+    }
+    const sourceUser = data.user && typeof data.user === 'object' ? data.user : data;
+    const userId = sourceUser.id || sourceUser.userId || data.userId || null;
+    if (!userId) {
+      return null;
+    }
+    return {
+      id: userId,
+      status: sourceUser.status ?? this.currentUser?.status ?? null,
+      statusDescription: sourceUser.statusDescription ?? this.currentUser?.statusDescription ?? null
+    };
   }
 
   /**
