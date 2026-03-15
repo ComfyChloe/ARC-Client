@@ -12,6 +12,9 @@ import OSCLeashAddon from './containers/oscleash/oscleash'
 import VRChatAPIContainer from './containers/vrchat-api/vrchat-api'
 import OscGoesBrrrAddon from './containers/oscgoesbrrr/oscgoesbrrr'
 import AutoStatusContainer from './containers/autostatus/autostatus'
+import Calendar from './containers/calendar/calendar'
+import OpenShock from './containers/openshock/openshock'
+import ARCLink from './containers/arclink/arclink'
 import WebSocketManager from './services/websocketManager'
 import configManager from './services/configManager'
 let mainWindow: BrowserWindow | null
@@ -28,6 +31,9 @@ let oscLeashAddon: any
 let vrchatApiContainer: any
 let oscGoesBrrrAddon: any
 let autoStatusContainer: any
+let calendarContainer: any
+let openShockContainer: any
+let arcLinkContainer: any
 // Custom WebSocket URLs are now persisted across restarts
 let isShuttingDown = false
 let hasShownCriticalError = false
@@ -1641,6 +1647,41 @@ ipcMain.handle('autostatus-update-settings', async (_event, settings: any) => {
   if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
   return autoStatusContainer.updateSettings(settings)
 })
+// Calendar IPC handlers
+ipcMain.handle('calendar-fetch', async () => {
+  if (!calendarContainer) return { success: false, error: 'Not initialized' }
+  return calendarContainer.fetchEvents()
+})
+ipcMain.handle('calendar-get-status', async () => {
+  if (!calendarContainer) return { success: false, error: 'Not initialized' }
+  return calendarContainer.getEvents()
+})
+// OpenShock IPC handlers
+ipcMain.handle('openshock-start', async (_event, apiKey: string) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.start(apiKey)
+})
+ipcMain.handle('openshock-stop', async () => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.stop()
+})
+ipcMain.handle('openshock-get-status', async () => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.getStatus()
+})
+// ARCLink IPC handlers
+ipcMain.handle('arclink-start', async () => {
+  if (!arcLinkContainer) return { success: false, error: 'Not initialized' }
+  return arcLinkContainer.start()
+})
+ipcMain.handle('arclink-stop', async () => {
+  if (!arcLinkContainer) return { success: false, error: 'Not initialized' }
+  return arcLinkContainer.stop()
+})
+ipcMain.handle('arclink-get-status', async () => {
+  if (!arcLinkContainer) return { success: false, error: 'Not initialized' }
+  return arcLinkContainer.getStatus()
+})
 // ────────── App Lifecycle ──────────
 app.whenReady().then(async () => {
   debug.logAppStartup()
@@ -1655,6 +1696,12 @@ app.whenReady().then(async () => {
   vrchatApiContainer = new VRChatAPIContainer()
   oscGoesBrrrAddon = new OscGoesBrrrAddon()
   autoStatusContainer = new AutoStatusContainer()
+  calendarContainer = new Calendar()
+  openShockContainer = new OpenShock()
+  arcLinkContainer = new ARCLink()
+  await calendarContainer.init()
+  await openShockContainer.init()
+  await arcLinkContainer.init()
   // Set up HypeRate status and heart rate callbacks
   hyperateAddon.setStatusChangeCallback((status: any) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1972,6 +2019,33 @@ function cleanup(source = 'unknown') {
   } catch (error: any) {
     debug.error(`Error stopping OSCLeash addon: ${error.message}`)
     oscLeashAddon = null
+  }
+  try {
+    if (calendarContainer) {
+      calendarContainer.close()
+      calendarContainer = null
+    }
+  } catch (error: any) {
+    debug.error(`Error stopping Calendar container: ${error.message}`)
+    calendarContainer = null
+  }
+  try {
+    if (openShockContainer) {
+      openShockContainer.close()
+      openShockContainer = null
+    }
+  } catch (error: any) {
+    debug.error(`Error stopping OpenShock container: ${error.message}`)
+    openShockContainer = null
+  }
+  try {
+    if (arcLinkContainer) {
+      arcLinkContainer.close()
+      arcLinkContainer = null
+    }
+  } catch (error: any) {
+    debug.error(`Error stopping ARCLink container: ${error.message}`)
+    arcLinkContainer = null
   }
   if ((global as any).oscIpcBatchInterval) {
     clearInterval((global as any).oscIpcBatchInterval)

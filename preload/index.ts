@@ -92,6 +92,17 @@ const api = {
   autoStatusUpdateSchedule: (entryId: string, updates: any) => ipcRenderer.invoke('autostatus-update-schedule', entryId, updates),
   autoStatusDeleteSchedule: (entryId: string) => ipcRenderer.invoke('autostatus-delete-schedule', entryId),
   autoStatusUpdateSettings: (settings: any) => ipcRenderer.invoke('autostatus-update-settings', settings),
+  // Calendar API
+  calendarFetch: () => ipcRenderer.invoke('calendar-fetch'),
+  calendarGetStatus: () => ipcRenderer.invoke('calendar-get-status'),
+  // OpenShock API
+  openShockStart: (apiKey: string) => ipcRenderer.invoke('openshock-start', apiKey),
+  openShockStop: () => ipcRenderer.invoke('openshock-stop'),
+  openShockGetStatus: () => ipcRenderer.invoke('openshock-get-status'),
+  // ARCLink API
+  arcLinkStart: () => ipcRenderer.invoke('arclink-start'),
+  arcLinkStop: () => ipcRenderer.invoke('arclink-stop'),
+  arcLinkGetStatus: () => ipcRenderer.invoke('arclink-get-status'),
   // VRChat account linking
   sendVRChatLink: (vrchatUserId: string, vrchatUsername: string) => ipcRenderer.invoke('send-vrchat-link', vrchatUserId, vrchatUsername),
   checkVRChatLink: () => ipcRenderer.invoke('check-vrchat-link'),

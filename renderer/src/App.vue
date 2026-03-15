@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useOscStatus } from './composables/useOscStatus'
 import { useServerConnection } from './composables/useServerConnection'
 
-const { serverRunning } = useOscStatus()
+const { oscEnabled } = useOscStatus()
 const { isConnected, isAuthenticated } = useServerConnection()
 
 const extrasOpen = ref(false)
@@ -40,7 +40,7 @@ const extrasOpen = ref(false)
       </div>
       <div class="sidebar-footer">
         <div class="status-indicators">
-          <span class="status-dot" :class="{ active: serverRunning }" title="OSC Server"></span>
+          <span class="status-dot" :class="{ active: oscEnabled }" title="OSC Server"></span>
           <span class="status-dot" :class="{ active: isConnected }" title="WebSocket"></span>
           <span class="status-dot" :class="{ active: isAuthenticated }" title="Authenticated"></span>
         </div>
