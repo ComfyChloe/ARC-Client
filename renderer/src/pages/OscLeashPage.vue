@@ -42,370 +42,233 @@ function meterColor(val: number): string {
 </script>
 
 <template>
-  <div class="page">
-    <h2>OSC Leash</h2>
-    <p class="page-desc">Control locomotion input from VRChat physbone leashes.</p>
-    <!-- Status Card -->
-    <div class="status-card">
-      <div class="status-row">
-        <span class="status-label">Status</span>
-        <span class="status-value" :class="status.enabled ? 'status-ok' : 'status-off'">{{ statusLabel }}</span>
+  <div class="page-view">
+    <div class="header">
+      <h1>OSC Leash</h1>
+      <p>VRChat physbone-based movement control system.</p>
+    </div>
+    <div class="card">
+      <h3>Connection Status</h3>
+      <div class="connection-status">
+        <span class="status-indicator" :class="status.enabled ? 'status-connected' : 'status-disconnected'"></span>
+        <span>{{ statusLabel }}</span>
       </div>
-      <div class="status-row">
-        <span class="status-label">Leashes</span>
-        <span class="status-value">{{ status.leashCount }} discovered</span>
+      <p class="oscleash-note">Discovered leashes: {{ status.leashCount }}</p>
+      <div class="oscleash-action-row">
+        <button class="btn" :class="status.enabled ? 'btn-danger' : 'btn-primary'" @click="toggle">
+          {{ status.enabled ? 'Disable OSC Leash' : 'Enable OSC Leash' }}
+        </button>
+        <label class="oscleash-checkbox">
+          <input type="checkbox" :checked="autostart" @change="toggleAutostart" />
+          <span>Auto-start with client</span>
+        </label>
       </div>
     </div>
-    <!-- Actions -->
-    <div class="actions-row">
-      <button class="btn" :class="{ 'btn-danger': status.enabled }" @click="toggle">
-        {{ status.enabled ? 'Stop' : 'Start' }}
-      </button>
-      <label class="toggle-label">
-        <input type="checkbox" :checked="autostart" @change="toggleAutostart" />
-        Autostart
-      </label>
-    </div>
-    <!-- Tabs -->
     <div class="tabs">
       <button class="tab" :class="{ active: activeTab === 'movement' }" @click="onTabChange('movement')">Movement</button>
       <button class="tab" :class="{ active: activeTab === 'config' }" @click="onTabChange('config')">Configuration</button>
     </div>
-    <!-- Movement Tab -->
-    <div v-if="activeTab === 'movement'" class="tab-content">
-      <!-- Leash List -->
-      <div class="section" v-if="status.discoveredLeashes?.length">
-        <h3>Active Leashes</h3>
-        <div class="leash-list">
-          <div v-for="leash in status.discoveredLeashes" :key="leash.name || leash.id" class="leash-item">
-            <span class="leash-name">{{ leash.name || leash.id }}</span>
-            <span class="leash-stretch">{{ Math.round((leash.stretch ?? 0) * 100) }}%</span>
-            <span class="leash-grip" :class="leash.grabbed ? 'grabbed' : 'released'">{{ leash.grabbed ? 'Grabbed' : 'Released' }}</span>
+    <div v-if="activeTab === 'movement'">
+      <div class="card" v-if="status.discoveredLeashes?.length">
+        <h3>Leash Status</h3>
+        <div class="oscleash-leash-list">
+          <div v-for="leash in status.discoveredLeashes" :key="leash.name || leash.id" class="oscleash-leash-item">
+            <div>
+              <strong>{{ leash.name || leash.id }}</strong>
+              <div class="oscleash-subtext">Stretch: {{ Math.round((leash.stretch ?? 0) * 100) }}%</div>
+            </div>
+            <span class="oscleash-badge" :class="leash.grabbed ? 'grabbed' : 'released'">{{ leash.grabbed ? 'Grabbed' : 'Released' }}</span>
           </div>
         </div>
       </div>
-      <!-- Movement Meters -->
-      <div class="section">
-        <h3>Movement Output</h3>
-        <div class="meter-group">
-          <div class="meter-row">
-            <span class="meter-label">Vertical</span>
-            <div class="meter-bar"><div class="meter-fill" :style="{ width: meterWidth(movement.vertical), background: meterColor(movement.vertical) }"></div></div>
-            <span class="meter-val">{{ movement.vertical.toFixed(2) }}</span>
+      <div class="card">
+        <h3>Real-time Movement Data</h3>
+        <div class="oscleash-meter-grid">
+          <div class="oscleash-meter-row">
+            <span>Vertical</span>
+            <div class="oscleash-meter-bar"><div class="oscleash-meter-fill" :style="{ width: meterWidth(movement.vertical), background: meterColor(movement.vertical) }"></div></div>
+            <strong>{{ movement.vertical.toFixed(2) }}</strong>
           </div>
-          <div class="meter-row">
-            <span class="meter-label">Horizontal</span>
-            <div class="meter-bar"><div class="meter-fill" :style="{ width: meterWidth(movement.horizontal), background: meterColor(movement.horizontal) }"></div></div>
-            <span class="meter-val">{{ movement.horizontal.toFixed(2) }}</span>
+          <div class="oscleash-meter-row">
+            <span>Horizontal</span>
+            <div class="oscleash-meter-bar"><div class="oscleash-meter-fill" :style="{ width: meterWidth(movement.horizontal), background: meterColor(movement.horizontal) }"></div></div>
+            <strong>{{ movement.horizontal.toFixed(2) }}</strong>
           </div>
-          <div class="meter-row">
-            <span class="meter-label">Run</span>
-            <div class="meter-bar"><div class="meter-fill" :style="{ width: movement.run ? '100%' : '0%', background: movement.run ? '#e94560' : '#555' }"></div></div>
-            <span class="meter-val">{{ movement.run ? 'Yes' : 'No' }}</span>
+          <div class="oscleash-meter-row">
+            <span>Run</span>
+            <div class="oscleash-meter-bar"><div class="oscleash-meter-fill" :style="{ width: movement.run ? '100%' : '0%', background: movement.run ? '#e74c3c' : '#95a5a6' }"></div></div>
+            <strong>{{ movement.run ? 'Yes' : 'No' }}</strong>
           </div>
         </div>
       </div>
-      <!-- Physbone Inputs -->
-      <div class="section">
-        <h3>Physbone Inputs</h3>
-        <div class="physbone-grid">
-          <div class="physbone-item">
-            <span class="physbone-name">Stretch</span>
-            <span class="physbone-val">{{ (physbone.stretch * 100).toFixed(0) }}%</span>
+      <div class="card">
+        <h3>Physbone Input Monitor</h3>
+        <div class="oscleash-physbone-grid">
+          <div class="oscleash-physbone-item">
+            <span>Stretch</span>
+            <strong>{{ (physbone.stretch * 100).toFixed(0) }}%</strong>
           </div>
-          <div class="physbone-item">
-            <span class="physbone-name">Grabbed</span>
-            <span class="physbone-val" :class="physbone.grabbed ? 'val-active' : ''">{{ physbone.grabbed ? 'Yes' : 'No' }}</span>
+          <div class="oscleash-physbone-item">
+            <span>Grabbed</span>
+            <strong>{{ physbone.grabbed ? 'Yes' : 'No' }}</strong>
           </div>
-          <div class="physbone-item" v-for="axis in ['zPos', 'zNeg', 'xPos', 'xNeg', 'yPos', 'yNeg']" :key="axis">
-            <span class="physbone-name">{{ axis }}</span>
-            <span class="physbone-val">{{ ((physbone as any)[axis] * 100).toFixed(0) }}%</span>
+          <div class="oscleash-physbone-item" v-for="axis in ['zPos', 'zNeg', 'xPos', 'xNeg', 'yPos', 'yNeg']" :key="axis">
+            <span>{{ axis }}</span>
+            <strong>{{ ((physbone as any)[axis] * 100).toFixed(0) }}%</strong>
           </div>
         </div>
       </div>
     </div>
-    <!-- Config Tab -->
-    <div v-if="activeTab === 'config'" class="tab-content">
-      <div class="config-grid" v-if="config">
-        <div class="config-field">
+    <div v-else class="card">
+      <h3>Configuration</h3>
+      <div class="oscleash-config-grid" v-if="config">
+        <div class="form-group">
           <label>Run Deadzone (%)</label>
           <input type="number" min="0" max="100" v-model.number="configDraft.runDeadzone" />
         </div>
-        <div class="config-field">
+        <div class="form-group">
           <label>Walk Deadzone (%)</label>
           <input type="number" min="0" max="100" v-model.number="configDraft.walkDeadzone" />
         </div>
-        <div class="config-field">
+        <div class="form-group">
           <label>Strength Multiplier</label>
           <input type="number" min="0" max="5" step="0.1" v-model.number="configDraft.strengthMultiplier" />
         </div>
-        <div class="config-field">
+        <div class="form-group">
           <label>Up Compensation</label>
           <input type="number" min="0" max="1" step="0.01" v-model.number="configDraft.upCompensation" />
         </div>
-        <div class="config-field">
+        <div class="form-group">
           <label>Up Deadzone</label>
           <input type="number" min="0" max="1" step="0.01" v-model.number="configDraft.upDeadzone" />
         </div>
-        <div class="config-field">
+        <div class="form-group">
           <label>Down Compensation</label>
           <input type="number" min="0" max="1" step="0.01" v-model.number="configDraft.downCompensation" />
         </div>
-        <div class="config-field">
+        <div class="form-group">
           <label>Down Deadzone</label>
           <input type="number" min="0" max="1" step="0.01" v-model.number="configDraft.downDeadzone" />
         </div>
-        <div class="config-field">
+        <div class="form-group">
           <label>Active Delay (ms)</label>
           <input type="number" min="0" max="2000" v-model.number="configDraft.activeDelay" />
         </div>
-        <div class="config-field">
+        <div class="form-group">
           <label>Inactive Delay (ms)</label>
           <input type="number" min="0" max="2000" v-model.number="configDraft.inactiveDelay" />
         </div>
-        <div class="config-field checkbox-field">
-          <label><input type="checkbox" v-model="configDraft.logging" /> Enable Logging</label>
-        </div>
       </div>
-      <div class="config-actions">
-        <button class="btn" :disabled="saving" @click="handleSave">{{ saving ? 'Saving...' : 'Save' }}</button>
-        <button class="btn btn-secondary" @click="handleReset">Reset Defaults</button>
+      <label class="oscleash-checkbox oscleash-logging-toggle">
+        <input type="checkbox" v-model="configDraft.logging" />
+        <span>Enable debug logging</span>
+      </label>
+      <div class="oscleash-action-row">
+        <button class="btn btn-primary" :disabled="saving" @click="handleSave">{{ saving ? 'Saving...' : 'Save Changes' }}</button>
+        <button class="btn btn-warning" @click="handleReset">Reset Defaults</button>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page-desc {
-  color: #999;
-  margin-bottom: 1rem;
+.oscleash-note {
+  margin: 0 0 15px;
+  color: #7f8c8d;
 }
-.status-card {
-  background: #1e1e2e;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1rem;
+.oscleash-action-row {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
 }
-.status-row {
+.oscleash-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.oscleash-leash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.oscleash-leash-item {
   display: flex;
   justify-content: space-between;
-  padding: 0.4rem 0;
-}
-.status-label {
-  color: #999;
-}
-.status-value {
-  color: #fff;
-}
-.status-ok {
-  color: #4caf50;
-}
-.status-off {
-  color: #999;
-}
-.actions-row {
-  display: flex;
+  gap: 12px;
   align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  padding: 12px 15px;
+  background: #f8f9fa;
+  border: 1px solid #ecf0f1;
+  border-radius: 8px;
 }
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: #ccc;
-  cursor: pointer;
-  font-size: 0.9rem;
+.oscleash-subtext {
+  margin-top: 4px;
+  color: #7f8c8d;
+  font-size: 12px;
 }
-.tabs {
-  display: flex;
-  gap: 0;
-  margin-bottom: 1rem;
-  border-bottom: 2px solid #333;
-}
-.tab {
-  background: none;
-  border: none;
-  color: #999;
-  padding: 0.6rem 1.2rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-}
-.tab:hover {
-  color: #ccc;
-}
-.tab.active {
-  color: #e94560;
-  border-bottom-color: #e94560;
-}
-.tab-content {
-  min-height: 200px;
-}
-.section {
-  margin-bottom: 1.5rem;
-}
-.section h3 {
-  margin: 0 0 0.6rem;
-  font-size: 1rem;
-  color: #ccc;
-}
-.leash-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-.leash-item {
-  background: #1e1e2e;
-  border-radius: 6px;
-  padding: 0.5rem 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.leash-name {
-  flex: 1;
-  color: #fff;
-}
-.leash-stretch {
-  color: #f0c040;
+.oscleash-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
   font-weight: 600;
 }
-.leash-grip {
-  font-size: 0.8rem;
-  padding: 2px 8px;
-  border-radius: 4px;
+.oscleash-badge.grabbed {
+  background: #f8d7da;
+  color: #c0392b;
 }
-.leash-grip.grabbed {
-  background: #e74c3c33;
-  color: #e74c3c;
+.oscleash-badge.released {
+  background: #d5f4e6;
+  color: #27ae60;
 }
-.leash-grip.released {
-  background: #4caf5033;
-  color: #4caf50;
-}
-.meter-group {
+.oscleash-meter-grid {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 12px;
 }
-.meter-row {
-  display: flex;
+.oscleash-meter-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 70px;
+  gap: 12px;
   align-items: center;
-  gap: 0.8rem;
 }
-.meter-label {
-  width: 80px;
-  color: #999;
-  font-size: 0.85rem;
-}
-.meter-bar {
-  flex: 1;
+.oscleash-meter-bar {
   height: 12px;
-  background: #2a2a3e;
-  border-radius: 6px;
+  background: #ecf0f1;
+  border-radius: 999px;
   overflow: hidden;
 }
-.meter-fill {
+.oscleash-meter-fill {
   height: 100%;
-  border-radius: 6px;
-  transition: width 0.15s ease;
 }
-.meter-val {
-  width: 50px;
-  text-align: right;
-  color: #ccc;
-  font-size: 0.85rem;
-  font-family: monospace;
-}
-.physbone-grid {
+.oscleash-physbone-grid,
+.oscleash-config-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
 }
-.physbone-item {
-  background: #1e1e2e;
-  border-radius: 6px;
-  padding: 0.5rem 0.8rem;
+.oscleash-physbone-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 12px 15px;
+  background: #f8f9fa;
+  border: 1px solid #ecf0f1;
+  border-radius: 8px;
 }
-.physbone-name {
-  color: #999;
-  font-size: 0.85rem;
+.oscleash-logging-toggle {
+  margin: 10px 0 20px;
 }
-.physbone-val {
-  color: #fff;
-  font-weight: 600;
-  font-family: monospace;
+:global(body.dark-theme) .oscleash-note,
+:global(body.dark-theme) .oscleash-subtext {
+  color: #95a5a6;
 }
-.val-active {
-  color: #e94560;
+:global(body.dark-theme) .oscleash-leash-item,
+:global(body.dark-theme) .oscleash-physbone-item {
+  background: #2c3e50;
+  border-color: #34495e;
 }
-.config-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-.config-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.config-field label {
-  color: #999;
-  font-size: 0.85rem;
-}
-.config-field input[type="number"] {
-  background: #2a2a3e;
-  border: 1px solid #444;
-  border-radius: 6px;
-  padding: 0.45rem 0.7rem;
-  color: #fff;
-  font-size: 0.9rem;
-}
-.config-field input[type="number"]:focus {
-  outline: none;
-  border-color: #5865f2;
-}
-.checkbox-field {
-  flex-direction: row;
-  align-items: center;
-}
-.checkbox-field label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  cursor: pointer;
-  color: #ccc;
-}
-.config-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-.btn {
-  background: #5865f2;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-.btn:hover {
-  opacity: 0.9;
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.btn-danger {
-  background: #e74c3c;
-}
-.btn-secondary {
-  background: #555;
+:global(body.dark-theme) .oscleash-meter-bar {
+  background: #34495e;
 }
 </style>

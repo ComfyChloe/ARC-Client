@@ -29,93 +29,72 @@ onMounted(loadStatus)
 </script>
 
 <template>
-  <div class="page">
-    <h2>Calendar</h2>
-    <p class="page-description">VRChat events and schedules.</p>
-    <div class="status-card">
-      <div class="status-row">
-        <span class="status-label">Status</span>
-        <span class="status-value coming-soon">Coming Soon</span>
-      </div>
-      <div class="status-row" v-if="lastFetch">
-        <span class="status-label">Last Fetch</span>
-        <span class="status-value">{{ lastFetch }}</span>
-      </div>
-      <div class="status-row">
-        <span class="status-label">Events</span>
-        <span class="status-value">{{ events.length }}</span>
-      </div>
+  <div class="page-view">
+    <div class="header">
+      <h1>Calendar</h1>
+      <p>View VRChat events and schedules</p>
     </div>
-    <div class="actions">
-      <button class="btn" :disabled="loading" @click="fetchEvents">
+    <div class="card">
+      <h3>Calendar Status</h3>
+      <div class="status-panel">
+        <div class="status-row">
+          <span class="status-label">Status</span>
+          <span class="status-value">Available</span>
+        </div>
+        <div v-if="lastFetch" class="status-row">
+          <span class="status-label">Last Fetch</span>
+          <span class="status-value">{{ lastFetch }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Events</span>
+          <span class="status-value">{{ events.length }}</span>
+        </div>
+      </div>
+      <button class="btn btn-primary" :disabled="loading" @click="fetchEvents">
         {{ loading ? 'Fetching...' : 'Fetch Events' }}
       </button>
+      <p v-if="error" class="error-text">{{ error }}</p>
     </div>
-    <p class="error-text" v-if="error">{{ error }}</p>
-    <div class="event-list" v-if="events.length > 0">
-      <div class="event-item" v-for="(event, i) in events" :key="i">
-        {{ event }}
+
+    <div class="card">
+      <h3>Events</h3>
+      <div v-if="events.length > 0" class="event-list">
+        <div v-for="(event, i) in events" :key="i" class="event-item">{{ event }}</div>
       </div>
+      <p v-else class="placeholder-text">No events available yet.</p>
     </div>
   </div>
-</template>
+ </template>
 
 <style scoped>
-.page-description {
-  color: var(--text-secondary, #999);
-  margin-bottom: 1rem;
-}
-.status-card {
-  background: var(--bg-card, #1e1e2e);
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-.status-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.4rem 0;
-}
-.status-label {
-  color: var(--text-secondary, #999);
-}
-.status-value {
-  color: var(--text-primary, #fff);
-}
-.coming-soon {
-  color: var(--warning, #f0c040);
-}
-.actions {
-  margin-bottom: 1rem;
-}
-.btn {
-  background: var(--accent, #5865f2);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-.btn:hover {
-  opacity: 0.9;
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.error-text {
-  color: var(--danger, #f04040);
-  margin-bottom: 1rem;
-}
 .event-list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
+
 .event-item {
-  background: var(--bg-card, #1e1e2e);
+  background: #f8f9fa;
   border-radius: 6px;
   padding: 0.6rem 1rem;
+}
+
+.error-text {
+  color: #e74c3c;
+  margin-top: 12px;
+}
+
+.placeholder-text {
+  color: #666;
+  text-align: center;
+  padding: 20px;
+}
+
+:global(body.dark-theme) .event-item {
+  background: #2b2b2b;
+}
+
+:global(body.dark-theme) .placeholder-text {
+  color: #bdc3c7;
 }
 </style>

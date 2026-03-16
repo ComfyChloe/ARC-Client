@@ -1,317 +1,404 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useHyperate } from '../composables/useHyperate'
+import { computed, ref } from 'vue'
+import { useHyperate, type HyperateTracker } from '../composables/useHyperate'
+
 const {
-  status, trackers, autostart, heartRate,
-  toggle, toggleAutostart,
-  addTracker, removeTracker, setPrimary,
-  updateTrackerName, updateTrackerState
+  status,
+  trackers,
+  autostart,
+  heartRate,
+  toggle,
+  toggleAutostart,
+  addTracker,
+  removeTracker,
+  setPrimary,
+  updateTrackerName,
+  updateTrackerState
 } = useHyperate()
+
 const newDeviceId = ref('')
 const newDeviceName = ref('')
-const editingTracker = ref<string | null>(null)
+const editingTrackerId = ref<string | null>(null)
 const editName = ref('')
+
+const primaryTracker = computed(() => trackers.value.find((tracker) => tracker.isPrimary) ?? null)
+
 const statusLabel = computed(() => {
-  const s = status.value
-  if (s.stopping) return 'Stopping...'
-  if (s.reconnecting) return `Reconnecting (${s.reconnectAttempts}/${s.maxReconnectAttempts})`
-  if (s.connected) return 'Connected'
-  if (s.enabled) return 'Connecting...'
-  if (!s.hasApiKey) return 'No API Key'
-  return 'Stopped'
+  const currentStatus = status.value
+  if (currentStatus.stopping) return 'Stopping...'
+  if (currentStatus.reconnecting) return `Reconnecting (${currentStatus.reconnectAttempts}/${currentStatus.maxReconnectAttempts})`
+  if (currentStatus.connected && currentStatus.enabled) return 'Connected and Active'
+  if (currentStatus.enabled) return 'Connecting...'
+  if (!currentStatus.hasApiKey) return 'No API Key'
+  if (currentStatus.lastError) return 'Connection Error'
+  return 'Disconnected'
 })
-const statusClass = computed(() => {
-  const s = status.value
-  if (s.connected) return 'status-ok'
-  if (s.enabled || s.reconnecting) return 'status-warn'
-  return 'status-off'
+
+const statusIndicatorClass = computed(() => {
+  const currentStatus = status.value
+  if (currentStatus.lastError) return 'status-error'
+  if (currentStatus.connected) return 'status-connected'
+  if (currentStatus.enabled || currentStatus.reconnecting || currentStatus.stopping) return 'status-pending'
+  return 'status-disconnected'
 })
+
+const currentHeartRate = computed(() => {
+  if (heartRate.value > 0) return String(heartRate.value)
+  if (primaryTracker.value && primaryTracker.value.heartRate > 0) return String(primaryTracker.value.heartRate)
+  return '--'
+})
+
+const primaryTrackerLabel = computed(() => {
+  if (!primaryTracker.value) return 'No primary tracker set'
+  return `Primary: ${primaryTracker.value.name || primaryTracker.value.deviceId}`
+})
+
 async function handleAddTracker() {
-  const id = newDeviceId.value.trim()
-  if (!id) return
-  await addTracker(id, newDeviceName.value.trim() || undefined)
+  const deviceId = newDeviceId.value.trim()
+  if (!deviceId) return
+  await addTracker(deviceId, newDeviceName.value.trim() || undefined)
   newDeviceId.value = ''
   newDeviceName.value = ''
 }
-function startEdit(deviceId: string, currentName: string) {
-  editingTracker.value = deviceId
-  editName.value = currentName
+
+function openEditModal(tracker: HyperateTracker) {
+  editingTrackerId.value = tracker.deviceId
+  editName.value = tracker.name || ''
 }
-async function saveEdit(deviceId: string) {
-  await updateTrackerName(deviceId, editName.value.trim())
-  editingTracker.value = null
+
+function closeEditModal() {
+  editingTrackerId.value = null
+  editName.value = ''
 }
-function cancelEdit() {
-  editingTracker.value = null
+
+async function saveEdit() {
+  if (!editingTrackerId.value) return
+  await updateTrackerName(editingTrackerId.value, editName.value.trim())
+  closeEditModal()
+}
+
+function trackerContainerStyle(tracker: HyperateTracker) {
+  if (tracker.enabled || tracker.isPrimary) {
+    return {
+      border: '1px solid #2ecc71',
+      background: '#f8fff8',
+      borderRadius: '4px',
+      padding: '10px',
+      marginBottom: '10px'
+    }
+  }
+
+  return {
+    border: '1px solid #ddd',
+    background: '#ffffff',
+    borderRadius: '4px',
+    padding: '10px',
+    marginBottom: '10px'
+  }
+}
+
+function trackerStatusSummary(tracker: HyperateTracker) {
+  const parts = [`Status: ${tracker.enabled ? 'Active' : 'Disabled'}`]
+  if (tracker.heartRate > 0) {
+    parts.push(`HR: ${tracker.heartRate} BPM`)
+  }
+  if (tracker.lastUpdate) {
+    parts.push(`Last Update: ${tracker.lastUpdate}`)
+  }
+  return parts.join(' | ')
 }
 </script>
 
 <template>
-  <div class="page">
-    <h2>HypeRate</h2>
-    <p class="page-desc">Heart rate monitor integration via HypeRate.</p>
-    <!-- Status Card -->
-    <div class="status-card">
-      <div class="status-row">
-        <span class="status-label">Status</span>
-        <span class="status-value" :class="statusClass">{{ statusLabel }}</span>
+  <div class="page-view">
+    <div class="header">
+      <h1>HypeRate Integration</h1>
+      <p>Monitor heart rate from HypeRate devices and send to VRChat</p>
+    </div>
+    <div class="card">
+      <h3>Connection Status</h3>
+      <div class="connection-status">
+        <span class="status-indicator" :class="statusIndicatorClass"></span>
+        <span>{{ statusLabel }}</span>
       </div>
-      <div class="status-row" v-if="heartRate > 0">
-        <span class="status-label">Heart Rate</span>
-        <span class="heart-rate">
-          <span class="heart-icon" :class="{ pulse: status.connected }">&#10084;</span>
-          {{ heartRate }} BPM
-        </span>
+      <div class="hyperate-status-actions">
+        <button class="btn" :class="status.enabled ? 'btn-danger' : 'btn-primary'" :disabled="status.stopping" @click="toggle">
+          {{ status.enabled ? 'Stop HypeRate' : 'Start HypeRate' }}
+        </button>
+        <div class="autostart-toggle-container">
+          <span class="hyperate-autostart-label">Auto-start:</span>
+          <div class="autostart-toggle-slider" role="button" tabindex="0" @click="toggleAutostart" @keyup.enter="toggleAutostart" @keyup.space.prevent="toggleAutostart">
+            <div class="autostart-toggle-option disabled" :class="{ active: !autostart }">Disabled</div>
+            <div class="autostart-toggle-option enabled" :class="{ active: autostart }">Enabled</div>
+          </div>
+        </div>
       </div>
-      <div class="status-row" v-if="status.lastError">
-        <span class="status-label">Error</span>
-        <span class="status-value error-text">{{ status.lastError }}</span>
+      <p v-if="status.lastError" class="hyperate-error">{{ status.lastError }}</p>
+    </div>
+    <div class="card">
+      <h3>Current Heart Rate</h3>
+      <div class="hyperate-heart-rate-panel">
+        <div id="current-heartrate" class="hyperate-heart-rate-value">{{ currentHeartRate }}</div>
+        <div class="hyperate-heart-rate-unit">BPM</div>
+        <div id="primary-tracker-info" class="hyperate-primary-info">{{ primaryTrackerLabel }}</div>
+        <div class="hyperate-osc-parameter">
+          OSC Parameter:
+          <code>/avatar/parameters/ARCOSC/Heartrate/Value</code>
+        </div>
       </div>
     </div>
-    <!-- Actions -->
-    <div class="actions-row">
-      <button class="btn" :class="{ 'btn-danger': status.enabled }" :disabled="status.stopping" @click="toggle">
-        {{ status.enabled ? 'Stop' : 'Start' }}
-      </button>
-      <label class="toggle-label">
-        <input type="checkbox" :checked="autostart" @change="toggleAutostart" />
-        Autostart
-      </label>
+    <div class="card">
+      <h3>Heart Rate Graph</h3>
+      <div class="hyperate-graph-panel">
+        <p class="hyperate-graph-title">Graph Visualization</p>
+        <p class="hyperate-graph-subtitle">Heart rate graph will be displayed here</p>
+      </div>
     </div>
-    <!-- Trackers List -->
-    <div class="section">
-      <h3>Trackers ({{ trackers.length }})</h3>
-      <div v-if="trackers.length === 0" class="empty-state">No trackers added yet.</div>
-      <div class="tracker-list">
-        <div v-for="t in trackers" :key="t.deviceId" class="tracker-card" :class="{ primary: t.isPrimary }">
-          <div class="tracker-header">
-            <span v-if="t.isPrimary" class="badge primary-badge">PRIMARY</span>
-            <span class="tracker-status-dot" :class="{ active: t.enabled }"></span>
-            <template v-if="editingTracker === t.deviceId">
-              <input class="edit-input" v-model="editName" @keyup.enter="saveEdit(t.deviceId)" @keyup.escape="cancelEdit" />
-              <button class="btn btn-small" @click="saveEdit(t.deviceId)">Save</button>
-              <button class="btn btn-small btn-secondary" @click="cancelEdit">Cancel</button>
-            </template>
-            <template v-else>
-              <span class="tracker-name">{{ t.name || t.deviceId }}</span>
-              <span class="tracker-id" v-if="t.name">{{ t.deviceId }}</span>
-            </template>
-          </div>
-          <div class="tracker-details">
-            <span v-if="t.heartRate">&#10084; {{ t.heartRate }} BPM</span>
-            <span v-if="t.lastUpdate" class="tracker-updated">{{ t.lastUpdate }}</span>
-          </div>
-          <div class="tracker-actions">
-            <button class="btn btn-small" @click="startEdit(t.deviceId, t.name)" title="Rename">Rename</button>
-            <button class="btn btn-small" v-if="!t.isPrimary" @click="setPrimary(t.deviceId)" title="Set Primary">Set Primary</button>
-            <button class="btn btn-small" @click="updateTrackerState(t.deviceId, !t.enabled)">{{ t.enabled ? 'Disable' : 'Enable' }}</button>
-            <button class="btn btn-small btn-danger" @click="removeTracker(t.deviceId)" title="Remove">Remove</button>
+    <div class="card">
+      <h3>Device Management</h3>
+      <div class="form-group">
+        <label for="device-id-input">Device ID:</label>
+        <div class="hyperate-device-row">
+          <input id="device-id-input" v-model="newDeviceId" type="text" placeholder="Enter device ID" @keyup.enter="handleAddTracker" />
+          <input id="device-name-input" v-model="newDeviceName" type="text" placeholder="Device name (optional)" @keyup.enter="handleAddTracker" />
+          <button class="btn btn-primary" :disabled="!newDeviceId.trim()" @click="handleAddTracker">Add Tracker</button>
+        </div>
+        <div class="hyperate-helper-text">
+          Get your device ID from the HypeRate app or use "internal-testing" for testing
+        </div>
+      </div>
+      <div class="hyperate-saved-trackers">
+        <h4>Saved Trackers</h4>
+        <div v-if="trackers.length === 0" id="hyperate-trackers-list">
+          <p class="hyperate-empty-trackers">No trackers saved yet</p>
+        </div>
+        <div v-else id="hyperate-trackers-list">
+          <div v-for="tracker in trackers" :key="tracker.deviceId" class="tracker-item" :style="trackerContainerStyle(tracker)">
+            <div class="hyperate-tracker-row">
+              <div class="hyperate-tracker-copy">
+                <div class="hyperate-tracker-name-row">
+                  <span class="status-indicator" :class="tracker.enabled ? 'status-connected' : 'status-disconnected'"></span>
+                  <strong>{{ tracker.name || tracker.deviceId }}</strong>
+                  <span v-if="tracker.isPrimary" class="hyperate-primary-badge">PRIMARY</span>
+                </div>
+                <div class="hyperate-tracker-id">ID: {{ tracker.deviceId }}</div>
+                <div class="hyperate-tracker-status">{{ trackerStatusSummary(tracker) }}</div>
+              </div>
+              <div class="hyperate-tracker-actions">
+                <button v-if="!tracker.enabled" class="btn btn-success btn-small" @click="updateTrackerState(tracker.deviceId, true)">Enable</button>
+                <button v-if="tracker.enabled && !tracker.isPrimary" class="btn btn-primary btn-small" @click="setPrimary(tracker.deviceId)">Set Primary</button>
+                <button class="btn btn-secondary btn-small" @click="openEditModal(tracker)">Edit</button>
+                <button class="btn btn-danger btn-small" @click="removeTracker(tracker.deviceId)">Remove</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
-    <!-- Add Tracker -->
-    <div class="section">
-      <h3>Add Tracker</h3>
-      <div class="add-form">
-        <input class="input" v-model="newDeviceId" placeholder="Device ID" @keyup.enter="handleAddTracker" />
-        <input class="input" v-model="newDeviceName" placeholder="Name (optional)" @keyup.enter="handleAddTracker" />
-        <button class="btn" :disabled="!newDeviceId.trim()" @click="handleAddTracker">Add</button>
+
+    <div v-if="editingTrackerId" class="modal-overlay" @click.self="closeEditModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="hyperate-modal-title">Edit HypeRate Tracker</h3>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="edit-tracker-name">Tracker Name:</label>
+            <input id="edit-tracker-name" v-model="editName" type="text" placeholder="Enter custom name (optional)" @keyup.enter="saveEdit" @keyup.escape="closeEditModal" />
+            <small class="hyperate-modal-help">Leave empty to use device ID as display name</small>
+          </div>
+          <div class="form-group hyperate-modal-field">
+            <label for="edit-tracker-id">Device ID:</label>
+            <input id="edit-tracker-id" :value="editingTrackerId" class="hyperate-readonly-input" type="text" readonly />
+            <small class="hyperate-modal-help">Device ID cannot be changed</small>
+          </div>
+        </div>
+        <div class="modal-footer hyperate-modal-footer">
+          <button class="btn btn-secondary" @click="closeEditModal">Cancel</button>
+          <button class="btn btn-primary" @click="saveEdit">Save Changes</button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page-desc {
+.hyperate-error {
+  margin: 15px 0 0;
+  color: #c0392b;
+}
+.hyperate-status-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.hyperate-autostart-label {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+.hyperate-heart-rate-panel {
+  text-align: center;
+  padding: 20px;
+}
+.hyperate-heart-rate-value {
+  font-size: 48px;
+  font-weight: bold;
+  color: #e74c3c;
+}
+.hyperate-heart-rate-unit {
+  font-size: 14px;
+  color: #666;
+  margin-top: 5px;
+}
+.hyperate-primary-info {
+  font-size: 12px;
   color: #999;
-  margin-bottom: 1rem;
+  margin-top: 10px;
 }
-.status-card {
-  background: #1e1e2e;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1rem;
+.hyperate-osc-parameter {
+  font-size: 12px;
+  color: #999;
+  margin-top: 5px;
 }
-.status-row {
+.hyperate-graph-panel {
+  padding: 20px;
+}
+.hyperate-graph-title {
+  text-align: center;
+  color: #666;
+  padding-top: 40px;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+.hyperate-graph-subtitle {
+  text-align: center;
+  color: #666;
+  opacity: 0.7;
+  font-size: 12px;
+  padding-bottom: 40px;
+}
+.hyperate-device-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 5px;
+}
+.hyperate-device-row input {
+  flex: 1;
+}
+.hyperate-helper-text {
+  font-size: 12px;
+  color: #666;
+  margin-top: 5px;
+}
+.hyperate-saved-trackers {
+  margin-top: 20px;
+}
+.hyperate-saved-trackers h4 {
+  margin-bottom: 10px;
+}
+.hyperate-empty-trackers {
+  color: #666;
+  text-align: center;
+  padding: 10px;
+}
+.hyperate-tracker-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.4rem 0;
+  gap: 12px;
 }
-.status-label {
-  color: #999;
+.hyperate-tracker-copy {
+  min-width: 0;
 }
-.status-value {
+.hyperate-tracker-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hyperate-primary-badge {
+  font-size: 10px;
+  background: #2ecc71;
   color: #fff;
-}
-.status-ok {
-  color: #4caf50;
-}
-.status-warn {
-  color: #f0c040;
-}
-.status-off {
-  color: #999;
-}
-.error-text {
-  color: #f04040;
-}
-.heart-rate {
-  color: #e94560;
-  font-weight: bold;
-  font-size: 1.1rem;
-}
-.heart-icon {
-  display: inline-block;
-}
-.heart-icon.pulse {
-  animation: pulse 1s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.3); }
-}
-.actions-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: #ccc;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-.section {
-  margin-bottom: 1.5rem;
-}
-.section h3 {
-  margin: 0 0 0.8rem;
-  font-size: 1rem;
-  color: #ccc;
-}
-.empty-state {
-  color: #666;
-  font-style: italic;
-  padding: 1rem 0;
-}
-.tracker-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.tracker-card {
-  background: #1e1e2e;
-  border-radius: 8px;
-  padding: 0.8rem 1rem;
-  border-left: 3px solid #555;
-}
-.tracker-card.primary {
-  border-left-color: #e94560;
-}
-.tracker-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.3rem;
-}
-.tracker-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #555;
-  flex-shrink: 0;
-}
-.tracker-status-dot.active {
-  background: #4caf50;
-}
-.tracker-name {
-  font-weight: 600;
-  color: #fff;
-}
-.tracker-id {
-  color: #666;
-  font-size: 0.8rem;
-}
-.badge {
-  font-size: 0.65rem;
   padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 700;
-  text-transform: uppercase;
+  border-radius: 10px;
 }
-.primary-badge {
-  background: #e94560;
-  color: #fff;
-}
-.tracker-details {
-  color: #999;
-  font-size: 0.85rem;
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 0.4rem;
-}
-.tracker-updated {
+.hyperate-tracker-id {
+  font-size: 12px;
   color: #666;
+  margin-top: 4px;
+  word-break: break-all;
 }
-.tracker-actions {
+.hyperate-tracker-status {
+  font-size: 12px;
+  color: #666;
+  margin-top: 5px;
+}
+.hyperate-tracker-actions {
   display: flex;
-  gap: 0.4rem;
+  gap: 10px;
   flex-wrap: wrap;
 }
-.add-form {
+.hyperate-modal-title {
+  color: #2c3e50;
+  margin: 0;
+}
+.hyperate-modal-help {
+  color: #666;
+}
+.hyperate-modal-field {
+  margin-top: 15px;
+}
+.hyperate-readonly-input {
+  background-color: #f5f5f5;
+}
+.hyperate-modal-footer {
   display: flex;
-  gap: 0.5rem;
-  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
 }
-.input {
-  background: #2a2a3e;
-  border: 1px solid #444;
-  border-radius: 6px;
-  padding: 0.45rem 0.7rem;
-  color: #fff;
-  font-size: 0.9rem;
-}
-.input:focus {
-  outline: none;
-  border-color: #5865f2;
-}
-.edit-input {
-  background: #2a2a3e;
-  border: 1px solid #5865f2;
-  border-radius: 4px;
-  padding: 0.2rem 0.5rem;
-  color: #fff;
-  font-size: 0.85rem;
-}
-.btn {
-  background: #5865f2;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
+.autostart-toggle-slider {
   cursor: pointer;
-  font-size: 0.9rem;
 }
-.btn:hover {
-  opacity: 0.9;
+
+@media (max-width: 900px) {
+  .hyperate-device-row,
+  .hyperate-tracker-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hyperate-tracker-actions {
+    justify-content: flex-start;
+  }
 }
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+
+:global(body.dark-theme) .hyperate-heart-rate-unit,
+:global(body.dark-theme) .hyperate-helper-text,
+:global(body.dark-theme) .hyperate-empty-trackers,
+:global(body.dark-theme) .hyperate-tracker-id,
+:global(body.dark-theme) .hyperate-tracker-status,
+:global(body.dark-theme) .hyperate-graph-title,
+:global(body.dark-theme) .hyperate-graph-subtitle,
+:global(body.dark-theme) .hyperate-primary-info,
+:global(body.dark-theme) .hyperate-osc-parameter,
+:global(body.dark-theme) .hyperate-modal-help {
+  color: #95a5a6;
 }
-.btn-small {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.8rem;
+
+:global(body.dark-theme) .hyperate-modal-title {
+  color: #ecf0f1;
 }
-.btn-danger {
-  background: #e74c3c;
+
+:global(body.dark-theme) .hyperate-readonly-input {
+  background-color: #1e2329;
+  color: #7f8c8d;
+  border-color: #34495e;
 }
-.btn-secondary {
-  background: #555;
+
+:global(body.dark-theme) .tracker-item {
+  border-color: #454545 !important;
 }
 </style>

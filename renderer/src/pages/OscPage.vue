@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useElectronAPI } from '../composables/useElectronAPI'
 import { useOscStatus, type BlockedParam } from '../composables/useOscStatus'
+
+const api = useElectronAPI()
 
 const {
   oscEnabled, oscToggling, oscPort, oscStatus, queryRunning,
@@ -15,6 +18,10 @@ const {
 
 const newUnsubPath = ref('')
 const blockedExpanded = ref(false)
+const oscAddress = ref('')
+const oscValue = ref('')
+const oscType = ref<'float' | 'int' | 'bool'>('float')
+const sendMessage = ref<string | null>(null)
 
 async function handleAddUnsub() {
   const path = newUnsubPath.value.trim()
@@ -25,110 +32,171 @@ async function handleAddUnsub() {
 function canUnsuppress(param: BlockedParam): boolean {
   return param.source === 'suppressed'
 }
+async function handleSendOsc() {
+  const address = oscAddress.value.trim()
+  const rawValue = oscValue.value.trim()
+  if (!address || !rawValue) return
+  let value: string | number | boolean = rawValue
+  let type = 'f'
+  if (oscType.value === 'int') {
+    value = Number.parseInt(rawValue, 10)
+    type = 'i'
+  } else if (oscType.value === 'bool') {
+    value = rawValue === 'true' || rawValue === '1'
+    type = 'bool'
+  } else {
+    value = Number.parseFloat(rawValue)
+    type = 'f'
+  }
+  const result = await api.sendOscLocal({ address, value, type })
+  sendMessage.value = result?.success ? 'OSC message sent successfully.' : result?.error ?? 'Failed to send OSC message.'
+}
 </script>
 
 <template>
-  <div class="page">
-    <h2>OSC</h2>
+  <div class="page-view">
+    <div class="header">
+      <h1>OSC Settings</h1>
+      <p>Configure and test OSC communication</p>
+    </div>
 
-    <!-- OSC Server Status & Toggle -->
-    <div class="section">
-      <div class="status-row">
-        <span class="status-indicator" :class="{
-          'status-connected': oscStatus === 'connected',
-          'status-disconnected': oscStatus === 'disabled' || oscStatus === 'error' || oscStatus === 'off'
-        }"></span>
+    <div class="card">
+      <h3>Send OSC Message</h3>
+      <div class="osc-sender">
+        <div class="form-group">
+          <label for="osc-address">Address</label>
+          <input id="osc-address" v-model="oscAddress" type="text" placeholder="/avatar/parameters/example" />
+        </div>
+        <div class="form-group">
+          <label for="osc-value">Value</label>
+          <input id="osc-value" v-model="oscValue" type="text" placeholder="1.0" @keypress.enter="handleSendOsc" />
+        </div>
+        <div class="form-group">
+          <label for="osc-type">Type</label>
+          <select id="osc-type" v-model="oscType">
+            <option value="float">Float</option>
+            <option value="int">Int</option>
+            <option value="bool">Bool</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="button" @click="handleSendOsc">Send</button>
+      </div>
+      <small v-if="sendMessage">{{ sendMessage }}</small>
+    </div>
+
+    <div class="card">
+      <h3>OSC Configuration</h3>
+      <div class="form-group">
+        <h4 class="subheading">Legacy OSC (for non-OSC-Query apps)</h4>
+        <label for="local-port-settings">Legacy Incoming OSC Port</label>
+        <input id="local-port-settings" v-model.number="localPort" type="number" min="1" max="65535" />
+      </div>
+      <div class="form-group">
+        <h4 class="subheading">Outgoing OSC Target</h4>
+        <label for="target-address-settings">Target IP Address</label>
+        <input id="target-address-settings" v-model="targetAddress" type="text" />
+      </div>
+      <div class="form-group">
+        <label for="target-port-settings">Target Port</label>
+        <input id="target-port-settings" v-model.number="targetPort" type="number" min="1" max="65535" />
+      </div>
+      <div class="form-group">
+        <h4 class="subheading">OSC-Query Binding</h4>
+        <label for="oscquery-bind-address-settings">Bind Address</label>
+        <input id="oscquery-bind-address-settings" v-model="oscQueryBindAddress" type="text" />
+      </div>
+      <button class="btn btn-primary" type="button" @click="updateOscPorts">Update OSC Configuration</button>
+    </div>
+
+    <div class="card">
+      <h3>OSC Status</h3>
+      <div class="connection-status">
+        <span class="status-indicator" :class="oscStatus === 'connected' ? 'status-connected' : oscStatus === 'stopping' ? 'status-pending' : 'status-disconnected'"></span>
         <span v-if="oscStatus === 'connected'">OSC Enabled :{{ oscPort }}</span>
         <span v-else-if="oscStatus === 'stopping'">OSC Stopping...</span>
         <span v-else>OSC Disabled</span>
-        <button class="btn" :class="oscEnabled ? 'btn-danger' : 'btn-primary'" :disabled="oscToggling" @click="toggleOsc">
-          {{ oscEnabled ? 'Disable OSC' : 'Enable OSC' }}
-        </button>
       </div>
+      <button class="btn" :class="oscEnabled ? 'btn-danger' : 'btn-primary'" :disabled="oscToggling" type="button" @click="toggleOsc">
+        {{ oscEnabled ? 'Disable OSC' : 'Enable OSC' }}
+      </button>
     </div>
 
-    <!-- OSC Port Configuration -->
-    <div class="section">
-      <h3>OSC Configuration</h3>
-      <div class="config-grid">
-        <label>
-          <span>Legacy Incoming Port</span>
-          <input v-model.number="localPort" type="number" class="input" min="1" max="65535" />
-        </label>
-        <label>
-          <span>Target Port</span>
-          <input v-model.number="targetPort" type="number" class="input" min="1" max="65535" />
-        </label>
-        <label>
-          <span>Target Address</span>
-          <input v-model="targetAddress" type="text" class="input" />
-        </label>
-        <label>
-          <span>OSC-Query Bind Address</span>
-          <input v-model="oscQueryBindAddress" type="text" class="input" />
-        </label>
+    <div class="card">
+      <h3>Additional OSC Connections</h3>
+      <p class="description-text">
+        Configure additional OSC endpoints for advanced routing. Create separate incoming connections to receive OSC data from multiple sources,
+        and outgoing connections to send data to multiple applications.
+      </p>
+      <div class="osc-connection-controls">
+        <div class="osc-connection-actions">
+          <button class="btn btn-success" type="button" :disabled="additionalConnections.length >= MAX_ADDITIONAL_CONNECTIONS" @click="addConnection('incoming')">+ Add Incoming</button>
+          <button class="btn btn-success" type="button" :disabled="additionalConnections.length >= MAX_ADDITIONAL_CONNECTIONS" @click="addConnection('outgoing')">+ Add Outgoing</button>
+        </div>
+        <span class="connection-count-text">{{ additionalConnections.length }}/{{ MAX_ADDITIONAL_CONNECTIONS }} additional connections</span>
       </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" @click="updateOscPorts">Save OSC Config</button>
-      </div>
-    </div>
-
-    <!-- OSC Query -->
-    <div class="section">
-      <h3>OSC-Query</h3>
-      <div class="status-row">
-        <span class="status-indicator" :class="queryRunning ? 'status-connected' : 'status-disconnected'"></span>
-        <span>{{ queryRunning ? 'Running' : 'Stopped' }}</span>
-        <button class="btn btn-secondary" @click="oscQueryForceReconnect">Force Reconnect</button>
-        <button class="btn btn-warning" @click="oscQueryResetAll">Reset All</button>
-      </div>
-    </div>
-
-    <!-- Additional Connections -->
-    <div class="section">
-      <h3>Additional Connections ({{ additionalConnections.length }}/{{ MAX_ADDITIONAL_CONNECTIONS }})</h3>
-      <div class="btn-row">
-        <button class="btn btn-primary" :disabled="additionalConnections.length >= MAX_ADDITIONAL_CONNECTIONS" @click="addConnection('incoming')">+ Incoming</button>
-        <button class="btn btn-primary" :disabled="additionalConnections.length >= MAX_ADDITIONAL_CONNECTIONS" @click="addConnection('outgoing')">+ Outgoing</button>
-      </div>
-      <div v-for="conn in additionalConnections" :key="conn.id" class="connection-item">
-        <div class="conn-header">
-          <span class="conn-type" :class="conn.type">{{ conn.type === 'incoming' ? 'IN' : 'OUT' }}</span>
-          <input :value="conn.name" class="input input-sm" placeholder="Name" @input="(e: Event) => updateConnection(conn.id, 'name', (e.target as HTMLInputElement).value)" />
-          <input :value="conn.port ?? ''" class="input input-sm input-port" type="number" placeholder="Port" @input="(e: Event) => updateConnection(conn.id, 'port', (e.target as HTMLInputElement).value)" />
-          <input :value="conn.address" class="input input-sm" placeholder="Address" @input="(e: Event) => updateConnection(conn.id, 'address', (e.target as HTMLInputElement).value)" />
-          <label class="toggle-label">
-            <input type="checkbox" :checked="conn.enabled" @change="toggleConnection(conn.id, !conn.enabled)" /> On
+      <div v-for="conn in additionalConnections" :key="conn.id" class="osc-connection-item">
+        <div class="osc-connection-header">
+          <h6>{{ conn.name || (conn.type === 'incoming' ? 'Incoming Connection' : 'Outgoing Connection') }}</h6>
+          <button class="btn btn-danger btn-small" type="button" @click="removeConnection(conn.id)">Remove</button>
+        </div>
+        <div class="osc-connection-grid">
+          <div class="form-group">
+            <label>Name</label>
+            <input :value="conn.name" type="text" @input="(e: Event) => updateConnection(conn.id, 'name', (e.target as HTMLInputElement).value)" />
+          </div>
+          <div class="form-group">
+            <label>Port</label>
+            <input :value="conn.port ?? ''" type="number" min="1" max="65535" @input="(e: Event) => updateConnection(conn.id, 'port', (e.target as HTMLInputElement).value)" />
+          </div>
+          <div class="form-group">
+            <label>Address</label>
+            <input :value="conn.address" type="text" @input="(e: Event) => updateConnection(conn.id, 'address', (e.target as HTMLInputElement).value)" />
+          </div>
+        </div>
+        <div class="osc-connection-toggles">
+          <label class="toggle-inline">
+            <input type="checkbox" :checked="conn.enabled" @change="toggleConnection(conn.id, !conn.enabled)" />
+            <span>Enabled</span>
           </label>
-          <label class="toggle-label">
-            <input type="checkbox" :checked="conn.enableWebSocketForwarding" @change="toggleConnectionForwarding(conn.id, !conn.enableWebSocketForwarding)" /> WS
+          <label class="toggle-inline">
+            <input type="checkbox" :checked="conn.enableWebSocketForwarding" @change="toggleConnectionForwarding(conn.id, !conn.enableWebSocketForwarding)" />
+            <span>WebSocket Forwarding</span>
           </label>
-          <button class="btn btn-danger btn-sm" @click="removeConnection(conn.id)">✕</button>
         </div>
       </div>
     </div>
 
-    <!-- OSC Query Unsubscriptions -->
-    <div class="section">
-      <h3>OSC-Query Unsubscriptions</h3>
-      <div class="form-row">
-        <input v-model="newUnsubPath" type="text" class="input" placeholder="/path/to/unsubscribe" @keypress.enter="handleAddUnsub" />
-        <button class="btn btn-primary" @click="handleAddUnsub">Add</button>
+    <div class="card">
+      <h3>OSC-Query Service</h3>
+      <p class="description-text">
+        Automatic service discovery for VRChat using OSC-Query protocol. By default, all OSC data is received.
+      </p>
+      <div class="status-row">
+        <span class="status-indicator" :class="queryRunning ? 'status-connected' : 'status-disconnected'"></span>
+        <span>{{ queryRunning ? 'Running' : 'Stopped' }}</span>
+        <button class="btn btn-secondary" type="button" @click="oscQueryForceReconnect">Force Reconnect</button>
+        <button class="btn btn-warning" type="button" @click="oscQueryResetAll">Reset All</button>
       </div>
-      <div v-for="path in unsubscriptions" :key="path" class="unsub-item">
-        <span class="mono">{{ path }}</span>
-        <button class="btn btn-danger btn-sm" @click="removeUnsubscription(path)">✕</button>
+      <div class="oscquery-box">
+        <h4>Path Unsubscription (Ignore Specific Paths)</h4>
+        <p class="description-text">Add OSC paths to ignore if they are causing noise or unnecessary updates.</p>
+        <div class="oscquery-form-row">
+          <input v-model="newUnsubPath" type="text" placeholder="/avatar/parameters/example or /path/*" @keypress.enter="handleAddUnsub" />
+          <button class="btn btn-warning" type="button" @click="handleAddUnsub">Add to Ignore List</button>
+        </div>
+        <div v-for="path in unsubscriptions" :key="path" class="oscquery-unsub-item">
+          <span class="mono">{{ path }}</span>
+          <button class="btn btn-danger btn-small" type="button" @click="removeUnsubscription(path)">Remove</button>
+        </div>
       </div>
     </div>
 
-    <!-- Blocked Parameters -->
-    <div class="section">
-      <h3>
-        Blocked Parameters ({{ blockedParams.length }})
-        <button class="btn btn-secondary btn-sm" @click="blockedExpanded = !blockedExpanded">
+    <div class="card">
+      <h3>Blocked Parameters</h3>
+      <p class="description-text">These paths are blocked and will not be forwarded to VRChat.</p>
+      <button class="btn btn-secondary btn-small" type="button" @click="blockedExpanded = !blockedExpanded">
           {{ blockedExpanded ? '▼ Collapse' : '▶ Expand' }}
-        </button>
-      </h3>
+      </button>
       <div v-if="blockedExpanded" class="blocked-list">
         <div v-for="param in blockedParams" :key="param.path + param.source"
           class="blocked-item"
@@ -148,45 +216,3 @@ function canUnsuppress(param: BlockedParam): boolean {
     </div>
   </div>
 </template>
-
-<style scoped>
-.section { margin-bottom: 20px; }
-.section h3 { margin: 0 0 8px; font-size: 1rem; color: #e0e0f0; display: flex; align-items: center; gap: 8px; }
-.status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-.config-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: #a0a0b8; }
-.input {
-  padding: 8px 12px; border-radius: 4px; border: 1px solid #555;
-  background: #2a2a3e; color: #fff; font-size: 0.9rem;
-}
-.input-sm { padding: 4px 8px; font-size: 0.85rem; }
-.input-port { width: 80px; }
-.btn-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.btn-sm { padding: 2px 8px; font-size: 0.8rem; }
-.form-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.form-row .input { flex: 1; }
-.connection-item { background: #2a2a3e; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
-.conn-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.conn-type { font-weight: 700; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; }
-.conn-type.incoming { background: #27ae60; color: #fff; }
-.conn-type.outgoing { background: #3498db; color: #fff; }
-.toggle-label { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; color: #a0a0b8; white-space: nowrap; }
-.unsub-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: #2a2a3e; border-radius: 4px; margin-bottom: 4px; }
-.mono { font-family: monospace; font-size: 0.85rem; }
-.blocked-list { max-height: 400px; overflow-y: auto; }
-.blocked-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 6px 12px; background: #2a2a3e; border-radius: 4px;
-  margin-bottom: 4px; border-left: 3px solid #dc3545;
-}
-.blocked-item.clickable { cursor: pointer; }
-.blocked-item.clickable:hover { background: #3a3a4e; }
-.badges { display: flex; gap: 4px; }
-.badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
-.badge-user { background: #2980b9; color: #fff; }
-.badge-blocked { background: #e74c3c; color: #fff; }
-.badge-suppressed { background: #e67e22; color: #fff; }
-.badge-panel { background: #8e44ad; color: #fff; }
-.badge-avatar { background: #16a085; color: #fff; }
-.unsuppress-hint { font-size: 10px; color: #a0a080; margin-left: 8px; }
-</style>

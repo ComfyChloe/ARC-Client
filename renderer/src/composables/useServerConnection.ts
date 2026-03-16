@@ -26,22 +26,25 @@ export interface PanelInfo {
   safety5Enabled: boolean
 }
 
+const connectionStatus = ref<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
+const isConnected = ref(false)
+const isAuthenticated = ref(false)
+const currentUser = ref<{ username: string } | null>(null)
+const currentAvatar = ref<AvatarInfo | null>(null)
+const parameters = shallowRef<Record<string, any>>({})
+const panelConnectionsData = ref<Record<string, PanelInfo>>({})
+const wsForwardingEnabled = ref(false)
+const loading = ref(false)
+const error = ref<string | null>(null)
+const savedUsername = ref('')
+const savedPassword = ref('')
+const savePasswordChecked = ref(false)
+let paramUpdateTimer: ReturnType<typeof setTimeout> | null = null
+let serverConnectionInitialized = false
+let serverConnectionInitPromise: Promise<void> | null = null
+
 export function useServerConnection() {
   const api = useElectronAPI()
-  const connectionStatus = ref<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
-  const isConnected = ref(false)
-  const isAuthenticated = ref(false)
-  const currentUser = ref<{ username: string } | null>(null)
-  const currentAvatar = ref<AvatarInfo | null>(null)
-  const parameters = shallowRef<Record<string, any>>({})
-  const panelConnectionsData = ref<Record<string, PanelInfo>>({})
-  const wsForwardingEnabled = ref(false)
-  const loading = ref(false)
-  const error = ref<string | null>(null)
-  const savedUsername = ref('')
-  const savedPassword = ref('')
-  const savePasswordChecked = ref(false)
-  let paramUpdateTimer: ReturnType<typeof setTimeout> | null = null
 
   async function loadSavedCredentials() {
     const lastUser = await api.getLastUsername()
@@ -112,69 +115,74 @@ export function useServerConnection() {
     }
     return avatarId.length > 16 ? `${avatarId.substring(0, 16)}...` : avatarId
   }
+  async function initialize() {
+    if (serverConnectionInitialized) return
+    if (serverConnectionInitPromise) return serverConnectionInitPromise
+    serverConnectionInitPromise = (async () => {
+      await loadSavedCredentials()
+      const settings = await api.getAppSettings()
+      wsForwardingEnabled.value = settings?.enableWebSocketForwarding ?? false
+      api.onWebSocketStatus((data: any) => {
+        const status = data.status ?? (data.connected ? 'connected' : 'disconnected')
+        connectionStatus.value = status
+        if (status === 'connected') {
+          isConnected.value = true
+        } else if (status === 'disconnected') {
+          isConnected.value = false
+          isAuthenticated.value = false
+          currentUser.value = null
+          currentAvatar.value = null
+          parameters.value = {}
+          panelConnectionsData.value = {}
+        }
+      })
+      api.onWebSocketError((_data: any) => {
+      })
+      api.onWebSocketAuthenticated((data: any) => {
+        isAuthenticated.value = true
+        currentUser.value = { username: data.username }
+      })
+      api.onWebSocketAvatarChange((data: any) => {
+        if (!data.id) {
+          currentAvatar.value = null
+          parameters.value = {}
+          return
+        }
+        currentAvatar.value = {
+          id: data.id,
+          name: data.name ?? null,
+          displayName: data.name ?? getDisplayNameFromId(data.id),
+          username: data.username
+        }
+      })
+      api.onWebSocketParameterUpdate((data: any) => {
+        if (data.parameters) {
+          parameters.value = { ...parameters.value, ...data.parameters }
+          if (paramUpdateTimer) clearTimeout(paramUpdateTimer)
+          paramUpdateTimer = setTimeout(() => {
+            parameters.value = { ...parameters.value }
+            paramUpdateTimer = null
+          }, 250)
+        }
+      })
+      api.onWebSocketPanelConnectionsUpdate((data: any) => {
+        panelConnectionsData.value = data ?? {}
+      })
+      api.onAppSettings((settings: any) => {
+        wsForwardingEnabled.value = settings?.enableWebSocketForwarding ?? false
+      })
+      if (savedUsername.value && savedPassword.value) {
+        setTimeout(() => {
+          authenticate(savedUsername.value, savedPassword.value)
+        }, 500)
+      }
+      serverConnectionInitialized = true
+    })()
+    await serverConnectionInitPromise
+  }
 
   onMounted(async () => {
-    await loadSavedCredentials()
-    // Load forwarding status from settings
-    const settings = await api.getAppSettings()
-    wsForwardingEnabled.value = settings?.enableWebSocketForwarding ?? false
-    api.onWebSocketStatus((data: any) => {
-      const status = data.status ?? (data.connected ? 'connected' : 'disconnected')
-      connectionStatus.value = status
-      if (status === 'connected') {
-        isConnected.value = true
-      } else if (status === 'disconnected') {
-        isConnected.value = false
-        isAuthenticated.value = false
-        currentUser.value = null
-        currentAvatar.value = null
-        parameters.value = {}
-        panelConnectionsData.value = {}
-      }
-    })
-    api.onWebSocketError((_data: any) => {
-      // Errors are displayed in debug log; no UI state change needed beyond status
-    })
-    api.onWebSocketAuthenticated((data: any) => {
-      isAuthenticated.value = true
-      currentUser.value = { username: data.username }
-    })
-    api.onWebSocketAvatarChange((data: any) => {
-      if (!data.id) {
-        currentAvatar.value = null
-        parameters.value = {}
-        return
-      }
-      currentAvatar.value = {
-        id: data.id,
-        name: data.name ?? null,
-        displayName: data.name ?? getDisplayNameFromId(data.id),
-        username: data.username
-      }
-    })
-    api.onWebSocketParameterUpdate((data: any) => {
-      if (data.parameters) {
-        parameters.value = { ...parameters.value, ...data.parameters }
-        // Debounce trigger for reactivity
-        if (paramUpdateTimer) clearTimeout(paramUpdateTimer)
-        paramUpdateTimer = setTimeout(() => {
-          parameters.value = { ...parameters.value }
-          paramUpdateTimer = null
-        }, 250)
-      }
-    })
-    api.onWebSocketPanelConnectionsUpdate((data: any) => {
-      panelConnectionsData.value = data ?? {}
-    })
-    api.onAppSettings((settings: any) => {
-      wsForwardingEnabled.value = settings?.enableWebSocketForwarding ?? false
-    })
-    // Auto-connect if saved credentials exist
-    if (savedUsername.value && savedPassword.value) {
-      setTimeout(() => {
-        authenticate(savedUsername.value, savedPassword.value)
-      }, 500)
-    }
+    await initialize()
   })
   onUnmounted(() => {
     if (paramUpdateTimer) clearTimeout(paramUpdateTimer)

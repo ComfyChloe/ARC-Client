@@ -40,133 +40,48 @@ onMounted(loadStatus)
 </script>
 
 <template>
-  <div class="page">
-    <h2>OpenShock</h2>
-    <p class="page-description">OpenShock device integration.</p>
-    <div class="status-card">
-      <div class="status-row">
-        <span class="status-label">Enabled</span>
-        <span class="status-dot" :class="enabled ? 'dot-green' : 'dot-gray'"></span>
-      </div>
-      <div class="status-row">
-        <span class="status-label">Connected</span>
-        <span class="status-dot" :class="connected ? 'dot-green' : 'dot-gray'"></span>
-      </div>
-      <div class="status-row">
-        <span class="status-label">Devices</span>
-        <span class="status-value">{{ deviceCount }}</span>
+  <div class="page-view">
+    <div class="header">
+      <h1>OpenShock Integration</h1>
+      <p>OpenShock device integration</p>
+    </div>
+
+    <div class="card">
+      <h3>Connection Status</h3>
+      <div class="status-panel">
+        <div class="status-row">
+          <span class="status-label">Enabled</span>
+          <span class="status-value" :class="enabled ? '' : 'disabled'">{{ enabled ? 'Enabled' : 'Disabled' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Connected</span>
+          <span class="status-value" :class="connected ? '' : 'disabled'">{{ connected ? 'Connected' : 'Disconnected' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Has API Key</span>
+          <span class="status-value" :class="hasApiKey ? '' : 'disabled'">{{ hasApiKey ? 'Yes' : 'No' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Devices</span>
+          <span class="status-value">{{ deviceCount }}</span>
+        </div>
       </div>
     </div>
-    <div class="api-key-form">
-      <label class="input-label" for="openshock-key">API Key</label>
-      <input
-        id="openshock-key"
-        v-model="apiKey"
-        type="password"
-        class="input-field"
-        placeholder="Enter OpenShock API key"
-        :disabled="enabled"
-      />
-    </div>
-    <div class="actions">
-      <button v-if="!enabled" class="btn" :disabled="loading || !apiKey.trim()" @click="startService">
+
+    <div class="card">
+      <h3>API Configuration</h3>
+      <div class="form-group">
+        <label for="openshock-key">API Key</label>
+        <input id="openshock-key" v-model="apiKey" type="password" placeholder="Enter OpenShock API key" :disabled="enabled" />
+      </div>
+      <button v-if="!enabled" class="btn btn-primary" :disabled="loading || !apiKey.trim()" @click="startService">
         {{ loading ? 'Connecting...' : 'Connect' }}
       </button>
       <button v-else class="btn btn-danger" :disabled="loading" @click="stopService">
         {{ loading ? 'Stopping...' : 'Disconnect' }}
       </button>
-    </div>
-    <p class="error-text" v-if="error">{{ error }}</p>
-    <div class="device-list-placeholder" v-if="enabled && deviceCount === 0">
-      <p class="placeholder-text">No devices found.</p>
+      <p v-if="error" class="error-text">{{ error }}</p>
+      <p v-if="enabled && deviceCount === 0" class="placeholder-text">No devices found.</p>
     </div>
   </div>
 </template>
-
-<style scoped>
-.page-description {
-  color: var(--text-secondary, #999);
-  margin-bottom: 1rem;
-}
-.status-card {
-  background: var(--bg-card, #1e1e2e);
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-.status-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.4rem 0;
-}
-.status-label {
-  color: var(--text-secondary, #999);
-}
-.status-value {
-  color: var(--text-primary, #fff);
-}
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-.dot-green {
-  background: var(--success, #40c040);
-}
-.dot-gray {
-  background: var(--text-secondary, #555);
-}
-.api-key-form {
-  margin-bottom: 1rem;
-}
-.input-label {
-  display: block;
-  color: var(--text-secondary, #999);
-  margin-bottom: 0.3rem;
-  font-size: 0.85rem;
-}
-.input-field {
-  width: 100%;
-  padding: 0.5rem 0.8rem;
-  border-radius: 6px;
-  border: 1px solid var(--border, #333);
-  background: var(--bg-input, #181825);
-  color: var(--text-primary, #fff);
-  font-size: 0.9rem;
-  box-sizing: border-box;
-}
-.input-field:disabled {
-  opacity: 0.5;
-}
-.actions {
-  margin-bottom: 1rem;
-}
-.btn {
-  background: var(--accent, #5865f2);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-.btn:hover {
-  opacity: 0.9;
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.btn-danger {
-  background: var(--danger, #f04040);
-}
-.error-text {
-  color: var(--danger, #f04040);
-  margin-bottom: 1rem;
-}
-.placeholder-text {
-  color: var(--text-secondary, #999);
-  font-style: italic;
-}
-</style>

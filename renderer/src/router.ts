@@ -54,6 +54,11 @@ const router = createRouter({
       component: () => import('./pages/FeedbackPage.vue')
     },
     {
+      path: '/chatbox',
+      name: 'chatbox',
+      component: () => import('./pages/ChatboxPage.vue')
+    },
+    {
       path: '/calendar',
       name: 'calendar',
       component: () => import('./pages/CalendarPage.vue')
@@ -67,6 +72,26 @@ const router = createRouter({
       path: '/arclink',
       name: 'arclink',
       component: () => import('./pages/ARCLinkPage.vue')
+    },
+    {
+      path: '/lovense',
+      name: 'lovense',
+      component: () => import('./pages/LovensePage.vue')
+    },
+    {
+      path: '/vosk',
+      name: 'vosk',
+      component: () => import('./pages/VoskPage.vue')
+    },
+    {
+      path: '/vrc-timeline',
+      name: 'vrc-timeline',
+      component: () => import('./pages/VRCTimelinePage.vue')
+    },
+    {
+      path: '/auto-inviter',
+      name: 'auto-inviter',
+      component: () => import('./pages/AutoInviterPage.vue')
     }
   ]
 })

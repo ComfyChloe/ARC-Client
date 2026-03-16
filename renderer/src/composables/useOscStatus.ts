@@ -19,25 +19,23 @@ export interface BlockedParam {
 }
 
 const MAX_ADDITIONAL_CONNECTIONS = 20
+const oscEnabled = ref(false)
+const oscToggling = ref(false)
+const oscPort = ref(0)
+const oscStatus = ref<'connected' | 'disabled' | 'stopping' | 'error' | 'off'>('off')
+const queryRunning = ref(false)
+const localPort = ref(9001)
+const targetPort = ref(9000)
+const targetAddress = ref('127.0.0.1')
+const oscQueryBindAddress = ref('0.0.0.0')
+const additionalConnections = ref<OscConnection[]>([])
+const unsubscriptions = ref<string[]>([])
+const blockedParams = ref<BlockedParam[]>([])
+let oscStatusInitialized = false
+let oscStatusInitPromise: Promise<void> | null = null
 
 export function useOscStatus() {
   const api = useElectronAPI()
-  const oscEnabled = ref(false)
-  const oscToggling = ref(false)
-  const oscPort = ref(0)
-  const oscStatus = ref<'connected' | 'disabled' | 'stopping' | 'error' | 'off'>('off')
-  const queryRunning = ref(false)
-  // Config values
-  const localPort = ref(9001)
-  const targetPort = ref(9000)
-  const targetAddress = ref('127.0.0.1')
-  const oscQueryBindAddress = ref('0.0.0.0')
-  // Additional connections
-  const additionalConnections = ref<OscConnection[]>([])
-  // OSC Query unsubscriptions
-  const unsubscriptions = ref<string[]>([])
-  // Blocked/suppressed parameters
-  const blockedParams = ref<BlockedParam[]>([])
 
   async function loadConfig() {
     const config = await api.getServerConfig()
@@ -174,30 +172,38 @@ export function useOscStatus() {
       oscEnabled.value = false
     }
   }
+  async function initialize() {
+    if (oscStatusInitialized) return
+    if (oscStatusInitPromise) return oscStatusInitPromise
+    oscStatusInitPromise = (async () => {
+      await loadConfig()
+      await loadUnsubscriptions()
+      await loadBlockedParams()
+      const status = await api.getOscStatus()
+      if (status?.enabled) {
+        oscEnabled.value = true
+        oscStatus.value = 'connected'
+        oscPort.value = status.port ?? 0
+      }
+      api.onOscServerStatus(handleOscServerStatus)
+      api.onOscQueryStatus((data: any) => {
+        if (data.status === 'started') {
+          queryRunning.value = true
+          loadUnsubscriptions()
+        } else if (data.status === 'stopped') {
+          queryRunning.value = false
+        }
+      })
+      api.onParameterBlocklistUpdated(() => loadBlockedParams())
+      api.onParametersSuppressed(() => loadBlockedParams())
+      api.onParametersUnsuppressed(() => loadBlockedParams())
+      oscStatusInitialized = true
+    })()
+    await oscStatusInitPromise
+  }
 
   onMounted(async () => {
-    await loadConfig()
-    await loadUnsubscriptions()
-    await loadBlockedParams()
-    // Check initial OSC status
-    const status = await api.getOscStatus()
-    if (status?.enabled) {
-      oscEnabled.value = true
-      oscStatus.value = 'connected'
-      oscPort.value = status.port ?? 0
-    }
-    api.onOscServerStatus(handleOscServerStatus)
-    api.onOscQueryStatus((data: any) => {
-      if (data.status === 'started') {
-        queryRunning.value = true
-        loadUnsubscriptions()
-      } else if (data.status === 'stopped') {
-        queryRunning.value = false
-      }
-    })
-    api.onParameterBlocklistUpdated(() => loadBlockedParams())
-    api.onParametersSuppressed(() => loadBlockedParams())
-    api.onParametersUnsuppressed(() => loadBlockedParams())
+    await initialize()
   })
 
   return {

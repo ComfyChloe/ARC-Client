@@ -37,6 +37,17 @@ let arcLinkContainer: any
 // Custom WebSocket URLs are now persisted across restarts
 let isShuttingDown = false
 let hasShownCriticalError = false
+const rendererUrl = process.env.ELECTRON_RENDERER_URL
+
+function loadRendererWindow(window: BrowserWindow, htmlFileName: string) {
+  if (rendererUrl) {
+    const urlPath = htmlFileName === 'index.html' ? '/' : `/${htmlFileName}`
+    void window.loadURL(`${rendererUrl}${urlPath}`)
+    return
+  }
+  void window.loadFile(path.join(__dirname, `../renderer/${htmlFileName}`))
+}
+
 // Helper function to update splash screen progress
 function updateSplashProgress(progress: number, message: string) {
   if (splashWindow && !splashWindow.isDestroyed()) {
@@ -59,7 +70,7 @@ function createWindow() {
       contextIsolation: false
     }
   })
-  splashWindow.loadFile(path.join(__dirname, '../renderer/splash.html'))
+  loadRendererWindow(splashWindow, 'splash.html')
   splashWindow.show()
   updateSplashProgress(0, 'Initializing')
   const windowState = configManager.getWindowState()
@@ -125,11 +136,11 @@ function createWindow() {
       }
     })
   })
-  if (process.argv.includes('--dev')) {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  if (rendererUrl) {
+    loadRendererWindow(mainWindow, 'index.html')
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+    loadRendererWindow(mainWindow, 'index.html')
   }
   // Save window state on resize and move with throttling to prevent excessive saves
   let saveWindowStateTimeout: ReturnType<typeof setTimeout> | undefined

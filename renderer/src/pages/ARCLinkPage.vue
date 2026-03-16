@@ -33,97 +33,32 @@ onMounted(loadStatus)
 </script>
 
 <template>
-  <div class="page">
-    <h2>ARC Link</h2>
-    <p class="page-description">Connect friends' avatar parameters together.</p>
-    <div class="status-card">
-      <div class="status-row">
-        <span class="status-label">Enabled</span>
-        <span class="status-dot" :class="enabled ? 'dot-green' : 'dot-gray'"></span>
-      </div>
-      <div class="status-row">
-        <span class="status-label">Connected</span>
-        <span class="status-dot" :class="connected ? 'dot-green' : 'dot-gray'"></span>
-      </div>
-      <div class="status-row">
-        <span class="status-label">Connections</span>
-        <span class="status-value">{{ connectionCount }}</span>
-      </div>
+  <div class="page-view">
+    <div class="header">
+      <h1>ARC Link</h1>
+      <p>Connect friends' avatar parameters together</p>
     </div>
-    <div class="actions">
-      <button class="btn" :class="{ 'btn-danger': enabled }" :disabled="loading" @click="toggleService">
+    <div class="card">
+      <h3>Connection Status</h3>
+      <div class="status-panel">
+        <div class="status-row">
+          <span class="status-label">Enabled</span>
+          <span class="status-value" :class="enabled ? '' : 'disabled'">{{ enabled ? 'Enabled' : 'Disabled' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Connected</span>
+          <span class="status-value" :class="connected ? '' : 'disabled'">{{ connected ? 'Connected' : 'Disconnected' }}</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Connections</span>
+          <span class="status-value">{{ connectionCount }}</span>
+        </div>
+      </div>
+      <button class="btn" :class="enabled ? 'btn-danger' : 'btn-primary'" :disabled="loading" @click="toggleService">
         {{ loading ? 'Working...' : enabled ? 'Stop' : 'Start' }}
       </button>
-    </div>
-    <p class="error-text" v-if="error">{{ error }}</p>
-    <div class="connections-placeholder" v-if="enabled && connectionCount === 0">
-      <p class="placeholder-text">No active connections.</p>
+      <p v-if="error" class="error-text">{{ error }}</p>
+      <p v-if="enabled && connectionCount === 0" class="placeholder-text">No active connections.</p>
     </div>
   </div>
 </template>
-
-<style scoped>
-.page-description {
-  color: var(--text-secondary, #999);
-  margin-bottom: 1rem;
-}
-.status-card {
-  background: var(--bg-card, #1e1e2e);
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-.status-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.4rem 0;
-}
-.status-label {
-  color: var(--text-secondary, #999);
-}
-.status-value {
-  color: var(--text-primary, #fff);
-}
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-.dot-green {
-  background: var(--success, #40c040);
-}
-.dot-gray {
-  background: var(--text-secondary, #555);
-}
-.actions {
-  margin-bottom: 1rem;
-}
-.btn {
-  background: var(--accent, #5865f2);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-.btn:hover {
-  opacity: 0.9;
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.btn-danger {
-  background: var(--danger, #f04040);
-}
-.error-text {
-  color: var(--danger, #f04040);
-  margin-bottom: 1rem;
-}
-.placeholder-text {
-  color: var(--text-secondary, #999);
-  font-style: italic;
-}
-</style>

@@ -28,66 +28,65 @@ async function loadMemoryStats() {
 </script>
 
 <template>
-  <div class="page">
-    <h2>Settings</h2>
+  <div class="page-view">
+    <div class="header">
+      <h1>Settings</h1>
+      <p>Configure your ARC-OSC Client settings</p>
+    </div>
 
-    <!-- Server Selection -->
-    <div class="section">
+    <div class="card">
       <h3>Server</h3>
-      <div class="server-buttons">
-        <button class="btn" :class="activeServer === 'live' ? 'btn-success' : 'btn-secondary'" @click="switchToServer('live')">Live</button>
-        <button class="btn" :class="activeServer === 'beta' ? 'btn-success' : 'btn-secondary'" @click="switchToServer('beta')">Beta</button>
-        <button class="btn" :class="activeServer === 'custom' ? 'btn-success' : 'btn-secondary'" @click="switchToServer('custom')">Custom</button>
+      <div class="form-group">
+        <label>Quick Server Selection</label>
+        <div class="settings-server-buttons">
+          <button class="btn" :class="activeServer === 'live' ? 'btn-primary server-btn-active' : 'btn-primary'" type="button" @click="switchToServer('live')">ARC-Live</button>
+          <button class="btn" :class="activeServer === 'beta' ? 'btn-secondary server-btn-active' : 'btn-secondary'" type="button" @click="switchToServer('beta')">ARC-Beta</button>
+          <button class="btn" :class="activeServer === 'custom' ? 'btn-warning server-btn-active' : 'btn-warning'" type="button" @click="switchToServer('custom')">Custom (Dev)</button>
+        </div>
+        <div id="current-server-status" class="server-status-box">
+          <strong>Current Server:</strong>
+          <span>{{ activeServer === 'live' ? 'ARC-Live' : activeServer === 'beta' ? 'ARC-Beta' : 'Custom (Dev)' }}</span>
+        </div>
       </div>
-      <div class="server-url-display">
-        <span class="label">Current:</span>
-        <span class="mono">{{ serverUrl }}</span>
+      <div class="form-group">
+        <label for="server-url-settings">WebSocket Server URL</label>
+        <input id="server-url-settings" v-model="customUrl" type="text" :placeholder="serverUrl" @keypress.enter="handleCustomServer" />
+        <small>Use Quick Server Selection above for Live or Beta. Manual entry is for custom development servers.</small>
       </div>
-      <div v-if="activeServer === 'custom'" class="form-row">
-        <input v-model="customUrl" type="text" class="input" placeholder="wss://your-server:48255" @keypress.enter="handleCustomServer" />
-        <button class="btn btn-primary" @click="handleCustomServer">Apply</button>
-      </div>
+      <button class="btn btn-primary" type="button" @click="handleCustomServer">Apply Custom Server URL</button>
     </div>
 
-    <!-- Appearance -->
-    <div class="section">
-      <h3>Appearance</h3>
-      <div class="setting-row">
-        <span>Theme</span>
-        <button class="btn btn-secondary" @click="toggleTheme">
-          {{ theme === 'dark' ? 'Switch to Light' : 'Switch to Dark' }}
-        </button>
+    <div class="card">
+      <h3>Application Settings</h3>
+      <div class="form-group">
+        <label for="theme-select">Theme</label>
+        <select id="theme-select" :value="theme" @change="toggleTheme">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
       </div>
-      <div class="setting-row">
-        <span>Snow Overlay</span>
-        <button class="btn btn-secondary" @click="toggleSnow">
-          {{ snowEnabled ? 'Disable Snow' : 'Enable Snow' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Log Level -->
-    <div class="section">
-      <h3>Logging</h3>
-      <div class="setting-row">
-        <span>Log Level</span>
-        <select :value="logLevel" class="input" @change="(e: Event) => updateLogLevel((e.target as HTMLSelectElement).value)">
-          <option value="debug">Debug</option>
+      <div class="form-group">
+        <label for="log-level">Log Level</label>
+        <select id="log-level" :value="logLevel" @change="(e: Event) => updateLogLevel((e.target as HTMLSelectElement).value)">
           <option value="info">Info</option>
           <option value="warn">Warning</option>
           <option value="error">Error</option>
+          <option value="debug">Debug</option>
         </select>
+      </div>
+      <div class="form-group settings-inline-group">
+        <label>Snow Overlay</label>
+        <button class="btn btn-secondary" type="button" @click="toggleSnow">{{ snowEnabled ? 'Disable Snow' : 'Enable Snow' }}</button>
       </div>
     </div>
 
-    <!-- Debug & Diagnostics -->
-    <div class="section">
+    <div class="card">
       <h3>Diagnostics</h3>
-      <div class="btn-row">
-        <button class="btn btn-secondary" @click="loadDebugStats">Load Debug Stats</button>
-        <button class="btn btn-secondary" @click="loadMemoryStats">Load Memory Stats</button>
-        <button class="btn btn-warning" @click="forceMemoryCleanup">Force Memory Cleanup</button>
-        <button class="btn btn-danger" @click="clearDebugLogs">Clear Debug Logs</button>
+      <div class="settings-action-row">
+        <button class="btn btn-secondary" type="button" @click="loadDebugStats">Load Debug Stats</button>
+        <button class="btn btn-secondary" type="button" @click="loadMemoryStats">Load Memory Stats</button>
+        <button class="btn btn-warning" type="button" @click="forceMemoryCleanup">Force Memory Cleanup</button>
+        <button class="btn btn-danger" type="button" @click="clearDebugLogs">Clear Debug Logs</button>
       </div>
       <div v-if="debugStats" class="stats-box">
         <h4>Debug Stats</h4>
@@ -99,11 +98,11 @@ async function loadMemoryStats() {
       </div>
     </div>
 
-    <!-- Info -->
-    <div class="section info-section">
+    <div class="card">
+      <h3>Client Information</h3>
       <div class="info-row">
         <span>Client Version</span>
-        <span class="mono">{{ clientVersion || 'Unknown' }}</span>
+        <span>{{ clientVersion || 'Unknown' }}</span>
       </div>
       <div class="info-row">
         <span>Runtime</span>
@@ -112,25 +111,3 @@ async function loadMemoryStats() {
     </div>
   </div>
 </template>
-
-<style scoped>
-.section { margin-bottom: 20px; }
-.section h3 { margin: 0 0 10px; font-size: 1rem; color: #e0e0f0; }
-.server-buttons { display: flex; gap: 8px; margin-bottom: 10px; }
-.server-url-display { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.85rem; }
-.server-url-display .label { color: #888; }
-.mono { font-family: monospace; font-size: 0.85rem; color: #88c0d0; }
-.form-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.form-row .input { flex: 1; }
-.input {
-  padding: 8px 12px; border-radius: 4px; border: 1px solid #555;
-  background: #2a2a3e; color: #fff; font-size: 0.9rem;
-}
-.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #333; }
-.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-.stats-box { background: #2a2a3e; padding: 12px; border-radius: 6px; margin-bottom: 10px; }
-.stats-box h4 { margin: 0 0 6px; font-size: 0.9rem; color: #a0a0b8; }
-.stats-box pre { margin: 0; font-size: 0.8rem; color: #bdc3c7; white-space: pre-wrap; word-break: break-all; }
-.info-section { background: #2a2a3e; padding: 12px; border-radius: 6px; }
-.info-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; }
-</style>

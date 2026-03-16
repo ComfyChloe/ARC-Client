@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
 
 type ServerType = 'live' | 'beta' | 'custom'
@@ -9,17 +9,20 @@ const SERVER_URLS: Record<ServerType, string> = {
   custom: 'wss://127.0.0.1:48255'
 }
 
+const serverUrl = ref('wss://arcosc.app:48255')
+const activeServer = ref<ServerType>('live')
+const theme = ref<'light' | 'dark'>('light')
+const snowEnabled = ref(true)
+const logLevel = ref('info')
+const clientVersion = ref('')
+const runtimeDisplay = ref('00:00:00')
+let startTime = Date.now()
+let runtimeInterval: ReturnType<typeof setInterval> | null = null
+let settingsInitialized = false
+let settingsInitPromise: Promise<void> | null = null
+
 export function useSettings() {
   const api = useElectronAPI()
-  const serverUrl = ref('wss://arcosc.app:48255')
-  const activeServer = ref<ServerType>('live')
-  const theme = ref<'light' | 'dark'>('light')
-  const snowEnabled = ref(true)
-  const logLevel = ref('info')
-  const clientVersion = ref('')
-  const runtimeDisplay = ref('00:00:00')
-  let startTime = Date.now()
-  let runtimeInterval: ReturnType<typeof setInterval> | null = null
 
   function detectServer(url: string): ServerType {
     if (url.includes('beta.arcosc.app')) return 'beta'
@@ -96,15 +99,23 @@ export function useSettings() {
   async function clearDebugLogs() {
     return api.clearDebugLogs()
   }
+  async function initialize() {
+    if (settingsInitialized) return
+    if (settingsInitPromise) return settingsInitPromise
+    settingsInitPromise = (async () => {
+      await loadSettings()
+      startTime = Date.now()
+      updateRuntime()
+      if (!runtimeInterval) {
+        runtimeInterval = setInterval(updateRuntime, 1000)
+      }
+      settingsInitialized = true
+    })()
+    await settingsInitPromise
+  }
 
   onMounted(async () => {
-    await loadSettings()
-    startTime = Date.now()
-    updateRuntime()
-    runtimeInterval = setInterval(updateRuntime, 1000)
-  })
-  onUnmounted(() => {
-    if (runtimeInterval) clearInterval(runtimeInterval)
+    await initialize()
   })
 
   return {

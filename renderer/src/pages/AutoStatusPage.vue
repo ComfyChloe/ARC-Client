@@ -83,75 +83,74 @@ async function saveScheduleName(entryId: string) {
 </script>
 
 <template>
-  <div class="page">
-    <h2>Auto Status</h2>
-    <p class="page-desc">Automatic VRChat status management via OSC parameters and schedules.</p>
-    <!-- Status Banner -->
-    <div class="banner">
-      <div class="banner-left">
-        <span class="banner-icon">{{ activeStatusType?.icon ?? '\u26AA' }}</span>
-        <div class="banner-info">
-          <div class="banner-title">{{ activePreset?.name ?? 'No Active Preset' }}</div>
-          <div class="banner-subtitle">
+  <div class="page-view">
+    <div class="header">
+      <h1>Auto-Status</h1>
+      <p>Manage VRChat status presets, OSC triggers, and schedule-based automation.</p>
+    </div>
+    <div class="card autostatus-banner-card">
+      <div class="autostatus-banner-row">
+        <div>
+          <div class="autostatus-title-row">
+            <span class="autostatus-icon">{{ activeStatusType?.icon ?? '\u26AA' }}</span>
+            <strong>{{ activePreset?.name ?? 'No Active Preset' }}</strong>
+          </div>
+          <div class="autostatus-subtitle">
             <template v-if="activePreset">
               {{ activeStatusType?.label ?? activePreset.statusType }}
-              <template v-if="activePreset.statusMessage"> &mdash; "{{ activePreset.statusMessage }}"</template>
+              <template v-if="activePreset.statusMessage"> - "{{ activePreset.statusMessage }}"</template>
             </template>
             <template v-else>Waiting for trigger...</template>
           </div>
         </div>
-      </div>
-      <div class="banner-badges">
-        <span v-if="status.externallySet" class="badge badge-warn">External Status</span>
-        <span v-if="status.avatarGuardActive" class="badge badge-warn">Avatar Guard</span>
-        <span class="badge" :class="status.vrchatApiAvailable ? 'badge-ok' : 'badge-err'">{{ status.vrchatApiAvailable ? 'API Ready' : 'API Offline' }}</span>
-        <span class="badge badge-info">OSC: {{ status.lastOscValue ?? 0 }}</span>
+        <div class="autostatus-badge-row">
+          <span v-if="status.externallySet" class="autostatus-badge warn">External Status</span>
+          <span v-if="status.avatarGuardActive" class="autostatus-badge warn">Avatar Guard</span>
+          <span class="autostatus-badge" :class="status.vrchatApiAvailable ? 'ok' : 'error'">{{ status.vrchatApiAvailable ? 'API Ready' : 'API Offline' }}</span>
+          <span class="autostatus-badge info">OSC: {{ status.lastOscValue ?? 0 }}</span>
+        </div>
       </div>
     </div>
-    <!-- Presets Section -->
-    <div class="section">
-      <div class="section-header">
+    <div class="card">
+      <div class="autostatus-section-header">
         <h3>Status Presets</h3>
-        <span class="section-hint">Configure up to 8 presets triggered by OSC parameter (int 1-8)</span>
+        <span>Configure up to 8 presets triggered by the OSC preset parameter.</span>
       </div>
-      <div v-if="presets.length === 0" class="empty-state">
+      <div v-if="presets.length === 0" class="autostatus-empty-state">
         <p>No status presets configured yet.</p>
-        <p class="empty-hint">Add a preset to get started with automatic status changes.</p>
-        <button class="btn" @click="createPreset">+ Add Preset</button>
+        <button class="btn btn-primary" @click="createPreset">Add Preset</button>
       </div>
-      <div class="presets-grid" v-else>
-        <div v-for="p in presets" :key="p.id" class="preset-card" :class="{ active: status.lastAppliedPresetId === p.id }" :style="{ '--accent': (STATUS_TYPES.find(t => t.value === p.statusType)?.color ?? '#888') }">
-          <div class="preset-header">
-            <span class="preset-num">{{ p.id }}</span>
-            <span class="preset-name">{{ p.name }}</span>
-            <div class="preset-actions">
-              <button class="icon-btn" @click="testPreset(p.id)" title="Test">&#9654;</button>
-              <button class="icon-btn icon-btn-danger" @click="confirmDelete(p.id)" title="Delete">&times;</button>
+      <div v-else class="autostatus-presets-grid">
+        <div v-for="p in presets" :key="p.id" class="autostatus-preset-card" :class="{ active: status.lastAppliedPresetId === p.id }" :style="{ '--accent': (STATUS_TYPES.find(t => t.value === p.statusType)?.color ?? '#888') }">
+          <div class="autostatus-preset-header">
+            <span class="autostatus-preset-number">{{ p.id }}</span>
+            <span class="autostatus-preset-name">{{ p.name }}</span>
+            <div class="autostatus-preset-actions">
+              <button class="btn btn-secondary" @click="testPreset(p.id)">Test</button>
+              <button class="btn btn-danger" @click="confirmDelete(p.id)">Delete</button>
             </div>
           </div>
-          <div class="preset-body">
-            <div class="field">
+          <div class="autostatus-preset-body">
+            <div class="form-group">
               <label>Name</label>
               <input type="text" :value="p.name" maxlength="24" @change="onPresetFieldChange(p, 'name', ($event.target as HTMLInputElement).value)" />
             </div>
-            <div class="field">
+            <div class="form-group">
               <label>Status Type</label>
               <select :value="p.statusType ?? ''" @change="onPresetFieldChange(p, 'statusType', ($event.target as HTMLSelectElement).value)">
                 <option v-for="t in STATUS_TYPES" :key="String(t.value)" :value="t.value ?? ''">{{ t.icon }} {{ t.label }}</option>
               </select>
             </div>
-            <div class="field">
-              <label>Message <small class="char-count">{{ (p.statusMessage || '').length }}/32</small></label>
+            <div class="form-group">
+              <label>Message</label>
               <input type="text" :value="p.statusMessage" maxlength="32" placeholder="Optional status message" @change="onPresetFieldChange(p, 'statusMessage', ($event.target as HTMLInputElement).value)" />
+              <small>{{ (p.statusMessage || '').length }}/32</small>
             </div>
           </div>
         </div>
-        <div v-if="presets.length < 8" class="preset-add-card" @click="createPreset">
-          <span>+ Add Preset</span>
-        </div>
+        <button v-if="presets.length < 8" class="autostatus-add-card" @click="createPreset">+ Add Preset</button>
       </div>
     </div>
-    <!-- Delete Confirm Modal -->
     <div v-if="confirmDeleteId !== null" class="modal-overlay" @click.self="cancelDelete">
       <div class="modal-content">
         <h3>Delete Preset</h3>
@@ -162,561 +161,353 @@ async function saveScheduleName(entryId: string) {
         </div>
       </div>
     </div>
-    <!-- Schedule Section -->
-    <div class="section">
-      <div class="section-header">
+    <div class="card">
+      <div class="autostatus-section-header">
         <h3>Schedule Timetable</h3>
-        <span class="section-hint">Automatically set status based on day and time</span>
+        <span>Automatically set status based on day and time.</span>
       </div>
-      <div v-if="schedule.length === 0" class="empty-hint">No schedule entries yet. Add one below to automate status changes by time of day.</div>
-      <div class="schedule-list">
-        <div v-for="entry in schedule" :key="entry.id" class="schedule-row" :class="{ disabled: !entry.enabled }">
-          <div class="schedule-color" :style="{ background: scheduleStatusType(entry)?.color ?? '#95a5a6' }"></div>
-          <div class="schedule-details">
-            <div class="schedule-name" v-if="editingScheduleId === entry.id">
-              <input class="inline-edit" v-model="editingScheduleName" @blur="saveScheduleName(entry.id)" @keyup.enter="saveScheduleName(entry.id)" @keyup.escape="editingScheduleId = null" />
+      <div v-if="schedule.length === 0" class="autostatus-empty-state">No schedule entries yet.</div>
+      <div v-else class="autostatus-schedule-list">
+        <div v-for="entry in schedule" :key="entry.id" class="autostatus-schedule-row" :class="{ disabled: !entry.enabled }">
+          <div class="autostatus-schedule-color" :style="{ background: scheduleStatusType(entry)?.color ?? '#95a5a6' }"></div>
+          <div class="autostatus-schedule-main">
+            <div v-if="editingScheduleId === entry.id" class="autostatus-schedule-edit-row">
+              <input v-model="editingScheduleName" @blur="saveScheduleName(entry.id)" @keyup.enter="saveScheduleName(entry.id)" @keyup.escape="editingScheduleId = null" />
             </div>
-            <div class="schedule-name clickable" v-else @click="startEditScheduleName(entry.id, entry.name)">{{ entry.name || 'Untitled' }}</div>
-            <div class="schedule-time">{{ entry.startTime }} &mdash; {{ entry.endTime }}<small v-if="isOvernight(entry)"> (overnight)</small></div>
-            <div class="schedule-days">{{ entry.daysOfWeek.map((d: number) => DAY_LABELS[d]).join(', ') }}</div>
-            <div class="schedule-fallback">
-              <label>Status at end:</label>
+            <div v-else class="autostatus-schedule-name" @click="startEditScheduleName(entry.id, entry.name)">{{ entry.name || 'Untitled' }}</div>
+            <div class="autostatus-schedule-subtext">{{ entry.startTime }} - {{ entry.endTime }}<span v-if="isOvernight(entry)"> (overnight)</span></div>
+            <div class="autostatus-schedule-subtext">{{ entry.daysOfWeek.map((d: number) => DAY_LABELS[d]).join(', ') }}</div>
+            <div class="autostatus-schedule-fallback">
+              <label>Status at end</label>
               <select :value="entry.fallbackStatusType ?? ''" @change="updateSchedule(entry.id, { fallbackStatusType: ($event.target as HTMLSelectElement).value || null })">
                 <option value="">None</option>
                 <option v-for="t in STATUS_TYPES.filter(t => t.value !== null)" :key="String(t.value)" :value="t.value!">{{ t.icon }} {{ t.label }}</option>
               </select>
             </div>
           </div>
-          <div class="schedule-preset">{{ scheduleStatusType(entry)?.icon ?? '\u26AA' }} {{ schedulePreset(entry)?.name ?? 'Unknown' }}</div>
-          <div class="schedule-actions">
-            <button class="toggle-switch" :class="{ on: entry.enabled }" @click="updateSchedule(entry.id, { enabled: !entry.enabled })">
-              <span class="toggle-knob"></span>
+          <div class="autostatus-schedule-preset">{{ scheduleStatusType(entry)?.icon ?? '\u26AA' }} {{ schedulePreset(entry)?.name ?? 'Unknown' }}</div>
+          <div class="autostatus-schedule-actions">
+            <button class="autostatus-toggle" :class="{ on: entry.enabled }" @click="updateSchedule(entry.id, { enabled: !entry.enabled })">
+              <span></span>
             </button>
-            <button class="icon-btn icon-btn-danger" @click="deleteSchedule(entry.id)">&times;</button>
+            <button class="btn btn-danger" @click="deleteSchedule(entry.id)">Remove</button>
           </div>
         </div>
       </div>
-      <!-- Add Schedule Form -->
-      <div class="schedule-add card" v-if="presets.length > 0">
-        <div class="schedule-add-grid">
-          <div class="field">
-            <label>Name</label>
-            <input type="text" v-model="newSchedule.name" placeholder="Schedule name (optional)" maxlength="32" />
+      <div v-if="presets.length > 0" class="autostatus-add-schedule-grid">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" v-model="newSchedule.name" placeholder="Schedule name (optional)" maxlength="32" />
+        </div>
+        <div class="form-group autostatus-day-group">
+          <label>Days</label>
+          <div class="autostatus-day-picker">
+            <button v-for="(d, i) in DAY_LABELS" :key="i" type="button" class="autostatus-day-btn" :class="{ active: newDays.has(i) }" @click="toggleDay(i)">{{ d }}</button>
           </div>
-          <div class="field">
-            <label>Days</label>
-            <div class="day-picker">
-              <button v-for="(d, i) in DAY_LABELS" :key="i" class="day-btn" :class="{ 'day-active': newDays.has(i) }" @click="toggleDay(i)">{{ d }}</button>
-            </div>
-          </div>
-          <div class="field">
-            <label>Start</label>
-            <input type="time" v-model="newSchedule.startTime" />
-          </div>
-          <div class="field">
-            <label>End</label>
-            <input type="time" v-model="newSchedule.endTime" />
-          </div>
-          <div class="field">
-            <label>Preset</label>
-            <select v-model.number="newSchedule.presetId">
-              <option v-for="p in presets" :key="p.id" :value="p.id">{{ p.name }} ({{ STATUS_TYPES.find(t => t.value === p.statusType)?.icon ?? '' }} {{ p.id }})</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Status at end</label>
-            <select v-model="newSchedule.fallbackStatusType">
-              <option value="">None</option>
-              <option v-for="t in STATUS_TYPES.filter(t => t.value !== null)" :key="String(t.value)" :value="t.value!">{{ t.icon }} {{ t.label }}</option>
-            </select>
-          </div>
-          <div class="field field-action">
-            <button class="btn btn-small" :disabled="newDays.size === 0" @click="handleAddSchedule">Add</button>
-          </div>
+        </div>
+        <div class="form-group">
+          <label>Start</label>
+          <input type="time" v-model="newSchedule.startTime" />
+        </div>
+        <div class="form-group">
+          <label>End</label>
+          <input type="time" v-model="newSchedule.endTime" />
+        </div>
+        <div class="form-group">
+          <label>Preset</label>
+          <select v-model.number="newSchedule.presetId">
+            <option v-for="p in presets" :key="p.id" :value="p.id">{{ p.name }} ({{ STATUS_TYPES.find(t => t.value === p.statusType)?.icon ?? '' }} {{ p.id }})</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status at end</label>
+          <select v-model="newSchedule.fallbackStatusType">
+            <option value="">None</option>
+            <option v-for="t in STATUS_TYPES.filter(t => t.value !== null)" :key="String(t.value)" :value="t.value!">{{ t.icon }} {{ t.label }}</option>
+          </select>
+        </div>
+        <div class="autostatus-add-button-row">
+          <button class="btn btn-primary" :disabled="newDays.size === 0" @click="handleAddSchedule">Add Schedule</button>
         </div>
       </div>
     </div>
-    <!-- Settings Section -->
-    <div class="section">
-      <div class="section-header">
-        <h3>Settings</h3>
-      </div>
-      <div class="settings-grid card">
-        <div class="field">
+    <div class="card">
+      <h3>Settings</h3>
+      <div class="autostatus-settings-grid">
+        <div class="form-group">
           <label>Cooldown (seconds)</label>
           <input type="number" min="5" max="120" :value="settings.cooldownSeconds" @change="updateSettings({ cooldownSeconds: parseInt(($event.target as HTMLInputElement).value) })" />
-          <small>Minimum time between status changes</small>
+          <small>Minimum time between status changes.</small>
         </div>
-        <div class="field">
+        <div class="form-group">
           <label>Time Format</label>
           <select :value="settings.timeFormat" @change="updateSettings({ timeFormat: ($event.target as HTMLSelectElement).value })">
             <option value="24h">24-hour</option>
             <option value="12h">12-hour</option>
           </select>
         </div>
-        <div class="field checkbox-field">
-          <label>
-            <input type="checkbox" :checked="settings.alwaysAllowOverride" @change="updateSettings({ alwaysAllowOverride: ($event.target as HTMLInputElement).checked })" />
-            Always allow status override
-          </label>
-          <small>When enabled, ARC will change your status even if it was set externally.</small>
+        <label class="autostatus-override-toggle">
+          <input type="checkbox" :checked="settings.alwaysAllowOverride" @change="updateSettings({ alwaysAllowOverride: ($event.target as HTMLInputElement).checked })" />
+          <span>Always allow status override</span>
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <h3>OSC Parameters</h3>
+      <div class="autostatus-osc-list">
+        <div class="autostatus-osc-item">
+          <code>/avatar/parameters/ARCOSC/vrc-status/statuspreset</code>
+          <p>Int 0-8. Value 0 does nothing, values 1-8 trigger the corresponding preset.</p>
+        </div>
+        <div class="autostatus-osc-item">
+          <code>/avatar/parameters/ARCOSC/vrc-status</code>
+          <p>Int 0-4. 0 = off, 1 = Join Me, 2 = Online, 3 = Ask Me, 4 = Do Not Disturb.</p>
         </div>
       </div>
-      <div class="osc-info card">
-        <strong>OSC Parameters:</strong>
-        <div class="osc-params">
-          <div class="osc-param">
-            <code>/avatar/parameters/ARCOSC/vrc-status/statuspreset</code> <small>(Int, 0-8)</small><br />
-            <small>Value 0 = no action. Values 1-8 trigger the corresponding preset.</small>
-          </div>
-          <div class="osc-param">
-            <code>/avatar/parameters/ARCOSC/vrc-status</code> <small>(Int, 0-4)</small><br />
-            <small>0 = off, 1 = Join Me, 2 = Online, 3 = Ask Me, 4 = Do Not Disturb</small>
-          </div>
-        </div>
-        <small>Status changes are blocked for 30 seconds after avatar changes.</small>
-      </div>
+      <small>Status changes are blocked for 30 seconds after avatar changes.</small>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page-desc {
-  color: #999;
-  margin-bottom: 1rem;
-}
-/* Banner */
-.banner {
-  background: #1e1e2e;
-  border-radius: 8px;
-  padding: 1rem;
+.autostatus-banner-row,
+.autostatus-title-row,
+.autostatus-badge-row,
+.autostatus-section-header,
+.autostatus-preset-header,
+.autostatus-preset-actions,
+.autostatus-schedule-actions,
+.autostatus-add-button-row {
   display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.autostatus-banner-row,
+.autostatus-preset-header,
+.autostatus-schedule-row {
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-  gap: 0.5rem;
 }
-.banner-left {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
+.autostatus-title-row {
+  margin-bottom: 6px;
 }
-.banner-icon {
-  font-size: 1.8rem;
+.autostatus-icon {
+  font-size: 24px;
 }
-.banner-title {
-  font-weight: 600;
-  color: #fff;
-  font-size: 1.05rem;
+.autostatus-subtitle,
+.autostatus-section-header span,
+.autostatus-schedule-subtext,
+.autostatus-empty-state,
+.autostatus-osc-item p {
+  color: #7f8c8d;
 }
-.banner-subtitle {
-  color: #999;
-  font-size: 0.85rem;
-}
-.banner-badges {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-.badge {
-  font-size: 0.7rem;
-  padding: 3px 8px;
-  border-radius: 4px;
+.autostatus-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
   font-weight: 600;
 }
-.badge-ok {
-  background: #2ecc7133;
-  color: #2ecc71;
+.autostatus-badge.ok {
+  background: #d5f4e6;
+  color: #27ae60;
 }
-.badge-err {
-  background: #e74c3c33;
-  color: #e74c3c;
-}
-.badge-warn {
-  background: #f39c1233;
+.autostatus-badge.warn {
+  background: #fef3cd;
   color: #f39c12;
 }
-.badge-info {
-  background: #3498db33;
+.autostatus-badge.error {
+  background: #f8d7da;
+  color: #c0392b;
+}
+.autostatus-badge.info {
+  background: #e8f4fd;
   color: #3498db;
 }
-/* Sections */
-.section {
-  margin-bottom: 1.5rem;
-}
-.section-header {
-  display: flex;
-  align-items: baseline;
-  gap: 0.8rem;
-  margin-bottom: 0.8rem;
-}
-.section-header h3 {
-  margin: 0;
-  font-size: 1rem;
-  color: #ccc;
-}
-.section-hint {
-  color: #666;
-  font-size: 0.8rem;
-}
-.empty-state {
-  text-align: center;
-  padding: 2rem;
-  color: #666;
-}
-.empty-hint {
-  color: #555;
-  font-size: 0.85rem;
-}
-/* Presets grid */
-.presets-grid {
+.autostatus-presets-grid,
+.autostatus-settings-grid,
+.autostatus-add-schedule-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 15px;
 }
-.preset-card {
-  background: #1e1e2e;
+.autostatus-preset-card {
+  border: 1px solid #dee2e6;
+  border-left: 4px solid var(--accent, #95a5a6);
   border-radius: 8px;
-  padding: 0.8rem 1rem;
-  border-left: 3px solid var(--accent, #888);
+  padding: 15px;
+  background: #f8f9fa;
 }
-.preset-card.active {
-  box-shadow: 0 0 0 1px var(--accent, #888);
+.autostatus-preset-card.active {
+  box-shadow: 0 0 0 2px var(--accent, #95a5a6);
 }
-.preset-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
-}
-.preset-num {
-  background: #2a2a3e;
-  color: #ccc;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
+.autostatus-preset-number {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: white;
+  border: 1px solid #dee2e6;
   font-weight: 700;
-  flex-shrink: 0;
 }
-.preset-name {
+.autostatus-preset-name {
   flex: 1;
   font-weight: 600;
-  color: #fff;
 }
-.preset-actions {
-  display: flex;
-  gap: 0.3rem;
-}
-.preset-body {
+.autostatus-preset-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 10px;
 }
-.preset-add-card {
-  background: #1e1e2e;
+.autostatus-add-card {
+  border: 2px dashed #bdc3c7;
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  cursor: pointer;
-  color: #666;
-  border: 2px dashed #333;
-}
-.preset-add-card:hover {
-  border-color: #5865f2;
-  color: #5865f2;
-}
-/* Form fields */
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-.field label {
-  color: #999;
-  font-size: 0.8rem;
-}
-.field input[type="text"],
-.field input[type="number"],
-.field input[type="time"],
-.field select {
-  background: #2a2a3e;
-  border: 1px solid #444;
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-  color: #fff;
-  font-size: 0.85rem;
-}
-.field input:focus,
-.field select:focus {
-  outline: none;
-  border-color: #5865f2;
-}
-.field small {
-  color: #666;
-  font-size: 0.75rem;
-}
-.char-count {
-  color: #666;
-  float: right;
-}
-.checkbox-field label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  cursor: pointer;
-  color: #ccc;
-}
-/* Schedule */
-.schedule-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-bottom: 1rem;
-}
-.schedule-row {
-  background: #1e1e2e;
-  border-radius: 8px;
-  padding: 0.6rem 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-}
-.schedule-row.disabled {
-  opacity: 0.5;
-}
-.schedule-color {
-  width: 4px;
-  height: 40px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.schedule-details {
-  flex: 1;
-  min-width: 0;
-}
-.schedule-name {
+  background: transparent;
+  padding: 20px;
   font-weight: 600;
-  color: #fff;
-  font-size: 0.9rem;
-}
-.schedule-name.clickable {
   cursor: pointer;
 }
-.schedule-name.clickable:hover {
-  text-decoration: underline;
-}
-.inline-edit {
-  background: #2a2a3e;
-  border: 1px solid #5865f2;
-  border-radius: 4px;
-  padding: 0.15rem 0.4rem;
-  color: #fff;
-  font-size: 0.85rem;
-  width: 150px;
-}
-.schedule-time {
-  color: #999;
-  font-size: 0.8rem;
-}
-.schedule-days {
-  color: #666;
-  font-size: 0.8rem;
-}
-.schedule-fallback {
+.autostatus-empty-state {
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.2rem;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
 }
-.schedule-fallback label {
-  color: #666;
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-.schedule-fallback select {
-  background: #2a2a3e;
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 0.15rem 0.4rem;
-  color: #fff;
-  font-size: 0.75rem;
-}
-.schedule-preset {
-  color: #ccc;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-.schedule-actions {
+.autostatus-schedule-list {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
 }
-/* Toggle switch */
-.toggle-switch {
-  width: 36px;
-  height: 20px;
-  border-radius: 10px;
-  background: #555;
-  border: none;
-  cursor: pointer;
-  position: relative;
-  transition: background 0.2s;
-  padding: 0;
-}
-.toggle-switch.on {
-  background: #4caf50;
-}
-.toggle-knob {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  transition: left 0.2s;
-}
-.toggle-switch.on .toggle-knob {
-  left: 18px;
-}
-/* Schedule add form */
-.schedule-add {
-  margin-top: 0.5rem;
-}
-.schedule-add-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.8rem;
-  align-items: flex-end;
-}
-.day-picker {
-  display: flex;
-  gap: 0.2rem;
-}
-.day-btn {
-  background: #2a2a3e;
-  border: 1px solid #444;
-  border-radius: 4px;
-  color: #999;
-  padding: 0.25rem 0.45rem;
-  cursor: pointer;
-  font-size: 0.75rem;
-}
-.day-btn.day-active {
-  background: #5865f2;
-  border-color: #5865f2;
-  color: #fff;
-}
-.field-action {
-  justify-content: flex-end;
-}
-/* Settings */
-.settings-grid {
+.autostatus-schedule-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-}
-.osc-info {
-  margin-top: 1rem;
-}
-.osc-params {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-.osc-param code {
-  background: #2a2a3e;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  color: #e94560;
-}
-/* Card */
-.card {
-  background: #1e1e2e;
+  grid-template-columns: 6px 1fr auto auto;
+  gap: 15px;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid #dee2e6;
   border-radius: 8px;
-  padding: 1rem;
+  background: #f8f9fa;
 }
-/* Icon buttons */
-.icon-btn {
-  background: none;
-  border: none;
-  color: #999;
+.autostatus-schedule-row.disabled {
+  opacity: 0.6;
+}
+.autostatus-schedule-color {
+  align-self: stretch;
+  border-radius: 999px;
+}
+.autostatus-schedule-name {
+  font-weight: 600;
   cursor: pointer;
-  font-size: 1rem;
-  padding: 0.2rem 0.4rem;
-  border-radius: 4px;
 }
-.icon-btn:hover {
-  background: #2a2a3e;
-  color: #fff;
-}
-.icon-btn-danger:hover {
-  color: #e74c3c;
-}
-/* Buttons */
-.btn {
-  background: #5865f2;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-.btn:hover {
-  opacity: 0.9;
-}
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.btn-small {
-  padding: 0.3rem 0.8rem;
-  font-size: 0.85rem;
-}
-.btn-danger {
-  background: #e74c3c;
-}
-.btn-secondary {
-  background: #555;
-}
-/* Modal */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+.autostatus-schedule-fallback {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 1000;
+  gap: 8px;
+  margin-top: 8px;
 }
-.modal-content {
-  background: #1e1e2e;
-  border-radius: 8px;
-  padding: 1.5rem;
-  max-width: 400px;
-  width: 90%;
+.autostatus-schedule-fallback label {
+  font-size: 12px;
+  color: #7f8c8d;
 }
-.modal-content h3 {
-  margin: 0 0 0.8rem;
-  color: #fff;
+.autostatus-schedule-fallback select,
+.autostatus-schedule-edit-row input {
+  padding: 6px 8px;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
 }
-.modal-content p {
-  color: #999;
-  margin-bottom: 1rem;
+.autostatus-toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border: none;
+  border-radius: 999px;
+  background: #95a5a6;
+  cursor: pointer;
 }
-.modal-footer {
+.autostatus-toggle span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s ease;
+}
+.autostatus-toggle.on {
+  background: #27ae60;
+}
+.autostatus-toggle.on span {
+  transform: translateX(20px);
+}
+.autostatus-day-group {
+  grid-column: 1 / -1;
+}
+.autostatus-day-picker {
   display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.autostatus-day-btn {
+  padding: 8px 10px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  background: #f8f9fa;
+  cursor: pointer;
+}
+.autostatus-day-btn.active {
+  background: #3498db;
+  border-color: #3498db;
+  color: white;
+}
+.autostatus-add-button-row {
+  justify-content: flex-start;
+}
+.autostatus-override-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.autostatus-osc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.autostatus-osc-item code {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f8f9fa;
+}
+:global(body.dark-theme) .autostatus-subtitle,
+:global(body.dark-theme) .autostatus-section-header span,
+:global(body.dark-theme) .autostatus-schedule-subtext,
+:global(body.dark-theme) .autostatus-empty-state,
+:global(body.dark-theme) .autostatus-osc-item p,
+:global(body.dark-theme) .autostatus-schedule-fallback label {
+  color: #95a5a6;
+}
+:global(body.dark-theme) .autostatus-preset-card,
+:global(body.dark-theme) .autostatus-schedule-row,
+:global(body.dark-theme) .autostatus-day-btn,
+:global(body.dark-theme) .autostatus-osc-item code {
+  background: #2c3e50;
+  border-color: #34495e;
+  color: #ecf0f1;
+}
+:global(body.dark-theme) .autostatus-preset-number,
+:global(body.dark-theme) .autostatus-schedule-fallback select,
+:global(body.dark-theme) .autostatus-schedule-edit-row input {
+  background: #34495e;
+  border-color: #34495e;
+  color: #ecf0f1;
+}
+:global(body.dark-theme) .autostatus-add-card {
+  border-color: #34495e;
+  color: #ecf0f1;
 }
 </style>
