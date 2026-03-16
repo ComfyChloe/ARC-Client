@@ -1,0 +1,32 @@
+main/containers/autostatus/autostatus.ts(104,46): error TS2352: Conversion of type 'AutoStatusConfig' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'AutoStatusConfig'.
+main/containers/hyperate/hyperate.ts(105,16): error TS2352: Conversion of type 'HyperateConfig' to type 'HyperateConfig' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'enabled' is missing in type 'HyperateConfig' but required in type 'HyperateConfig'.
+main/containers/hyperate/hyperate.ts(215,36): error TS2702: 'WebSocket' only refers to a type, but is being used as a namespace here.
+main/containers/hyperate/hyperate.ts(232,54): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/hyperate/hyperate.ts(267,33): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/hyperate/hyperate.ts(267,63): error TS2339: Property 'CONNECTING' does not exist on type 'typeof WebSocket'.
+main/containers/hyperate/hyperate.ts(331,55): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/hyperate/hyperate.ts(353,54): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/hyperate/hyperate.ts(374,54): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/hyperate/hyperate.ts(463,69): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/hyperate/hyperate.ts(481,87): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/hyperate/hyperate.ts(534,65): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/oscgoesbrrr/ButtplugClient.ts(238,29): error TS2702: 'WebSocket' only refers to a type, but is being used as a namespace here.
+main/containers/oscgoesbrrr/ButtplugClient.ts(302,19): error TS2702: 'WebSocket' only refers to a type, but is being used as a namespace here.
+main/containers/oscgoesbrrr/ButtplugClient.ts(402,59): error TS2339: Property 'OPEN' does not exist on type 'typeof WebSocket'.
+main/containers/oscgoesbrrr/oscgoesbrrr.ts(302,39): error TS2352: Conversion of type 'OGBConfig' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'OGBConfig'.
+main/containers/oscleash/oscleash.ts(587,42): error TS2352: Conversion of type 'LeashConfig' to type 'Partial<Record<string, unknown>>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Index signature for type 'string' is missing in type 'LeashConfig'.
+main/services/oscQueryService.ts(545,56): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type 'string' is not assignable to parameter of type 'number'.
+main/services/oscQueryService.ts(585,17): error TS2322: Type 'Service' is not assignable to type '{ stop: () => void; }'.
+  Types of property 'stop' are incompatible.
+    Type 'CallableFunction | undefined' is not assignable to type '() => void'.
+      Type 'undefined' is not assignable to type '() => void'.
+main/services/oscQueryService.ts(609,25): error TS2322: Type 'Service' is not assignable to type '{ stop: () => void; }'.
+  Types of property 'stop' are incompatible.
+    Type 'CallableFunction | undefined' is not assignable to type '() => void'.
+      Type 'undefined' is not assignable to type '() => void'.

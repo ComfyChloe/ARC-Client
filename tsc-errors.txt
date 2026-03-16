@@ -1,0 +1,115 @@
+main/containers/autostatus/autostatus.ts(100,9): error TS2719: Type 'AutoStatusConfig' is not assignable to type 'AutoStatusConfig'. Two different types with this name exist, but they are unrelated.
+  Types of property 'presets' are incompatible.
+    Type 'unknown[]' is not assignable to type 'AutoStatusPreset[]'.
+      Type 'unknown' is not assignable to type 'AutoStatusPreset'.
+main/containers/autostatus/autostatus.ts(104,46): error TS2345: Argument of type 'AutoStatusConfig' is not assignable to parameter of type 'Partial<AutoStatusConfig>'.
+  Types of property 'settings' are incompatible.
+    Property 'timeFormat' is missing in type 'AutoStatusSettings' but required in type 'AutoStatusSettings'.
+main/containers/hyperate/hyperate.ts(3,23): error TS7016: Could not find a declaration file for module 'ws'. 'D:/Code/Projects/ARC-Client/node_modules/ws/index.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/ws` if it exists or add a new declaration (.d.ts) file containing `declare module 'ws';`
+main/containers/hyperate/hyperate.ts(105,9): error TS2741: Property 'enabled' is missing in type 'HyperateConfig' but required in type 'HyperateConfig'.
+main/containers/oscgoesbrrr/ButtplugClient.ts(8,23): error TS7016: Could not find a declaration file for module 'ws'. 'D:/Code/Projects/ARC-Client/node_modules/ws/index.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/ws` if it exists or add a new declaration (.d.ts) file containing `declare module 'ws';`
+main/containers/oscgoesbrrr/GameDevice.ts(172,9): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+main/containers/oscgoesbrrr/GameDevice.ts(178,9): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+main/containers/oscgoesbrrr/oscgoesbrrr.ts(280,9): error TS2322: Type 'OscGoesbrrrConfig' is not assignable to type 'OGBConfig'.
+  Types of property 'devices' are incompatible.
+    Type 'unknown[]' is not assignable to type 'DeviceBinding[]'.
+      Type 'unknown' is not assignable to type 'DeviceBinding'.
+main/containers/oscgoesbrrr/oscgoesbrrr.ts(302,39): error TS2345: Argument of type 'OGBConfig' is not assignable to parameter of type 'Partial<OscGoesbrrrConfig>'.
+  Index signature for type 'string' is missing in type 'OGBConfig'.
+main/containers/oscleash/oscleash.ts(65,3): error TS2564: Property 'RunDeadzone' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(66,3): error TS2564: Property 'WalkDeadzone' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(67,3): error TS2564: Property 'StrengthMultiplier' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(68,3): error TS2564: Property 'UpDownCompensation' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(69,3): error TS2564: Property 'UpDownDeadzone' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(70,3): error TS2564: Property 'ActiveDelay' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(71,3): error TS2564: Property 'InactiveDelay' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(72,3): error TS2564: Property 'Logging' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(73,3): error TS2564: Property 'Leashes' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(74,3): error TS2564: Property 'DirectionalParameters' has no initializer and is not definitely assigned in the constructor.
+main/containers/oscleash/oscleash.ts(76,22): error TS2345: Argument of type 'LeashConfig | { readonly RunDeadzone: 0.7; readonly WalkDeadzone: 0.15; readonly StrengthMultiplier: 1.2; readonly UpDownCompensation: 1; readonly UpDownDeadzone: 0.5; ... 4 more ...; readonly DirectionalParameters: { ...; }; }' is not assignable to parameter of type 'LeashConfig'.
+  Type '{ readonly RunDeadzone: 0.7; readonly WalkDeadzone: 0.15; readonly StrengthMultiplier: 1.2; readonly UpDownCompensation: 1; readonly UpDownDeadzone: 0.5; readonly ActiveDelay: 20; readonly InactiveDelay: 500; readonly Logging: false; readonly PhysboneParameters: readonly [...]; readonly DirectionalParameters: { ...;...' is not assignable to type 'LeashConfig'.
+    Types of property 'PhysboneParameters' are incompatible.
+      The type 'readonly ["Leash"]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
+main/containers/oscleash/oscleash.ts(93,24): error TS2345: Argument of type '{ readonly RunDeadzone: 0.7; readonly WalkDeadzone: 0.15; readonly StrengthMultiplier: 1.2; readonly UpDownCompensation: 1; readonly UpDownDeadzone: 0.5; readonly ActiveDelay: 20; readonly InactiveDelay: 500; readonly Logging: false; readonly PhysboneParameters: readonly [...]; readonly DirectionalParameters: { ...;...' is not assignable to parameter of type 'LeashConfig'.
+  Types of property 'PhysboneParameters' are incompatible.
+    The type 'readonly ["Leash"]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
+main/containers/oscleash/oscleash.ts(340,5): error TS2322: Type 'boolean | null' is not assignable to type 'boolean'.
+  Type 'null' is not assignable to type 'boolean'.
+main/containers/oscleash/oscleash.ts(454,75): error TS2554: Expected 4 arguments, but got 5.
+main/containers/oscleash/oscleash.ts(499,7): error TS2531: Object is possibly 'null'.
+main/containers/oscleash/oscleash.ts(500,7): error TS2531: Object is possibly 'null'.
+main/containers/oscleash/oscleash.ts(501,7): error TS2531: Object is possibly 'null'.
+main/containers/oscleash/oscleash.ts(581,5): error TS2322: Type '{ RunDeadzone: 0.7; WalkDeadzone: 0.15; StrengthMultiplier: 1.2; UpDownCompensation: 1; UpDownDeadzone: 0.5; ActiveDelay: 20; InactiveDelay: 500; Logging: false; PhysboneParameters: readonly ["Leash"]; DirectionalParameters: { ...; }; }' is not assignable to type 'LeashConfig'.
+  Types of property 'PhysboneParameters' are incompatible.
+    The type 'readonly ["Leash"]' is 'readonly' and cannot be assigned to the mutable type 'string[]'.
+main/containers/oscleash/oscleash.ts(587,42): error TS2345: Argument of type 'LeashConfig' is not assignable to parameter of type 'Partial<OscLeashConfig>'.
+  Index signature for type 'string' is missing in type 'LeashConfig'.
+main/containers/oscleash/oscleash.ts(637,9): error TS2531: Object is possibly 'null'.
+main/containers/oscleash/oscleash.ts(640,9): error TS2531: Object is possibly 'null'.
+main/containers/vrchat-api/vrchat-api.ts(106,7): error TS2322: Type '{ get: (key: string) => Promise<any>; set: (key: string, value: unknown) => Promise<Map<any, any>>; delete: (key: string) => Promise<boolean>; clear: () => Promise<...>; }' is not assignable to type 'Keyv<unknown> | KeyvStoreAdapter | Map<unknown, unknown> | undefined'.
+  Type '{ get: (key: string) => Promise<any>; set: (key: string, value: unknown) => Promise<Map<any, any>>; delete: (key: string) => Promise<boolean>; clear: () => Promise<void>; }' is missing the following properties from type 'Map<unknown, unknown>': forEach, has, size, entries, and 4 more.
+main/containers/vrchat-api/vrchat-api.ts(265,9): error TS2531: Object is possibly 'null'.
+main/containers/vrchat-api/vrchat-api.ts(280,11): error TS18046: 'result' is of type 'unknown'.
+main/containers/vrchat-api/vrchat-api.ts(281,35): error TS18046: 'result' is of type 'unknown'.
+main/containers/vrchat-api/vrchat-api.ts(284,11): error TS18046: 'result' is of type 'unknown'.
+main/containers/vrchat-api/vrchat-api.ts(285,71): error TS18046: 'result' is of type 'unknown'.
+main/containers/vrchat-api/vrchat-api.ts(288,59): error TS18046: 'result' is of type 'unknown'.
+main/containers/vrchat-api/vrchat-api.ts(337,11): error TS18046: 'result' is of type 'unknown'.
+main/containers/vrchat-api/vrchat-api.ts(338,35): error TS18046: 'result' is of type 'unknown'.
+main/containers/vrchat-api/vrchat-api.ts(343,16): error TS18046: 'result' is of type 'unknown'.
+main/containers/vrchat-api/vrchat-api.ts(446,101): error TS7006: Parameter 'e' implicitly has an 'any' type.
+main/containers/vrchat-api/vrchat-api.ts(447,72): error TS7006: Parameter 'e' implicitly has an 'any' type.
+main/containers/vrchat-api/vrchat-api.ts(448,50): error TS7006: Parameter 'e' implicitly has an 'any' type.
+main/containers/vrchat-api/vrchat-api.ts(454,63): error TS7006: Parameter 'g' implicitly has an 'any' type.
+main/containers/vrchat-api/vrchat-api.ts(599,41): error TS7006: Parameter 'data' implicitly has an 'any' type.
+main/containers/vrchat-api/vrchat-api.ts(607,42): error TS7006: Parameter 'data' implicitly has an 'any' type.
+main/containers/vrchat-api/vrchat-api.ts(614,40): error TS7006: Parameter 'data' implicitly has an 'any' type.
+main/containers/vrchat-api/vrchat-api.ts(622,39): error TS7006: Parameter 'data' implicitly has an 'any' type.
+main/containers/vrchat-api/vrchat-api.ts(626,9): error TS2322: Type '{ id: string; status: string | null; statusDescription: string | null; displayName: string; username: string; }' is not assignable to type 'VRCUser'.
+  Types of property 'status' are incompatible.
+    Type 'string | null' is not assignable to type 'string | undefined'.
+      Type 'null' is not assignable to type 'string | undefined'.
+main/services/configManager.ts(282,5): error TS2322: Type '{}' is not assignable to type 'string'.
+main/services/oscQueryService.ts(276,20): error TS2339: Property 'DESCRIPTION' does not exist on type '{ FULL_PATH: string; }'.
+main/services/oscQueryService.ts(279,20): error TS2339: Property 'ACCESS' does not exist on type '{ FULL_PATH: string; }'.
+main/services/oscQueryService.ts(281,20): error TS2339: Property 'ACCESS' does not exist on type '{ FULL_PATH: string; }'.
+main/services/oscQueryService.ts(284,20): error TS2339: Property 'CONTENTS' does not exist on type '{ FULL_PATH: string; }'.
+main/services/oscQueryService.ts(287,24): error TS2339: Property 'CONTENTS' does not exist on type '{ FULL_PATH: string; }'.
+main/services/oscQueryService.ts(302,29): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string | { toString: () => string; }'.
+  Type 'undefined' is not assignable to type 'string | { toString: () => string; }'.
+main/services/oscQueryService.ts(441,30): error TS7006: Parameter 'port' implicitly has an 'any' type.
+main/services/oscQueryService.ts(447,39): error TS7006: Parameter 'err' implicitly has an 'any' type.
+main/services/oscQueryService.ts(474,33): error TS2532: Object is possibly 'undefined'.
+main/services/oscQueryService.ts(492,33): error TS2532: Object is possibly 'undefined'.
+main/services/oscQueryService.ts(545,17): error TS2531: Object is possibly 'null'.
+main/services/oscQueryService.ts(545,55): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type 'string' is not assignable to parameter of type 'number'.
+main/services/oscQueryService.ts(545,74): error TS7006: Parameter 'err' implicitly has an 'any' type.
+main/services/oscQueryService.ts(547,26): error TS2794: Expected 1 arguments, but got 0. Did you forget to include 'void' in your type argument to 'Promise'?
+main/services/oscQueryService.ts(579,29): error TS2339: Property 'interface' does not exist on type '{}'.
+main/services/oscQueryService.ts(588,21): error TS2322: Type 'number | null' is not assignable to type 'number'.
+  Type 'null' is not assignable to type 'number'.
+main/services/oscQueryService.ts(590,21): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+main/services/oscQueryService.ts(595,21): error TS18046: 'publishError' is of type 'unknown'.
+main/services/oscQueryService.ts(595,45): error TS18046: 'publishError' is of type 'unknown'.
+main/services/oscQueryService.ts(606,46): error TS2339: Property 'interface' does not exist on type '{}'.
+main/services/oscQueryService.ts(612,29): error TS2322: Type 'number | null' is not assignable to type 'number'.
+  Type 'null' is not assignable to type 'number'.
+main/services/oscQueryService.ts(614,29): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+main/services/oscQueryService.ts(690,39): error TS2531: Object is possibly 'null'.
+main/services/oscQueryService.ts(1072,37): error TS2339: Property 'removeAllListeners' does not exist on type 'UDPPort'.
+main/services/oscQueryService.ts(1098,41): error TS2339: Property 'stop' does not exist on type '{}'.
+main/services/oscQueryService.ts(1118,21): error TS2531: Object is possibly 'null'.
+main/services/oscQueryService.ts(1120,25): error TS2794: Expected 1 arguments, but got 0. Did you forget to include 'void' in your type argument to 'Promise'?
+main/services/oscQueryService.ts(1338,9): error TS2322: Type '{ [address: string]: unknown; }' is not assignable to type 'Record<string, SuppressionMetadata>'.
+  'string' index signatures are incompatible.
+    Type 'unknown' is not assignable to type 'SuppressionMetadata'.
+main/services/oscService.ts(244,29): error TS2339: Property 'removeAllListeners' does not exist on type 'UDPPort & { options?: Record<string, unknown> | undefined; }'.
+main/services/oscService.ts(260,27): error TS2339: Property 'removeAllListeners' does not exist on type 'UDPPort & { _handle?: unknown; isOpen?: boolean | undefined; options?: Record<string, unknown> | undefined; }'.
