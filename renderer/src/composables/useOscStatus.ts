@@ -34,6 +34,28 @@ const blockedParams = ref<BlockedParam[]>([])
 let oscStatusInitialized = false
 let oscStatusInitPromise: Promise<void> | null = null
 
+function applyOscStatus(status: any) {
+  const isListening = Boolean(status?.enabled ?? status?.isListening)
+  const port = status?.port ?? status?.localPort ?? oscPort.value
+  oscPort.value = port || 0
+  if (isListening) {
+    oscEnabled.value = true
+    oscStatus.value = 'connected'
+    return
+  }
+  if (status?.status === 'stopping') {
+    oscStatus.value = 'stopping'
+    return
+  }
+  if (status?.status === 'error' || status?.error) {
+    oscEnabled.value = false
+    oscStatus.value = 'error'
+    return
+  }
+  oscEnabled.value = false
+  oscStatus.value = 'disabled'
+}
+
 export function useOscStatus() {
   const api = useElectronAPI()
 
@@ -52,11 +74,11 @@ export function useOscStatus() {
     oscToggling.value = true
     if (oscEnabled.value) {
       await api.disableOsc()
-      oscEnabled.value = false
     } else {
       await api.enableOsc()
-      oscEnabled.value = true
     }
+    const status = await api.getOscStatus()
+    applyOscStatus(status)
     oscToggling.value = false
   }
   async function updateOscPorts() {
@@ -180,11 +202,7 @@ export function useOscStatus() {
       await loadUnsubscriptions()
       await loadBlockedParams()
       const status = await api.getOscStatus()
-      if (status?.enabled) {
-        oscEnabled.value = true
-        oscStatus.value = 'connected'
-        oscPort.value = status.port ?? 0
-      }
+      applyOscStatus(status)
       api.onOscServerStatus(handleOscServerStatus)
       api.onOscQueryStatus((data: any) => {
         if (data.status === 'started') {

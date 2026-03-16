@@ -1,24 +1,37 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useSettings } from '../composables/useSettings'
 
 const {
-  serverUrl, activeServer, theme, snowEnabled, logLevel,
-  clientVersion, runtimeDisplay,
-  toggleTheme, toggleSnow, switchToServer,
+  serverUrl, activeServer, logLevel,
+  switchToServer,
   updateCustomServerUrl, updateLogLevel,
   getDebugStats, getMemoryStats, forceMemoryCleanup, clearDebugLogs
 } = useSettings()
 
 const customUrl = ref('')
+const pendingLogLevel = ref<'info' | 'warn' | 'error'>('info')
 const debugStats = ref<any>(null)
 const memoryStats = ref<any>(null)
+
+watch(serverUrl, (value) => {
+  customUrl.value = value
+}, { immediate: true })
+
+watch(logLevel, (value) => {
+  pendingLogLevel.value = value === 'warning' ? 'warn' : (value as 'info' | 'warn' | 'error')
+}, { immediate: true })
 
 async function handleCustomServer() {
   const url = customUrl.value.trim()
   if (!url) return
   await updateCustomServerUrl(url)
 }
+
+async function handleUpdateApplicationSettings() {
+  await updateLogLevel(pendingLogLevel.value)
+}
+
 async function loadDebugStats() {
   debugStats.value = await getDebugStats()
 }
@@ -35,7 +48,7 @@ async function loadMemoryStats() {
     </div>
 
     <div class="card">
-      <h3>Server</h3>
+      <h3>Server Configuration</h3>
       <div class="form-group">
         <label>Quick Server Selection</label>
         <div class="settings-server-buttons">
@@ -50,8 +63,8 @@ async function loadMemoryStats() {
       </div>
       <div class="form-group">
         <label for="server-url-settings">WebSocket Server URL</label>
-        <input id="server-url-settings" v-model="customUrl" type="text" :placeholder="serverUrl" @keypress.enter="handleCustomServer" />
-        <small>Use Quick Server Selection above for Live or Beta. Manual entry is for custom development servers.</small>
+        <input id="server-url-settings" v-model="customUrl" type="text" @keypress.enter="handleCustomServer" />
+        <small>Use Quick Server Selection above for Live/Beta. Manual entry only for custom dev servers.</small>
       </div>
       <button class="btn btn-primary" type="button" @click="handleCustomServer">Apply Custom Server URL</button>
     </div>
@@ -59,25 +72,14 @@ async function loadMemoryStats() {
     <div class="card">
       <h3>Application Settings</h3>
       <div class="form-group">
-        <label for="theme-select">Theme</label>
-        <select id="theme-select" :value="theme" @change="toggleTheme">
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-      </div>
-      <div class="form-group">
         <label for="log-level">Log Level</label>
-        <select id="log-level" :value="logLevel" @change="(e: Event) => updateLogLevel((e.target as HTMLSelectElement).value)">
+        <select id="log-level" v-model="pendingLogLevel">
           <option value="info">Info</option>
           <option value="warn">Warning</option>
           <option value="error">Error</option>
-          <option value="debug">Debug</option>
         </select>
       </div>
-      <div class="form-group settings-inline-group">
-        <label>Snow Overlay</label>
-        <button class="btn btn-secondary" type="button" @click="toggleSnow">{{ snowEnabled ? 'Disable Snow' : 'Enable Snow' }}</button>
-      </div>
+      <button class="btn btn-primary" type="button" @click="handleUpdateApplicationSettings">Update Application Settings</button>
     </div>
 
     <div class="card">
@@ -95,18 +97,6 @@ async function loadMemoryStats() {
       <div v-if="memoryStats" class="stats-box">
         <h4>Memory Stats</h4>
         <pre>{{ JSON.stringify(memoryStats, null, 2) }}</pre>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>Client Information</h3>
-      <div class="info-row">
-        <span>Client Version</span>
-        <span>{{ clientVersion || 'Unknown' }}</span>
-      </div>
-      <div class="info-row">
-        <span>Runtime</span>
-        <span class="runtime-timer">{{ runtimeDisplay }}</span>
       </div>
     </div>
   </div>

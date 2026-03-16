@@ -96,6 +96,15 @@ const oscStatusText = computed(() => {
   return 'OSC Status: Off'
 })
 
+const isOscActive = computed(() => oscStatus.value === 'connected' || oscToggling.value)
+const oscButtonLabel = computed(() => {
+  if (oscToggling.value) {
+    return oscEnabled.value ? 'Disabling OSC...' : 'Enabling OSC...'
+  }
+  return isOscActive.value ? 'Disable OSC' : 'Enable OSC'
+})
+const wsButtonLabel = computed(() => `${wsForwardingEnabled.value ? 'Disable' : 'Enable'} ARC Server Transmit`)
+
 const wsForwardingText = computed(() => `ARC Server Transmit: ${wsForwardingEnabled.value ? 'Enabled' : 'Off'}`)
 
 const routeViewId = computed(() => {
@@ -172,10 +181,10 @@ function linksBreakdown(panel: PanelInfo): string {
         <div class="sidebar-status-header">
           <h3>Connection Status</h3>
           <div class="sidebar-actions">
-            <button class="snow-toggle" :class="{ disabled: !snowEnabled }" type="button" title="Toggle Snow Overlay" @click="toggleSnow()">&#10052;</button>
+            <button class="snow-toggle" :class="{ disabled: !snowEnabled }" type="button" title="Toggle Snow Overlay" @click="toggleSnow()">❄️</button>
             <button class="theme-toggle" type="button" title="Toggle Theme" @click="toggleTheme()">
-              <span class="theme-toggle-sun">&#9728;</span>
-              <span class="theme-toggle-moon">&#9790;</span>
+              <span class="theme-toggle-sun">☀</span>
+              <span class="theme-toggle-moon">🌙</span>
             </button>
           </div>
         </div>
@@ -195,11 +204,11 @@ function linksBreakdown(panel: PanelInfo): string {
           <span class="status-indicator" :class="wsStatusClass"></span>
           <span>{{ wsForwardingText }}</span>
         </div>
-        <button class="btn btn-primary sidebar-button" type="button" @click="toggleOsc">
-          {{ oscEnabled ? 'Disable OSC' : 'Enable OSC' }}
+        <button class="btn sidebar-button" :class="isOscActive ? 'btn-danger' : 'btn-primary'" type="button" :disabled="oscToggling" @click="toggleOsc">
+          {{ oscButtonLabel }}
         </button>
-        <button class="btn btn-primary sidebar-button" type="button" @click="toggleWsForwarding">
-          {{ wsForwardingEnabled ? 'Disable ARC Server Transmit' : 'Enable ARC Server Transmit' }}
+        <button class="btn sidebar-button" :class="wsForwardingEnabled ? 'btn-danger' : 'btn-primary'" type="button" @click="toggleWsForwarding">
+          {{ wsButtonLabel }}
         </button>
       </div>
 
@@ -385,6 +394,16 @@ function linksBreakdown(panel: PanelInfo): string {
 
 .extras-toggle {
   justify-content: center;
+}
+
+:deep(.tree-toggle),
+:deep(.tree-child) {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+:deep(.tree-content.expanded) {
+  max-height: 1200px;
 }
 
 .nested-tree-item {

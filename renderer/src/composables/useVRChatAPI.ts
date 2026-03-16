@@ -50,6 +50,9 @@ export function useVRChatAPI() {
   async function loadStatus() {
     const s = await api.vrchatApiGetStatus()
     status.value = { ...defaultStatus, ...s }
+    if (status.value.authenticated) {
+      await checkLinkStatus()
+    }
   }
   async function login() {
     if (!loginUsername.value || !loginPassword.value) return
@@ -110,6 +113,7 @@ export function useVRChatAPI() {
   async function shareWithARC() {
     if (!status.value.currentUser) return
     const result = await api.sendVRChatLink(status.value.currentUser.id, status.value.currentUser.displayName)
+    await checkLinkStatus()
     return result
   }
   async function checkLinkStatus() {
@@ -123,6 +127,7 @@ export function useVRChatAPI() {
       await restoreSession()
     } else {
       await loadStats()
+      await checkLinkStatus()
     }
     api.onVRChatPipelineEvent((_data: any) => {
       // Pipeline events (friend-online/offline, notifications) can be handled here
