@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { app } from 'electron'
 import WebSocket from 'ws'
 import debug from '../../services/debugger'
 import configManager from '../../services/configManager'
@@ -80,13 +81,23 @@ class HyperateAddon {
       this.onStatusChange(this.getStatus())
     }
   }
+  getSecretsCandidatePaths(): string[] {
+    const candidatePaths = [
+      path.join(process.cwd(), 'secrets.json'),
+      path.join(app.getAppPath(), 'secrets.json'),
+      path.resolve(__dirname, '..', '..', '..', 'secrets.json')
+    ]
+    return [...new Set(candidatePaths)]
+  }
   loadSecrets(): HyperateSecrets | null {
     try {
-      const secretsPath = path.join(__dirname, '..', 'secrets.json')
-      if (fs.existsSync(secretsPath)) {
+      for (const secretsPath of this.getSecretsCandidatePaths()) {
+        if (!fs.existsSync(secretsPath)) {
+          continue
+        }
         const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'))
         if (secrets.hyperate && secrets.hyperate.apiKey) {
-          debug.info('HypeRate API key loaded from secrets.json')
+          debug.info(`HypeRate API key loaded from ${secretsPath}`)
           return secrets
         }
       }
@@ -139,6 +150,7 @@ class HyperateAddon {
     return this.enabled
   }
   start(oscService: OscService | null = null): boolean {
+    this.secrets = this.loadSecrets()
     if (!this.secrets || !this.secrets.hyperate || !this.secrets.hyperate.apiKey) {
       debug.logError('Cannot start HypeRate: No API key found in secrets.json')
       return false
@@ -171,6 +183,7 @@ class HyperateAddon {
     debug.info('HypeRate addon stopped successfully')
   }
   connect(): void {
+    this.secrets = this.loadSecrets()
     if (!this.secrets || !this.secrets.hyperate || !this.secrets.hyperate.apiKey) {
       debug.logError('Cannot connect to HypeRate: No API key')
       return
@@ -529,6 +542,7 @@ class HyperateAddon {
     return true
   }
   getStatus() {
+    this.secrets = this.loadSecrets()
     return {
       enabled: this.enabled,
       connected: !!(this.ws && this.ws.readyState === WebSocket.OPEN),

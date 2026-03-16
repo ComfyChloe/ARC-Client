@@ -3,11 +3,12 @@ import { useElectronAPI } from './useElectronAPI'
 
 export interface HyperateTracker {
   deviceId: string
-  name: string
-  enabled: boolean
+  name: string | null
   isPrimary: boolean
-  heartRate: number
-  lastUpdate: string | null
+  isActive: boolean
+  lastHeartRate: number
+  lastUpdate: number | null
+  joinedAt: number | null
 }
 
 export interface HyperateStatus {
@@ -19,6 +20,7 @@ export interface HyperateStatus {
   reconnecting: boolean
   reconnectAttempts: number
   maxReconnectAttempts: number
+  lastHeartRate?: number
 }
 
 const defaultStatus: HyperateStatus = {
@@ -53,6 +55,7 @@ export function useHyperate() {
   async function refreshStatus() {
     const s = await api.hyperateGetStatus()
     status.value = { ...defaultStatus, ...s }
+    heartRate.value = status.value.lastHeartRate ?? 0
   }
   async function refreshTrackers() {
     const list = await api.hyperateGetTrackers()
@@ -64,9 +67,17 @@ export function useHyperate() {
   }
   async function toggle() {
     if (status.value.enabled) {
-      await api.hyperateStop()
+      status.value = { ...status.value, stopping: true }
+      const result = await api.hyperateStop()
+      if (!result?.success) {
+        status.value = { ...status.value, stopping: false }
+      }
     } else {
-      await api.hyperateStart()
+      status.value = { ...status.value, enabled: true, connected: false, stopping: false }
+      const result = await api.hyperateStart()
+      if (!result?.success) {
+        status.value = { ...status.value, enabled: false, connected: false, stopping: false }
+      }
     }
     await refreshStatus()
   }
@@ -116,6 +127,8 @@ export function useHyperate() {
     api.onHyperateUpdate((data: any) => {
       if (data.type === 'status') {
         status.value = { ...defaultStatus, ...data }
+        heartRate.value = data.lastHeartRate ?? heartRate.value
+        void refreshTrackers()
       } else if (data.heartRate !== undefined) {
         heartRate.value = data.heartRate
       }
