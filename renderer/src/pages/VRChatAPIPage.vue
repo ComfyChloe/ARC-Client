@@ -41,7 +41,7 @@ const {
       <div v-if="status.currentUser" class="user-info-box">
         <div class="user-info-label">Logged in as:</div>
         <div class="user-info-display">{{ status.currentUser.displayName }}</div>
-        <div style="font-size: 0.7em; opacity: 0.65; margin-top: 3px; word-break: break-all;">{{ status.currentUser.id }}</div>
+        <div class="vrchatapi-user-id">{{ status.currentUser.id }}</div>
       </div>
     </div>
 
@@ -86,21 +86,69 @@ const {
 
       <div v-if="stats" class="card">
         <h3>Account Details</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-          <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
-            <div style="font-size: 24px; font-weight: bold; color: #3498db;">{{ stats.uploadedAvatars }}</div>
-            <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Uploaded Avatars</div>
+        <div class="vrchatapi-stats-grid">
+          <div class="vrchatapi-stat-card">
+            <div class="vrchatapi-stat-value">{{ stats.uploadedAvatars }}</div>
+            <div class="vrchatapi-stat-label">Uploaded Avatars</div>
           </div>
-          <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
-            <div style="font-size: 24px; font-weight: bold; color: #3498db;">{{ stats.favoritedAvatars }}</div>
-            <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Favorited Avatars</div>
+          <div class="vrchatapi-stat-card">
+            <div class="vrchatapi-stat-value">{{ stats.favoritedAvatars }}</div>
+            <div class="vrchatapi-stat-label">Favorited Avatars</div>
           </div>
-          <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
-            <div style="font-size: 24px; font-weight: bold; color: #3498db;">{{ stats.friendsOnline }}</div>
-            <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Online & Active Friends</div>
+          <div class="vrchatapi-stat-card">
+            <div class="vrchatapi-stat-value">{{ stats.friendsOnline }}</div>
+            <div class="vrchatapi-stat-label">Online & Active Friends</div>
           </div>
         </div>
       </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+.vrchatapi-user-id {
+  font-size: 0.7em;
+  opacity: 0.65;
+  margin-top: 3px;
+  word-break: break-all;
+}
+
+.vrchatapi-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.vrchatapi-stat-card {
+  text-align: center;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+}
+
+.vrchatapi-stat-value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #3498db;
+}
+
+.vrchatapi-stat-label {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 5px;
+}
+
+:global(body.dark-theme) .vrchatapi-user-id {
+  color: #95a5a6;
+}
+
+:global(body.dark-theme) .vrchatapi-stat-card {
+  background: #353535;
+  border-color: #454545;
+}
+
+:global(body.dark-theme) .vrchatapi-stat-label {
+  color: #bdc3c7;
+}
+</style>

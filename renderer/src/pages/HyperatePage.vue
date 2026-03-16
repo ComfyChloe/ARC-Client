@@ -77,26 +77,6 @@ async function saveEdit() {
   closeEditModal()
 }
 
-function trackerContainerStyle(tracker: HyperateTracker) {
-  if (tracker.enabled || tracker.isPrimary) {
-    return {
-      border: '1px solid #2ecc71',
-      background: '#f8fff8',
-      borderRadius: '4px',
-      padding: '10px',
-      marginBottom: '10px'
-    }
-  }
-
-  return {
-    border: '1px solid #ddd',
-    background: '#ffffff',
-    borderRadius: '4px',
-    padding: '10px',
-    marginBottom: '10px'
-  }
-}
-
 function trackerStatusSummary(tracker: HyperateTracker) {
   const parts = [`Status: ${tracker.enabled ? 'Active' : 'Disabled'}`]
   if (tracker.heartRate > 0) {
@@ -173,7 +153,16 @@ function trackerStatusSummary(tracker: HyperateTracker) {
           <p class="hyperate-empty-trackers">No trackers saved yet</p>
         </div>
         <div v-else id="hyperate-trackers-list">
-          <div v-for="tracker in trackers" :key="tracker.deviceId" class="tracker-item" :style="trackerContainerStyle(tracker)">
+          <div
+            v-for="tracker in trackers"
+            :key="tracker.deviceId"
+            class="tracker-item"
+            :class="{
+              'tracker-item-enabled': tracker.enabled,
+              'tracker-item-primary': tracker.isPrimary,
+              'tracker-item-primary-disabled': tracker.isPrimary && !tracker.enabled
+            }"
+          >
             <div class="hyperate-tracker-row">
               <div class="hyperate-tracker-copy">
                 <div class="hyperate-tracker-name-row">
@@ -239,6 +228,54 @@ function trackerStatusSummary(tracker: HyperateTracker) {
   font-weight: 600;
   opacity: 0.8;
 }
+
+.autostart-toggle-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.autostart-toggle-slider {
+  display: inline-flex;
+  background: #ecf0f1;
+  border-radius: 6px;
+  padding: 3px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid #bdc3c7;
+  user-select: none;
+}
+
+.autostart-toggle-slider:hover {
+  border-color: #3498db;
+}
+
+.autostart-toggle-option {
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  color: #7f8c8d;
+  background: transparent;
+}
+
+.autostart-toggle-option.active {
+  background: #3498db;
+  color: white;
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+}
+
+.autostart-toggle-option.active.enabled {
+  background: #27ae60;
+  box-shadow: 0 2px 4px rgba(39, 174, 96, 0.3);
+}
+
+.autostart-toggle-option.active.disabled {
+  background: #95a5a6;
+  box-shadow: 0 2px 4px rgba(149, 165, 166, 0.3);
+}
+
 .hyperate-heart-rate-panel {
   text-align: center;
   padding: 20px;
@@ -341,6 +378,31 @@ function trackerStatusSummary(tracker: HyperateTracker) {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+.tracker-item {
+  border: 1px solid #ddd;
+  background: #ffffff;
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 10px;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.tracker-item-enabled {
+  border-color: #2ecc71;
+  background: #f8fff8;
+}
+
+.tracker-item-primary-disabled {
+  border-color: #3498db;
+}
+
+.hyperate-heart-rate-panel code {
+  background: rgba(52, 152, 219, 0.08);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
 .hyperate-modal-title {
   color: #2c3e50;
   margin: 0;
@@ -358,9 +420,6 @@ function trackerStatusSummary(tracker: HyperateTracker) {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-}
-.autostart-toggle-slider {
-  cursor: pointer;
 }
 
 @media (max-width: 900px) {
@@ -392,6 +451,37 @@ function trackerStatusSummary(tracker: HyperateTracker) {
   color: #ecf0f1;
 }
 
+:global(body.dark-theme) .autostart-toggle-slider {
+  background: #34495e;
+  border-color: #2c3e50;
+}
+
+:global(body.dark-theme) .autostart-toggle-slider:hover {
+  border-color: #3498db;
+}
+
+:global(body.dark-theme) .autostart-toggle-option {
+  color: #95a5a6;
+}
+
+:global(body.dark-theme) .autostart-toggle-option.active {
+  background: #3498db;
+  color: white;
+}
+
+:global(body.dark-theme) .autostart-toggle-option.active.enabled {
+  background: #27ae60;
+}
+
+:global(body.dark-theme) .autostart-toggle-option.active.disabled {
+  background: #7f8c8d;
+}
+
+:global(body.dark-theme) .hyperate-heart-rate-panel code {
+  background: #34495e;
+  color: #ecf0f1;
+}
+
 :global(body.dark-theme) .hyperate-readonly-input {
   background-color: #1e2329;
   color: #7f8c8d;
@@ -399,6 +489,16 @@ function trackerStatusSummary(tracker: HyperateTracker) {
 }
 
 :global(body.dark-theme) .tracker-item {
-  border-color: #454545 !important;
+  background: #2b2b2b;
+  border-color: #454545;
+}
+
+:global(body.dark-theme) .tracker-item-enabled {
+  background: #2d4a2d;
+  border-color: #27ae60;
+}
+
+:global(body.dark-theme) .tracker-item-primary-disabled {
+  border-color: #2980b9;
 }
 </style>

@@ -570,6 +570,7 @@ body {
     color: white;
     cursor: pointer;
     transition: all 0.4s ease;
+    font-size: 13px;
     font-weight: 600;
 }
 .tree-toggle:hover {
@@ -578,12 +579,14 @@ body {
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
 }
 .tree-toggle .arrow {
+    display: inline-block;
     margin-right: 10px;
+    transform: rotate(0deg);
     transition: transform 0.3s ease;
     font-size: 12px;
 }
 .tree-toggle.expanded .arrow {
-    transform: rotate(0deg);
+    transform: rotate(90deg);
 }
 .tree-items {
     padding-left: 15px;
@@ -600,7 +603,10 @@ body {
     cursor: pointer;
     display: block;
     transition: all 0.4s ease;
-    font-weight: 400;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 500;
+    line-height: normal;
     text-align: left;
     text-decoration: none;
     width: 100%;

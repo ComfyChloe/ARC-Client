@@ -43,6 +43,16 @@ export interface OscLeashConfig {
   [key: string]: any
 }
 
+function normalizeAutostartResult(result: unknown): boolean {
+  if (typeof result === 'boolean') {
+    return result
+  }
+  if (result && typeof result === 'object' && 'enabled' in result) {
+    return Boolean((result as { enabled?: unknown }).enabled)
+  }
+  return false
+}
+
 export function useOscLeash() {
   const api = useElectronAPI()
   const status = ref<OscLeashStatus>({ enabled: false, leashCount: 0, activeLeashes: [], discoveredLeashes: [] })
@@ -79,7 +89,8 @@ export function useOscLeash() {
     await saveConfig(defaults)
   }
   async function refreshAutostart() {
-    autostart.value = await api.oscleashGetAutostart()
+    const result = await api.oscleashGetAutostart()
+    autostart.value = normalizeAutostartResult(result)
   }
   async function toggle() {
     if (status.value.enabled) {

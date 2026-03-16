@@ -360,6 +360,7 @@ function linksBreakdown(panel: PanelInfo): string {
   display: block;
   width: 100%;
   margin-bottom: 10px;
+  font-family: inherit;
   text-align: center;
   text-decoration: none;
 }
@@ -396,12 +397,6 @@ function linksBreakdown(panel: PanelInfo): string {
   justify-content: center;
 }
 
-:deep(.tree-toggle),
-:deep(.tree-child) {
-  font-size: 14px;
-  line-height: 1.2;
-}
-
 :deep(.tree-content.expanded) {
   max-height: 1200px;
 }
@@ -435,7 +430,7 @@ function linksBreakdown(panel: PanelInfo): string {
 .sidebar-password-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 5px;
   font-weight: bold;
   color: #ecf0f1;
@@ -448,6 +443,12 @@ function linksBreakdown(panel: PanelInfo): string {
   font-weight: normal;
   font-size: 0.9em;
   cursor: pointer;
+}
+
+.sidebar-checkbox-label input {
+  width: auto;
+  margin: 0;
+  padding: 0;
 }
 
 </style>

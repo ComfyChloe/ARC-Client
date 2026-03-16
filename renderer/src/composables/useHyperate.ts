@@ -32,6 +32,16 @@ const defaultStatus: HyperateStatus = {
   maxReconnectAttempts: 0
 }
 
+function normalizeAutostartResult(result: unknown): boolean {
+  if (typeof result === 'boolean') {
+    return result
+  }
+  if (result && typeof result === 'object' && 'enabled' in result) {
+    return Boolean((result as { enabled?: unknown }).enabled)
+  }
+  return false
+}
+
 export function useHyperate() {
   const api = useElectronAPI()
   const status = ref<HyperateStatus>({ ...defaultStatus })
@@ -49,7 +59,8 @@ export function useHyperate() {
     trackers.value = list ?? []
   }
   async function refreshAutostart() {
-    autostart.value = await api.hyperateGetAutostart()
+    const result = await api.hyperateGetAutostart()
+    autostart.value = normalizeAutostartResult(result)
   }
   async function toggle() {
     if (status.value.enabled) {

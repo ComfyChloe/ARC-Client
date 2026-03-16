@@ -87,15 +87,10 @@ function setSharedDeadzone(value: number) {
         </button>
         <div class="autostart-toggle-container">
           <span class="autostart-toggle-label">Auto-start:</span>
-          <button
-            class="autostart-toggle-slider"
-            :class="autostart ? 'enabled-state' : 'disabled-state'"
-            type="button"
-            @click="toggleAutostart"
-          >
-            <span class="autostart-toggle-option" :class="!autostart ? 'selected' : ''">Disabled</span>
-            <span class="autostart-toggle-option" :class="autostart ? 'selected' : ''">Enabled</span>
-          </button>
+          <div class="autostart-toggle-slider" role="button" tabindex="0" @click="toggleAutostart" @keyup.enter="toggleAutostart" @keyup.space.prevent="toggleAutostart">
+            <div class="autostart-toggle-option disabled" :class="{ active: !autostart }">Disabled</div>
+            <div class="autostart-toggle-option enabled" :class="{ active: autostart }">Enabled</div>
+          </div>
         </div>
       </div>
       <div class="oscleash-note-box">
@@ -331,25 +326,41 @@ function setSharedDeadzone(value: number) {
 }
 .autostart-toggle-slider {
   display: inline-flex;
-  border: none;
-  border-radius: 999px;
-  overflow: hidden;
-  background: #dfe6e9;
-  padding: 2px;
+  background: #ecf0f1;
+  border-radius: 6px;
+  padding: 3px;
   cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid #bdc3c7;
+  user-select: none;
+}
+
+.autostart-toggle-slider:hover {
+  border-color: #3498db;
 }
 .autostart-toggle-option {
-  min-width: 74px;
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 13px;
   font-weight: 600;
+  transition: all 0.3s ease;
   color: #7f8c8d;
-  border-radius: 999px;
+  background: transparent;
 }
-.autostart-toggle-option.selected {
-  background: #ffffff;
-  color: #2c3e50;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+.autostart-toggle-option.active {
+  background: #3498db;
+  color: white;
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+}
+
+.autostart-toggle-option.active.enabled {
+  background: #27ae60;
+  box-shadow: 0 2px 4px rgba(39, 174, 96, 0.3);
+}
+
+.autostart-toggle-option.active.disabled {
+  background: #95a5a6;
+  box-shadow: 0 2px 4px rgba(149, 165, 166, 0.3);
 }
 .oscleash-note-box {
   margin-top: 10px;
@@ -515,13 +526,41 @@ function setSharedDeadzone(value: number) {
 .oscleash-parameters code.listen {
   color: #3498db;
 }
-:global(body.dark-theme) .autostart-toggle-option.selected,
+:global(body.dark-theme) .autostart-toggle-slider {
+  background: #34495e;
+  border-color: #2c3e50;
+}
+
+:global(body.dark-theme) .autostart-toggle-slider:hover {
+  border-color: #3498db;
+}
+
+:global(body.dark-theme) .autostart-toggle-option {
+  color: #95a5a6;
+}
+
+:global(body.dark-theme) .autostart-toggle-option.active {
+  background: #3498db;
+  color: white;
+}
+
+:global(body.dark-theme) .autostart-toggle-option.active.enabled {
+  background: #27ae60;
+}
+
+:global(body.dark-theme) .autostart-toggle-option.active.disabled {
+  background: #7f8c8d;
+}
+
 :global(body.dark-theme) .oscleash-readonly-input,
 :global(body.dark-theme) .oscleash-preview-box {
   background: #2c3e50;
 }
-:global(body.dark-theme) .oscleash-preview-box,
+
 :global(body.dark-theme) .oscleash-readonly-input,
+:global(body.dark-theme) .oscleash-preview-box {
+  color: #ecf0f1;
+}
 :global(body.dark-theme) .oscleash-note-box small {
   color: #ecf0f1;
 }
