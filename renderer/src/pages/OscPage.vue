@@ -261,12 +261,6 @@ async function handleSendOsc() {
             <button class="btn btn-success btn-small" type="button" @click="removeUnsubscription(path)">Remove (Listen Again)</button>
           </div>
         </div>
-
-        <div class="oscquery-suggestions-box">
-          <h4 class="oscquery-suggestions-title">Suggested Unsubscriptions (High-Frequency Parameters)</h4>
-          <p class="oscquery-suggestions-copy">These parameters are being sent very frequently and may impact performance. Click "Ignore" to stop receiving them.</p>
-          <p class="oscquery-suggestions-empty">No high-frequency parameters detected yet. Enable OSC and wait for data...</p>
-        </div>
       </div>
     </div>
 
@@ -408,37 +402,6 @@ async function handleSendOsc() {
   font-size: 11px;
 }
 
-.osc-page-legacy .legacy-unsub-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  margin-bottom: 5px;
-  background: #fff !important;
-  border-left: 3px solid #dc3545 !important;
-  border-radius: 4px;
-}
-
-.osc-page-legacy .oscquery-legacy-box {
-  margin-top: 20px;
-  padding: 15px;
-  background-color: #f8f9fa !important;
-  border-radius: 5px;
-  border-left: 4px solid #3498db !important;
-}
-
-.osc-page-legacy .oscquery-legacy-title {
-  margin-top: 0;
-  color: #2c3e50;
-}
-
-.osc-page-legacy .oscquery-legacy-copy {
-  color: #666;
-  font-size: 0.85em;
-  margin-bottom: 10px;
-}
-
 .oscquery-form-row-legacy {
   display: flex;
   gap: 10px;
@@ -453,39 +416,6 @@ async function handleSendOsc() {
   margin-top: 15px;
 }
 
-.osc-page-legacy .oscquery-empty-state {
-  color: #666;
-  font-size: 0.9em;
-  font-style: italic;
-  text-align: center;
-  padding: 10px;
-}
-
-.osc-page-legacy .oscquery-suggestions-box {
-  margin-top: 20px;
-  padding: 15px;
-  border-left: 4px solid #ffc107 !important;
-  background: rgba(255, 193, 7, 0.08) !important;
-  border-radius: 4px;
-}
-
-.osc-page-legacy .oscquery-suggestions-title {
-  margin: 0 0 8px 0;
-  color: #b8860b;
-}
-
-.osc-page-legacy .oscquery-suggestions-copy {
-  color: #666;
-  font-size: 0.85em;
-  margin-bottom: 8px;
-}
-
-.osc-page-legacy .oscquery-suggestions-empty {
-  color: #666;
-  font-size: 0.9em;
-  font-style: italic;
-}
-
 .blocked-params-toolbar {
   margin-bottom: 8px;
   display: flex;
@@ -493,83 +423,8 @@ async function handleSendOsc() {
   align-items: center;
 }
 
-.osc-page-legacy .blocked-count-label {
-  color: #666;
-  font-size: 0.85em;
-}
-
-.osc-page-legacy .blocked-params-description {
-  margin-bottom: 15px;
-  color: #666;
-  font-size: 0.9em;
-}
-
-.osc-page-legacy .blocked-empty-state {
-  color: #666;
-  font-size: 0.9em;
-  font-style: italic;
-  text-align: center;
-  padding: 10px;
-}
-
-.osc-page-legacy .legacy-blocked-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 12px;
-  background-color: #fff8e1 !important;
-  border-radius: 4px;
-  margin-bottom: 4px;
-  border-left: 3px solid #ffc107 !important;
-}
-
 .legacy-blocked-item.clickable {
   cursor: pointer;
-}
-
-.osc-page-legacy .legacy-blocked-path {
-  font-size: 0.85em;
-  color: #856404;
-}
-
-.legacy-blocked-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-}
-
-.legacy-blocked-badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-weight: 600;
-}
-
-.legacy-blocked-badge-user {
-  background: #d1ecf1;
-  color: #0c5460;
-}
-
-.legacy-blocked-badge-blocked {
-  background: #ffc107;
-  color: #856404;
-}
-
-.legacy-blocked-badge-suppressed {
-  background: #f8d7da;
-  color: #721c24;
-}
-
-.legacy-blocked-badge-panel {
-  background: #cce5ff;
-  color: #004085;
-}
-
-.legacy-blocked-badge-avatar-json {
-  background: #d4edda;
-  color: #155724;
 }
 
 @media (max-width: 900px) {

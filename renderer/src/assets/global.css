@@ -467,7 +467,7 @@ body {
     padding: 15px;
     background-color: #f8f9fa;
     border-radius: 5px;
-    border-left: 4px solid #3498db;
+    border: 1px solid #dee2e6;
 }
 .osc-page-legacy .oscquery-legacy-title {
     margin-top: 0;
@@ -498,27 +498,6 @@ body {
 }
 .osc-page-legacy .legacy-unsub-item .mono {
     color: #495057;
-}
-.osc-page-legacy .oscquery-suggestions-box {
-    margin-top: 20px;
-    padding: 15px;
-    border-left: 4px solid #ffc107;
-    background: rgba(255, 193, 7, 0.08);
-    border-radius: 4px;
-}
-.osc-page-legacy .oscquery-suggestions-title {
-    margin: 0 0 8px 0;
-    color: #b8860b;
-}
-.osc-page-legacy .oscquery-suggestions-copy {
-    color: #666;
-    font-size: 0.85em;
-    margin-bottom: 8px;
-}
-.osc-page-legacy .oscquery-suggestions-empty {
-    color: #666;
-    font-size: 0.9em;
-    font-style: italic;
 }
 .osc-page-legacy .blocked-params-description {
     margin-bottom: 15px;
@@ -1124,8 +1103,6 @@ body.dark-theme .osc-connection-controls {
 body.dark-theme .osc-page-legacy .osc-settings-heading,
 body.dark-theme .osc-page-legacy .oscquery-legacy-copy,
 body.dark-theme .osc-page-legacy .oscquery-empty-state,
-body.dark-theme .osc-page-legacy .oscquery-suggestions-copy,
-body.dark-theme .osc-page-legacy .oscquery-suggestions-empty,
 body.dark-theme .osc-page-legacy .blocked-params-description,
 body.dark-theme .osc-page-legacy .blocked-empty-state,
 body.dark-theme .osc-page-legacy .blocked-count-label,
@@ -1144,7 +1121,6 @@ body.dark-theme .osc-page-legacy .osc-empty-state {
 body.dark-theme .osc-page-legacy .oscquery-legacy-box {
     background-color: #2b2b2b !important;
     border: 1px solid #454545 !important;
-    border-left: 4px solid #3498db !important;
 }
 body.dark-theme .osc-page-legacy .oscquery-legacy-title {
     color: #ecf0f1 !important;
@@ -1155,12 +1131,6 @@ body.dark-theme .osc-page-legacy .legacy-unsub-item {
 }
 body.dark-theme .osc-page-legacy .legacy-unsub-item .mono {
     color: #ecf0f1 !important;
-}
-body.dark-theme .osc-page-legacy .oscquery-suggestions-box {
-    background: rgba(255, 193, 7, 0.12) !important;
-}
-body.dark-theme .osc-page-legacy .oscquery-suggestions-title {
-    color: #d7b54a !important;
 }
 body.dark-theme .osc-page-legacy .legacy-blocked-item {
     background: #2b2b2b !important;
