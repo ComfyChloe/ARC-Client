@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useHyperate, type HyperateTracker } from '../composables/useHyperate'
 
 const {
@@ -19,6 +19,8 @@ const newDeviceId = ref('')
 const newDeviceName = ref('')
 const editingTrackerId = ref<string | null>(null)
 const editName = ref('')
+const isDarkTheme = ref(false)
+let themeObserver: MutationObserver | null = null
 
 const primaryTracker = computed(() => trackers.value.find((tracker) => tracker.isPrimary) ?? null)
 
@@ -103,6 +105,24 @@ async function saveEdit() {
 function formatLastUpdate(tracker: HyperateTracker) {
   return tracker.lastUpdate ? new Date(tracker.lastUpdate).toLocaleTimeString() : 'Never'
 }
+
+function syncThemeState() {
+  if (typeof document === 'undefined') {
+    return
+  }
+  isDarkTheme.value = document.body.classList.contains('dark-theme')
+}
+
+onMounted(() => {
+  syncThemeState()
+  themeObserver = new MutationObserver(syncThemeState)
+  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+})
+
+onUnmounted(() => {
+  themeObserver?.disconnect()
+  themeObserver = null
+})
 </script>
 
 <template>
@@ -175,25 +195,19 @@ function formatLastUpdate(tracker: HyperateTracker) {
             v-else
             :key="tracker.deviceId"
             class="tracker-item"
-            :class="{ 'tracker-item-primary': tracker.isPrimary }"
-            :style="{
-              border: `1px solid ${tracker.isPrimary ? '#2ecc71' : '#ddd'}`,
-              borderRadius: '4px',
-              padding: '10px',
-              marginBottom: '10px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: tracker.isPrimary ? '#f8fff8' : 'white'
+            :class="{
+              'tracker-item-primary': tracker.isPrimary,
+              'tracker-item-dark': isDarkTheme,
+              'tracker-item-primary-dark': isDarkTheme && tracker.isPrimary
             }"
           >
             <div class="hyperate-tracker-copy">
               <strong>{{ tracker.name || tracker.deviceId }}</strong>
-              <span v-if="tracker.isPrimary" style="background: #2ecc71; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 5px;">PRIMARY</span>
+              <span v-if="tracker.isPrimary" class="hyperate-primary-badge">PRIMARY</span>
               <br />
-              <small class="hyperate-tracker-meta">ID: {{ tracker.deviceId }}</small>
+              <small class="hyperate-tracker-meta" :class="{ 'hyperate-tracker-meta-dark': isDarkTheme }">ID: {{ tracker.deviceId }}</small>
               <br />
-              <small class="hyperate-tracker-meta">
+              <small class="hyperate-tracker-meta" :class="{ 'hyperate-tracker-meta-dark': isDarkTheme }">
                 Status:
                 <span class="hyperate-status-value" :class="tracker.isActive ? 'hyperate-status-active' : 'hyperate-status-inactive'">{{ tracker.isActive ? 'Active' : 'Inactive' }}</span>
                 | HR: {{ tracker.lastHeartRate || '--' }} BPM
@@ -201,8 +215,8 @@ function formatLastUpdate(tracker: HyperateTracker) {
               </small>
             </div>
             <div class="hyperate-tracker-actions">
-              <button v-if="!tracker.isPrimary" class="btn btn-secondary btn-small" style="margin-right: 5px;" @click="setPrimary(tracker.deviceId)">Set Primary</button>
-              <button class="btn btn-secondary btn-small" style="margin-right: 5px;" @click="openEditModal(tracker)">Edit</button>
+              <button v-if="!tracker.isPrimary" class="btn btn-secondary btn-small" @click="setPrimary(tracker.deviceId)">Set Primary</button>
+              <button class="btn btn-secondary btn-small" @click="openEditModal(tracker)">Edit</button>
               <button class="btn btn-danger btn-small" @click="removeTracker(tracker.deviceId)">Remove</button>
             </div>
           </div>
@@ -238,8 +252,40 @@ function formatLastUpdate(tracker: HyperateTracker) {
 
 <style scoped>
 .tracker-item {
-  background: #f8f9fa;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
   transition: background-color 0.3s ease;
+}
+
+.tracker-item-primary {
+  border-color: #2ecc71;
+  background: #f8fff8;
+}
+
+.tracker-item-dark {
+  background: #34495e;
+  border-color: #2c3e50;
+  color: #ecf0f1;
+}
+
+.tracker-item-primary-dark {
+  background: #2d4a2d;
+  border-color: #27ae60;
+}
+
+.hyperate-primary-badge {
+  background: #2ecc71;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  margin-left: 5px;
 }
 
 .btn-small {
@@ -293,6 +339,7 @@ function formatLastUpdate(tracker: HyperateTracker) {
 .hyperate-tracker-actions {
   display: flex;
   align-items: center;
+  gap: 5px;
 }
 
 .hyperate-tracker-copy {
@@ -301,6 +348,10 @@ function formatLastUpdate(tracker: HyperateTracker) {
 
 .hyperate-tracker-meta {
   color: #666;
+}
+
+.hyperate-tracker-meta-dark {
+  color: #bdc3c7;
 }
 
 .hyperate-status-active {
@@ -355,14 +406,9 @@ function formatLastUpdate(tracker: HyperateTracker) {
   }
 }
 
-:global(body.dark-theme) .tracker-item {
-  background: #34495e;
-  border-color: #2c3e50 !important;
-}
-
-:global(body.dark-theme) .tracker-item.tracker-item-primary {
-  background: #2d4a2d !important;
-  border-color: #27ae60 !important;
+:global(body.dark-theme) .hyperate-primary-badge {
+  background: #2ecc71;
+  color: #fff;
 }
 
 :global(body.dark-theme) .hyperate-modal-title {
@@ -373,7 +419,6 @@ function formatLastUpdate(tracker: HyperateTracker) {
   color: #95a5a6;
 }
 
-:global(body.dark-theme) .hyperate-tracker-meta,
 :global(body.dark-theme) .hyperate-empty-state {
   color: #bdc3c7;
 }

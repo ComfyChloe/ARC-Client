@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useOscLeash } from '../composables/useOscLeash'
 const {
   status, movement, physbone, config, autostart,
@@ -8,6 +8,8 @@ const {
 const activeTab = ref<'movement' | 'timing' | 'advanced'>('movement')
 const saving = ref(false)
 const configDraft = ref<Record<string, any>>({})
+const isDarkTheme = ref(false)
+let themeObserver: MutationObserver | null = null
 const statusLabel = computed(() => {
   if (status.value.enabled) return 'Running'
   return 'Stopped'
@@ -63,10 +65,27 @@ function setSharedCompensation(value: number) {
   configDraft.value.downCompensation = value
 }
 function setSharedDeadzone(value: number) {
-  const normalized = value / 100
-  configDraft.value.upDeadzone = normalized
-  configDraft.value.downDeadzone = normalized
+  configDraft.value.upDeadzone = value
+  configDraft.value.downDeadzone = value
 }
+
+function syncThemeState() {
+  if (typeof document === 'undefined') {
+    return
+  }
+  isDarkTheme.value = document.body.classList.contains('dark-theme')
+}
+
+onMounted(() => {
+  syncThemeState()
+  themeObserver = new MutationObserver(syncThemeState)
+  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+})
+
+onUnmounted(() => {
+  themeObserver?.disconnect()
+  themeObserver = null
+})
 </script>
 
 <template>
@@ -93,7 +112,7 @@ function setSharedDeadzone(value: number) {
           </div>
         </div>
       </div>
-      <div class="oscleash-note-box">
+      <div class="oscleash-note-box" :class="{ 'oscleash-note-box-dark': isDarkTheme }">
         <small>
           <strong>Note:</strong> OSC service must be enabled for OSC Leash to function properly.
         </small>
@@ -206,14 +225,14 @@ function setSharedDeadzone(value: number) {
           <label for="config-updown-deadzone">Up/Down Deadzone (%)</label>
           <input
             id="config-updown-deadzone"
-            :value="Math.round(Number(configDraft.upDeadzone ?? 0) * 100)"
+            :value="Number(configDraft.upDeadzone ?? 0)"
             type="range"
             min="10"
             max="90"
             step="5"
             @input="setSharedDeadzone(Number(($event.target as HTMLInputElement).value))"
           />
-          <span>{{ Math.round(Number(configDraft.upDeadzone ?? 0) * 100) }}%</span>
+          <span>{{ Number(configDraft.upDeadzone ?? 0) }}%</span>
           <small>Stops movement if leash pulled too high/low</small>
         </div>
       </div>
@@ -241,7 +260,7 @@ function setSharedDeadzone(value: number) {
         </div>
       </div>
       <div v-else class="oscleash-config-section">
-        <div class="oscleash-warning-box">
+        <div class="oscleash-warning-box" :class="{ 'oscleash-warning-box-dark': isDarkTheme }">
           <strong>OSC Parameters:</strong>
           <p>
             These parameters are determined by the VRChat prefab and should not be changed unless you're using a custom prefab.
@@ -281,7 +300,7 @@ function setSharedDeadzone(value: number) {
       </div>
       <div class="oscleash-preview-block">
         <strong>Current Settings Preview:</strong>
-        <div class="oscleash-preview-box">{{ configPreview }}</div>
+        <div class="oscleash-preview-box" :class="{ 'oscleash-preview-box-dark': isDarkTheme }">{{ configPreview }}</div>
       </div>
     </div>
     <div class="card">
@@ -367,10 +386,19 @@ function setSharedDeadzone(value: number) {
   padding: 10px;
   background-color: #e8f4fd;
   border-radius: 4px;
+  border: 1px solid #b9dcf6;
   border-left: 4px solid #3498db;
 }
 .oscleash-note-box small {
   color: #2c3e50;
+}
+.oscleash-note-box-dark {
+  background-color: #2c3e50;
+  border-color: #34495e;
+  border-left-color: #3498db;
+}
+.oscleash-note-box-dark small {
+  color: #ecf0f1;
 }
 .oscleash-leash-list {
   display: flex;
@@ -491,6 +519,14 @@ function setSharedDeadzone(value: number) {
   margin: 3px 0 0;
   font-size: 0.85em;
 }
+.oscleash-warning-box-dark {
+  background-color: #4a4020;
+  border-left-color: #ffc107;
+}
+.oscleash-warning-box-dark strong,
+.oscleash-warning-box-dark p {
+  color: #f4d98b;
+}
 .oscleash-readonly-input {
   background: #f8f9fa;
 }
@@ -501,10 +537,16 @@ function setSharedDeadzone(value: number) {
   margin-top: 8px;
   padding: 8px;
   background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
   border-radius: 4px;
   font-family: monospace;
   font-size: 11px;
   white-space: pre-line;
+}
+.oscleash-preview-box-dark {
+  background-color: #2c3e50;
+  border-color: #34495e;
+  color: #ecf0f1;
 }
 .oscleash-parameters {
   font-family: monospace;
@@ -552,16 +594,11 @@ function setSharedDeadzone(value: number) {
   background: #7f8c8d;
 }
 
-:global(body.dark-theme) .oscleash-readonly-input,
-:global(body.dark-theme) .oscleash-preview-box {
-  background: #2c3e50;
+:global(body.dark-theme) .oscleash-readonly-input {
+  background-color: #2c3e50 !important;
 }
 
-:global(body.dark-theme) .oscleash-readonly-input,
-:global(body.dark-theme) .oscleash-preview-box {
-  color: #ecf0f1;
-}
-:global(body.dark-theme) .oscleash-note-box small {
+:global(body.dark-theme) .oscleash-readonly-input {
   color: #ecf0f1;
 }
 :global(body.dark-theme) .oscleash-empty-state,
@@ -569,8 +606,8 @@ function setSharedDeadzone(value: number) {
   color: #95a5a6;
 }
 :global(body.dark-theme) .oscleash-leash-item,
-:global(body.dark-theme) .oscleash-preview-box,
-:global(body.dark-theme) .oscleash-readonly-input {
+:global(body.dark-theme) .oscleash-readonly-input,
+:global(body.dark-theme) .oscleash-note-box {
   border-color: #34495e;
 }
 @media (max-width: 700px) {

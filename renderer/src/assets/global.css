@@ -1223,19 +1223,6 @@ body.dark-theme .modal-body p:nth-child(2) {
 body.dark-theme .modal-body p:last-child {
     color: #95a5a6 !important;
 }
-/* HypeRate specific styles */
-.tracker-item {
-    background: #f8f9fa;
-    transition: background-color 0.3s ease;
-}
-body.dark-theme .tracker-item {
-    background: #34495e;
-    border-color: #2c3e50 !important;
-}
-body.dark-theme .tracker-item[style*="background: #f8fff8"] {
-    background: #2d4a2d !important;
-    border-color: #27ae60 !important;
-}
 .btn-small {
     padding: 4px 8px;
     font-size: 12px;

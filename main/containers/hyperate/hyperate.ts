@@ -97,7 +97,6 @@ class HyperateAddon {
         }
         const secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8'))
         if (secrets.hyperate && secrets.hyperate.apiKey) {
-          debug.info(`HypeRate API key loaded from ${secretsPath}`)
           return secrets
         }
       }

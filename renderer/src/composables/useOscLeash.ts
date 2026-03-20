@@ -43,6 +43,57 @@ export interface OscLeashConfig {
   [key: string]: any
 }
 
+type RawOscLeashConfig = {
+  RunDeadzone?: number
+  WalkDeadzone?: number
+  StrengthMultiplier?: number
+  UpDownCompensation?: number
+  UpDownDeadzone?: number
+  ActiveDelay?: number
+  InactiveDelay?: number
+  Logging?: boolean
+  PhysboneParameters?: string[]
+  DirectionalParameters?: {
+    Z_Positive_Param?: string
+    Z_Negative_Param?: string
+    X_Positive_Param?: string
+    X_Negative_Param?: string
+    Y_Positive_Param?: string
+    Y_Negative_Param?: string
+  }
+  runDeadzone?: number
+  walkDeadzone?: number
+  strengthMultiplier?: number
+  upCompensation?: number
+  downCompensation?: number
+  upDeadzone?: number
+  downDeadzone?: number
+  activeDelay?: number
+  inactiveDelay?: number
+  logging?: boolean
+  physboneParameter?: string
+  verticalParameter?: string
+  horizontalParameter?: string
+  runParameter?: string
+}
+
+const DEFAULT_OSC_LEASH_CONFIG: OscLeashConfig = {
+  runDeadzone: 70,
+  walkDeadzone: 15,
+  strengthMultiplier: 1.2,
+  upCompensation: 1.0,
+  downCompensation: 1.0,
+  upDeadzone: 50,
+  downDeadzone: 50,
+  activeDelay: 20,
+  inactiveDelay: 500,
+  logging: false,
+  physboneParameter: 'Leash',
+  verticalParameter: 'Leash_Z+',
+  horizontalParameter: 'Leash_X+',
+  runParameter: '/input/Run'
+}
+
 function normalizeAutostartResult(result: unknown): boolean {
   if (typeof result === 'boolean') {
     return result
@@ -51,6 +102,59 @@ function normalizeAutostartResult(result: unknown): boolean {
     return Boolean((result as { enabled?: unknown }).enabled)
   }
   return false
+}
+
+function toPercent(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return fallback
+  }
+  return Math.round(value * 100)
+}
+
+function normalizeOscLeashConfig(result: unknown): OscLeashConfig | null {
+  if (!result || typeof result !== 'object') {
+    return null
+  }
+  const raw = result as RawOscLeashConfig
+  const directionalParameters = raw.DirectionalParameters ?? {}
+  return {
+    runDeadzone: typeof raw.runDeadzone === 'number' ? raw.runDeadzone : toPercent(raw.RunDeadzone, DEFAULT_OSC_LEASH_CONFIG.runDeadzone),
+    walkDeadzone: typeof raw.walkDeadzone === 'number' ? raw.walkDeadzone : toPercent(raw.WalkDeadzone, DEFAULT_OSC_LEASH_CONFIG.walkDeadzone),
+    strengthMultiplier: typeof raw.strengthMultiplier === 'number' ? raw.strengthMultiplier : raw.StrengthMultiplier ?? DEFAULT_OSC_LEASH_CONFIG.strengthMultiplier,
+    upCompensation: typeof raw.upCompensation === 'number' ? raw.upCompensation : raw.UpDownCompensation ?? DEFAULT_OSC_LEASH_CONFIG.upCompensation,
+    downCompensation: typeof raw.downCompensation === 'number' ? raw.downCompensation : raw.UpDownCompensation ?? DEFAULT_OSC_LEASH_CONFIG.downCompensation,
+    upDeadzone: typeof raw.upDeadzone === 'number' ? raw.upDeadzone : toPercent(raw.UpDownDeadzone, DEFAULT_OSC_LEASH_CONFIG.upDeadzone),
+    downDeadzone: typeof raw.downDeadzone === 'number' ? raw.downDeadzone : toPercent(raw.UpDownDeadzone, DEFAULT_OSC_LEASH_CONFIG.downDeadzone),
+    activeDelay: typeof raw.activeDelay === 'number' ? raw.activeDelay : raw.ActiveDelay ?? DEFAULT_OSC_LEASH_CONFIG.activeDelay,
+    inactiveDelay: typeof raw.inactiveDelay === 'number' ? raw.inactiveDelay : raw.InactiveDelay ?? DEFAULT_OSC_LEASH_CONFIG.inactiveDelay,
+    logging: typeof raw.logging === 'boolean' ? raw.logging : raw.Logging ?? DEFAULT_OSC_LEASH_CONFIG.logging,
+    physboneParameter: raw.physboneParameter ?? raw.PhysboneParameters?.[0] ?? DEFAULT_OSC_LEASH_CONFIG.physboneParameter,
+    verticalParameter: raw.verticalParameter ?? directionalParameters.Z_Positive_Param ?? DEFAULT_OSC_LEASH_CONFIG.verticalParameter,
+    horizontalParameter: raw.horizontalParameter ?? directionalParameters.X_Positive_Param ?? DEFAULT_OSC_LEASH_CONFIG.horizontalParameter,
+    runParameter: raw.runParameter ?? DEFAULT_OSC_LEASH_CONFIG.runParameter
+  }
+}
+
+function serializeOscLeashConfig(config: OscLeashConfig): RawOscLeashConfig {
+  return {
+    RunDeadzone: Number(config.runDeadzone) / 100,
+    WalkDeadzone: Number(config.walkDeadzone) / 100,
+    StrengthMultiplier: Number(config.strengthMultiplier),
+    UpDownCompensation: Number(config.upCompensation),
+    UpDownDeadzone: Number(config.upDeadzone) / 100,
+    ActiveDelay: Number(config.activeDelay),
+    InactiveDelay: Number(config.inactiveDelay),
+    Logging: Boolean(config.logging),
+    PhysboneParameters: [config.physboneParameter || DEFAULT_OSC_LEASH_CONFIG.physboneParameter],
+    DirectionalParameters: {
+      Z_Positive_Param: config.verticalParameter || DEFAULT_OSC_LEASH_CONFIG.verticalParameter,
+      Z_Negative_Param: 'Leash_Z-',
+      X_Positive_Param: config.horizontalParameter || DEFAULT_OSC_LEASH_CONFIG.horizontalParameter,
+      X_Negative_Param: 'Leash_X-',
+      Y_Positive_Param: 'Leash_Y+',
+      Y_Negative_Param: 'Leash_Y-'
+    }
+  }
 }
 
 export function useOscLeash() {
@@ -67,24 +171,33 @@ export function useOscLeash() {
     status.value = { enabled: false, leashCount: 0, activeLeashes: [], discoveredLeashes: [], ...s }
   }
   async function loadConfig() {
-    config.value = await api.oscleashGetConfig()
+    config.value = normalizeOscLeashConfig(await api.oscleashGetConfig())
   }
   async function saveConfig(updated: Partial<OscLeashConfig>) {
-    await api.oscleashUpdateConfig(updated)
+    const mergedConfig = {
+      ...DEFAULT_OSC_LEASH_CONFIG,
+      ...(config.value ?? {}),
+      ...updated
+    } as OscLeashConfig
+    await api.oscleashUpdateConfig(serializeOscLeashConfig(mergedConfig))
     await loadConfig()
   }
   async function resetConfig() {
     const defaults: Partial<OscLeashConfig> = {
-      runDeadzone: 90,
+      runDeadzone: DEFAULT_OSC_LEASH_CONFIG.runDeadzone,
       walkDeadzone: 15,
-      strengthMultiplier: 1.0,
-      upCompensation: 0,
-      upDeadzone: 0,
-      downCompensation: 0,
-      downDeadzone: 0,
-      activeDelay: 100,
-      inactiveDelay: 250,
-      logging: false
+      strengthMultiplier: DEFAULT_OSC_LEASH_CONFIG.strengthMultiplier,
+      upCompensation: DEFAULT_OSC_LEASH_CONFIG.upCompensation,
+      upDeadzone: DEFAULT_OSC_LEASH_CONFIG.upDeadzone,
+      downCompensation: DEFAULT_OSC_LEASH_CONFIG.downCompensation,
+      downDeadzone: DEFAULT_OSC_LEASH_CONFIG.downDeadzone,
+      activeDelay: DEFAULT_OSC_LEASH_CONFIG.activeDelay,
+      inactiveDelay: DEFAULT_OSC_LEASH_CONFIG.inactiveDelay,
+      logging: DEFAULT_OSC_LEASH_CONFIG.logging,
+      physboneParameter: DEFAULT_OSC_LEASH_CONFIG.physboneParameter,
+      verticalParameter: DEFAULT_OSC_LEASH_CONFIG.verticalParameter,
+      horizontalParameter: DEFAULT_OSC_LEASH_CONFIG.horizontalParameter,
+      runParameter: DEFAULT_OSC_LEASH_CONFIG.runParameter
     }
     await saveConfig(defaults)
   }
