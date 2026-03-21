@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
 
 export interface LogEntry {
@@ -13,18 +13,22 @@ const FLUSH_INTERVAL = 1000
 const MAX_ENTRIES = 2000
 const FLOAT_THROTTLE_INTERVAL = 750
 
+// Module-level state — persists across navigation, never torn down
+const receivedLogs = ref<LogEntry[]>([])
+const forwardedLogs = ref<LogEntry[]>([])
+const arcReceivedLogs = ref<LogEntry[]>([])
+const isVisible = ref(false)
+let buffer: { type: string; address: string; value: any; connectionId?: string | null; timestamp: number }[] = []
+let lastFlush = 0
+let flushTimer: ReturnType<typeof setInterval> | null = null
+const lastFloatLogTimes = new Map<string, number>()
+const lastFloatValues = new Map<string, any>()
+const pendingFloatTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+let oscLogsInitialized = false
+let oscLogsInitPromise: Promise<void> | null = null
+
 export function useOscLogs() {
   const api = useElectronAPI()
-  const receivedLogs = ref<LogEntry[]>([])
-  const forwardedLogs = ref<LogEntry[]>([])
-  const arcReceivedLogs = ref<LogEntry[]>([])
-  const isVisible = ref(false)
-  let buffer: { type: string; address: string; value: any; connectionId?: string | null; timestamp: number }[] = []
-  let lastFlush = 0
-  let flushTimer: ReturnType<typeof setInterval> | null = null
-  const lastFloatLogTimes = new Map<string, number>()
-  const lastFloatValues = new Map<string, any>()
-  const pendingFloatTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
   function isFloat(value: any): boolean {
     if (typeof value === 'number') return !Number.isInteger(value)
@@ -102,26 +106,23 @@ export function useOscLogs() {
   function clearForwarded() { forwardedLogs.value = [] }
   function clearArcReceived() { arcReceivedLogs.value = [] }
   function clearAll() { clearReceived(); clearForwarded(); clearArcReceived() }
-  function cleanup() {
-    pendingFloatTimeouts.forEach(t => clearTimeout(t))
-    lastFloatLogTimes.clear()
-    pendingFloatTimeouts.clear()
-    lastFloatValues.clear()
-    buffer = []
+
+  async function initialize() {
+    if (oscLogsInitialized) return
+    if (oscLogsInitPromise) return oscLogsInitPromise
+    oscLogsInitPromise = Promise.resolve().then(() => {
+      api.onOscReceived(handleOscReceived)
+      api.onOscForwarded(handleOscForwarded)
+      api.onOscReceivedBatch((batch: any[]) => { for (const d of batch) handleOscReceived(d) })
+      api.onOscForwardedBatch((batch: any[]) => { for (const d of batch) handleOscForwarded(d) })
+      api.onWebSocketOscData(handleArcReceived)
+      flushTimer = setInterval(() => { if (buffer.length > 0) flushBuffer() }, FLUSH_INTERVAL)
+      oscLogsInitialized = true
+    })
+    return oscLogsInitPromise
   }
 
-  onMounted(() => {
-    api.onOscReceived(handleOscReceived)
-    api.onOscForwarded(handleOscForwarded)
-    api.onOscReceivedBatch((batch: any[]) => { for (const d of batch) handleOscReceived(d) })
-    api.onOscForwardedBatch((batch: any[]) => { for (const d of batch) handleOscForwarded(d) })
-    api.onWebSocketOscData(handleArcReceived)
-    flushTimer = setInterval(() => { if (buffer.length > 0) flushBuffer() }, FLUSH_INTERVAL)
-  })
-  onUnmounted(() => {
-    if (flushTimer) clearInterval(flushTimer)
-    cleanup()
-  })
+  onMounted(() => { void initialize() })
 
   return {
     receivedLogs,

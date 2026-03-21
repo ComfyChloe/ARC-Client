@@ -1,5 +1,6 @@
 import { ref, onMounted } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
+import { debugLog } from './useDebugLog'
 
 export interface OscConnection {
   id: string
@@ -70,7 +71,10 @@ export function useOscStatus() {
     }
   }
   async function toggleOsc() {
-    if (oscToggling.value) return
+    if (oscToggling.value) {
+      debugLog('OSC toggle already in progress, please wait...', 'warn')
+      return
+    }
     oscToggling.value = true
     if (oscEnabled.value) {
       await api.disableOsc()
@@ -79,6 +83,7 @@ export function useOscStatus() {
     }
     const status = await api.getOscStatus()
     applyOscStatus(status)
+    debugLog(oscEnabled.value ? `OSC Server enabled` : 'OSC Server disabled')
     oscToggling.value = false
   }
   async function updateOscPorts() {
@@ -144,7 +149,10 @@ export function useOscStatus() {
   // OSC Query unsubscriptions
   async function loadUnsubscriptions() {
     const result = await api.getOscQueryUnsubscriptions()
-    if (result?.success) unsubscriptions.value = result.unsubscriptions ?? []
+    if (result?.success) {
+      unsubscriptions.value = result.unsubscriptions ?? []
+      debugLog(`OSC-Query unsubscriptions loaded: ${result.unsubscriptions?.length === 0 ? 'None (listening to all)' : result.unsubscriptions?.length}`)
+    }
   }
   async function addUnsubscription(path: string) {
     if (!path.startsWith('/')) return
@@ -175,12 +183,17 @@ export function useOscStatus() {
     await api.requestUnsuppress(address)
   }
   function handleOscServerStatus(data: any) {
-    if (data.status === 'connection-ready' || data.status === 'connection-error') return
+    if (data.status === 'connection-ready' || data.status === 'connection-error') {
+      const statusText = data.status === 'connection-ready' ? 'Ready' : 'Error'
+      debugLog(`Additional OSC ${data.type} connection (${data.name || data.connectionId}): ${statusText} on port ${data.port}`)
+      return
+    }
     const s = data.status
     oscPort.value = data.port ?? oscPort.value
     if (s === 'connected') {
       oscStatus.value = 'connected'
       oscEnabled.value = true
+      debugLog(`OSC Server listening on port ${data.port}`)
     } else if (s === 'stopping') {
       oscStatus.value = 'stopping'
     } else if (s === 'disabled') {
@@ -189,6 +202,7 @@ export function useOscStatus() {
     } else if (s === 'error') {
       oscStatus.value = 'error'
       oscEnabled.value = false
+      debugLog(`OSC Server error: ${data.error}`, 'error')
     } else {
       oscStatus.value = 'off'
       oscEnabled.value = false
@@ -207,9 +221,13 @@ export function useOscStatus() {
       api.onOscQueryStatus((data: any) => {
         if (data.status === 'started') {
           queryRunning.value = true
+          debugLog(`OSC-Query service started on HTTP port ${data.httpPort}`)
           loadUnsubscriptions()
+        } else if (data.status === 'error') {
+          debugLog(`OSC-Query service error: ${data.error}`, 'error')
         } else if (data.status === 'stopped') {
           queryRunning.value = false
+          debugLog('OSC-Query service stopped')
         }
       })
       api.onParameterBlocklistUpdated(() => loadBlockedParams())

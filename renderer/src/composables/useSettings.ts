@@ -1,5 +1,6 @@
 import { onMounted, ref } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
+import { debugLog } from './useDebugLog'
 
 type ServerType = 'live' | 'beta' | 'custom'
 
@@ -40,11 +41,14 @@ export function useSettings() {
     const config = await api.getServerConfig()
     serverUrl.value = config.websocketServerUrl ?? 'wss://arcosc.app:48255'
     activeServer.value = detectServer(serverUrl.value)
+    debugLog('Configuration loaded from saved settings')
     const settings = await api.getAppSettings()
     theme.value = settings?.theme ?? 'light'
     applyTheme(theme.value)
     snowEnabled.value = settings?.snowEnabled !== false
     logLevel.value = settings?.logLevel ?? 'info'
+    debugLog('Application settings loaded from saved config')
+    debugLog(`Theme loaded: ${theme.value}`)
     const ver = await api.getClientVersion()
     clientVersion.value = ver ?? ''
   }
@@ -62,12 +66,14 @@ export function useSettings() {
     const settings = await api.getAppSettings()
     settings.theme = newTheme
     await api.setAppSettings(settings)
+    debugLog(`Theme switched to ${newTheme} mode`)
   }
   async function toggleSnow() {
     snowEnabled.value = !snowEnabled.value
     const settings = await api.getAppSettings()
     settings.snowEnabled = snowEnabled.value
     await api.setAppSettings(settings)
+    debugLog(`Snow overlay ${snowEnabled.value ? 'enabled' : 'disabled'}`)
   }
   async function switchToServer(type: ServerType) {
     const url = type === 'custom' ? serverUrl.value : SERVER_URLS[type]
@@ -86,6 +92,7 @@ export function useSettings() {
     const settings = await api.getAppSettings()
     settings.logLevel = level
     await api.setAppSettings(settings)
+    debugLog(`Application settings updated - Log level: ${level}`)
   }
   async function getDebugStats() {
     return api.getDebugStats()
@@ -109,6 +116,7 @@ export function useSettings() {
       if (!runtimeInterval) {
         runtimeInterval = setInterval(updateRuntime, 1000)
       }
+      debugLog('Application initialized')
       settingsInitialized = true
     })()
     await settingsInitPromise

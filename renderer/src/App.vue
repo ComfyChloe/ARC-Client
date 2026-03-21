@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useOscStatus } from './composables/useOscStatus'
 import { useServerConnection, type PanelInfo } from './composables/useServerConnection'
 import { useSettings } from './composables/useSettings'
+import { useOscLogs } from './composables/useOscLogs'
 
 const route = useRoute()
 const extrasOpen = ref(true)
@@ -42,6 +43,8 @@ const {
   wsForwardingEnabled,
   toggleWsForwarding
 } = useServerConnection()
+
+useOscLogs()
 
 const username = ref('')
 const password = ref('')

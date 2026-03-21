@@ -1,5 +1,6 @@
 import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
+import { debugLog } from './useDebugLog'
 
 export interface AvatarInfo {
   id: string
@@ -48,11 +49,15 @@ export function useServerConnection() {
 
   async function loadSavedCredentials() {
     const lastUser = await api.getLastUsername()
-    if (lastUser) savedUsername.value = lastUser
+    if (lastUser) {
+      savedUsername.value = lastUser
+      debugLog(`Last username loaded: ${lastUser}`)
+    }
     const result = await api.getSavedPassword()
     if (result?.password) {
       savedPassword.value = result.password
       savePasswordChecked.value = true
+      debugLog('Saved password loaded from configuration (encrypted)')
     }
   }
   async function authenticate(username: string, password: string) {
@@ -60,20 +65,26 @@ export function useServerConnection() {
       await disconnect()
       return
     }
-    if (!username || !password) return
+    if (!username || !password) {
+      debugLog('Please enter username and password', 'error')
+      return
+    }
     loading.value = true
     error.value = null
     connectionStatus.value = 'connecting'
+    debugLog('Connecting to server...')
     const result = await api.authenticate({ username, password })
     loading.value = false
     if (result.success) {
       isConnected.value = true
       isAuthenticated.value = true
       currentUser.value = result.user ?? { username }
+      debugLog(`Successfully authenticated as ${username}`)
       await api.setLastUsername(username.trim().toLowerCase())
     } else {
       error.value = result.error ?? 'Authentication failed'
       connectionStatus.value = 'error'
+      debugLog(`Authentication failed: ${result.error ?? 'Unknown error'}`, 'error')
     }
   }
   async function disconnect() {
@@ -85,6 +96,7 @@ export function useServerConnection() {
     parameters.value = {}
     panelConnectionsData.value = {}
     connectionStatus.value = 'disconnected'
+    debugLog('Disconnected from server')
   }
   async function unloadAvatar() {
     if (!isAuthenticated.value || !isConnected.value || !currentUser.value) return
@@ -125,8 +137,10 @@ export function useServerConnection() {
       api.onWebSocketStatus((data: any) => {
         const status = data.status ?? (data.connected ? 'connected' : 'disconnected')
         connectionStatus.value = status
+        debugLog(`WebSocket status changed to: ${status}`)
         if (status === 'connected') {
           isConnected.value = true
+          debugLog('Connected to WebSocket server')
         } else if (status === 'disconnected') {
           isConnected.value = false
           isAuthenticated.value = false
@@ -134,26 +148,32 @@ export function useServerConnection() {
           currentAvatar.value = null
           parameters.value = {}
           panelConnectionsData.value = {}
+          debugLog('Disconnected from WebSocket server - performed memory cleanup')
         }
       })
-      api.onWebSocketError((_data: any) => {
+      api.onWebSocketError((data: any) => {
+        debugLog(`WebSocket connection error: ${data.error ?? 'Unknown error'}${data.attempts ? ` (Attempt ${data.attempts}/${data.maxAttempts})` : ''}`, 'error')
       })
       api.onWebSocketAuthenticated((data: any) => {
         isAuthenticated.value = true
         currentUser.value = { username: data.username }
+        debugLog(`Authenticated as ${data.username} in room ${data.room ?? 'unknown'}`)
       })
       api.onWebSocketAvatarChange((data: any) => {
         if (!data.id) {
           currentAvatar.value = null
           parameters.value = {}
+          debugLog(`Avatar unloaded for user ${data.username ?? 'unknown'}`)
           return
         }
+        const displayName = data.name ?? getDisplayNameFromId(data.id)
         currentAvatar.value = {
           id: data.id,
           name: data.name ?? null,
-          displayName: data.name ?? getDisplayNameFromId(data.id),
+          displayName,
           username: data.username
         }
+        debugLog(`Avatar changed: ${displayName} for user ${data.username ?? 'unknown'}`)
       })
       api.onWebSocketParameterUpdate((data: any) => {
         if (data.parameters) {
@@ -171,7 +191,11 @@ export function useServerConnection() {
       api.onAppSettings((settings: any) => {
         wsForwardingEnabled.value = settings?.enableWebSocketForwarding ?? false
       })
+      api.onWebSocketServerMessage((data: any) => {
+        debugLog(`Server message: ${data.message || JSON.stringify(data)}`)
+      })
       if (savedUsername.value && savedPassword.value) {
+        debugLog('Auto-connecting with saved credentials...')
         setTimeout(() => {
           authenticate(savedUsername.value, savedPassword.value)
         }, 500)
