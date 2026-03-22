@@ -1636,11 +1636,11 @@ ipcMain.handle('autostatus-set-preset', async (_event, presetData: any) => {
 })
 ipcMain.handle('autostatus-delete-preset', async (_event, presetId: string) => {
   if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
-  return autoStatusContainer.deletePreset(presetId)
+  return autoStatusContainer.deletePreset(Number(presetId))
 })
 ipcMain.handle('autostatus-test-preset', async (_event, presetId: string) => {
   if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
-  return autoStatusContainer.applyPreset(presetId, 'manual')
+  return autoStatusContainer.applyPreset(Number(presetId), 'manual')
 })
 ipcMain.handle('autostatus-add-schedule', async (_event, entry: any) => {
   if (!autoStatusContainer) return { success: false, error: 'Not initialized' }

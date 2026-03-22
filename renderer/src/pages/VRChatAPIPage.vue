@@ -84,7 +84,7 @@ const {
         </div>
       </div>
 
-      <div v-if="stats" class="card">
+      <div v-if="stats" class="card vrchatapi-stats-section">
         <h3>Account Details</h3>
         <div class="vrchatapi-stats-grid">
           <div class="vrchatapi-stat-card">
@@ -113,6 +113,10 @@ const {
   word-break: break-all;
 }
 
+.vrchatapi-stats-section {
+  color: inherit;
+}
+
 .vrchatapi-stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -139,16 +143,25 @@ const {
   margin-top: 5px;
 }
 
-:global(body.dark-theme) .vrchatapi-user-id {
+:global(body.dark-theme .vrchatapi-stats-section) {
+  color: #ecf0f1;
+}
+
+:global(body.dark-theme .vrchatapi-user-id) {
   color: #95a5a6;
 }
 
-:global(body.dark-theme) .vrchatapi-stat-card {
-  background: #353535;
-  border-color: #454545;
+:global(body.dark-theme .vrchatapi-stat-card) {
+  background: #353535 !important;
+  border-color: #454545 !important;
+  color: #ecf0f1 !important;
 }
 
-:global(body.dark-theme) .vrchatapi-stat-label {
+:global(body.dark-theme .vrchatapi-stat-value) {
+  color: #5dade2;
+}
+
+:global(body.dark-theme .vrchatapi-stat-label) {
   color: #bdc3c7;
 }
 </style>

@@ -24,8 +24,11 @@ const activePreset = computed(() => {
 })
 
 const activeStatusType = computed(() => {
-  if (!activePreset.value) return null
-  return STATUS_TYPES.find((type) => type.value === activePreset.value.statusType) ?? null
+  const presetId = status.value.lastAppliedPresetId
+  if (!presetId) return null
+  const preset = presets.value.find((entry) => entry.id === presetId) ?? null
+  if (!preset) return null
+  return STATUS_TYPES.find((type) => type.value === preset.statusType) ?? null
 })
 
 const newSchedule = ref({
@@ -139,7 +142,7 @@ async function saveScheduleName(entryId: string) {
           <div class="autostatus-banner-subtitle">
             <template v-if="activePreset">
               {{ activeStatusType?.label ?? activePreset.statusType }}
-              <template v-if="activePreset.statusMessage"> - "{{ activePreset.statusMessage }}"</template>
+              <template v-if="activePreset.statusMessage"> — "{{ activePreset.statusMessage }}"</template>
             </template>
             <template v-else>Waiting for trigger...</template>
           </div>
@@ -175,8 +178,10 @@ async function saveScheduleName(entryId: string) {
           :style="{ '--preset-accent': (STATUS_TYPES.find((type) => type.value === preset.statusType)?.color ?? '#888888') }"
         >
           <div class="autostatus-preset-header">
-            <span class="autostatus-preset-number">{{ preset.id }}</span>
-            <span class="autostatus-preset-name-display">{{ preset.name }}</span>
+            <div class="autostatus-preset-meta">
+              <span class="autostatus-preset-number">{{ preset.id }}</span>
+              <span class="autostatus-preset-name-display">{{ preset.name }}</span>
+            </div>
             <div class="autostatus-preset-actions">
               <button class="autostatus-icon-btn" title="Test" @click="testPreset(preset.id)">&#9654;</button>
               <button class="autostatus-icon-btn autostatus-icon-btn-danger" title="Delete" @click="beginDeletePreset(preset.id)">&#10005;</button>
@@ -231,9 +236,8 @@ async function saveScheduleName(entryId: string) {
         <span class="autostatus-section-hint">Automatically set status based on day and time</span>
       </div>
 
-      <div v-if="schedule.length === 0" class="autostatus-schedule-empty">No schedule entries yet. Add one below to automate status changes by time of day.</div>
-
-      <div v-else class="autostatus-schedule-list">
+      <div class="autostatus-schedule-list">
+        <div v-if="schedule.length === 0" class="autostatus-schedule-empty">No schedule entries yet. Add one below to automate status changes by time of day.</div>
         <div v-for="entry in schedule" :key="entry.id" class="autostatus-schedule-row" :class="{ 'autostatus-schedule-disabled': !entry.enabled }">
           <div class="autostatus-schedule-color" :style="{ background: scheduleStatusType(entry)?.color ?? '#95a5a6' }"></div>
 
@@ -243,7 +247,7 @@ async function saveScheduleName(entryId: string) {
             </div>
             <div v-else class="autostatus-schedule-name" @click="startEditScheduleName(entry.id, entry.name)">{{ entry.name || 'Untitled' }}</div>
             <div class="autostatus-schedule-time">
-              {{ entry.startTime }} - {{ entry.endTime }}
+              {{ entry.startTime }} — {{ entry.endTime }}
               <small v-if="isOvernight(entry)">(overnight)</small>
             </div>
             <div class="autostatus-schedule-days">{{ entry.daysOfWeek.map((day) => DAY_LABELS[day]).join(', ') }}</div>
@@ -267,7 +271,7 @@ async function saveScheduleName(entryId: string) {
         </div>
       </div>
 
-      <div v-if="presets.length > 0" class="autostatus-schedule-add card">
+      <div class="autostatus-schedule-add card">
         <div class="autostatus-schedule-add-row">
           <div class="autostatus-field">
             <label>Name</label>
@@ -294,7 +298,10 @@ async function saveScheduleName(entryId: string) {
           <div class="autostatus-field">
             <label>Preset</label>
             <select v-model.number="newSchedule.presetId">
-              <option v-for="preset in presets" :key="preset.id" :value="preset.id">{{ preset.name }} ({{ STATUS_TYPES.find((type) => type.value === preset.statusType)?.icon ?? '' }} {{ preset.id }})</option>
+              <template v-if="presets.length > 0">
+                <option v-for="preset in presets" :key="preset.id" :value="preset.id">{{ preset.name }} ({{ STATUS_TYPES.find((type) => type.value === preset.statusType)?.icon ?? '' }} {{ preset.id }})</option>
+              </template>
+              <option v-else disabled>No presets configured</option>
             </select>
           </div>
 
@@ -307,7 +314,7 @@ async function saveScheduleName(entryId: string) {
           </div>
 
           <div class="autostatus-field autostatus-field-action">
-            <button class="btn btn-primary btn-small" :disabled="newDays.size === 0" @click="handleAddSchedule">Add</button>
+            <button class="btn btn-primary btn-small" :disabled="newDays.size === 0 || presets.length === 0" @click="handleAddSchedule">Add</button>
           </div>
         </div>
       </div>
@@ -339,7 +346,7 @@ async function saveScheduleName(entryId: string) {
               <input type="checkbox" :checked="settings.alwaysAllowOverride" @change="updateSettings({ alwaysAllowOverride: ($event.target as HTMLInputElement).checked })" />
               Always allow status override
             </label>
-            <small>When enabled, ARC will change your status even if it was set externally. When disabled, ARC pauses automatic changes until the next manual or OSC trigger.</small>
+            <small>When enabled, ARC will change your status even if it was set externally (via VRChat website or in-game). When disabled, ARC pauses automatic status changes until the next manual or OSC trigger.</small>
           </div>
         </div>
 
@@ -352,7 +359,7 @@ async function saveScheduleName(entryId: string) {
             </div>
             <div class="autostatus-osc-param">
               <code>/avatar/parameters/ARCOSC/vrc-status</code> <small>(Int, 0-4)</small><br />
-              <small>0 = off, 1 = Join Me, 2 = Online, 3 = Ask Me, 4 = Do Not Disturb.</small>
+              <small>0 = off, 1 = 🔵 Join Me, 2 = 🟢 Online, 3 = 🟠 Ask Me, 4 = 🔴 Do Not Disturb</small>
             </div>
           </div>
           <small>Status changes are blocked for 30 seconds after avatar changes.</small>
@@ -409,7 +416,6 @@ async function saveScheduleName(entryId: string) {
   padding: 4px 10px;
   border-radius: 20px;
   font-size: 11px;
-  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -465,6 +471,7 @@ async function saveScheduleName(entryId: string) {
 }
 
 .autostatus-preset-card {
+  display: block;
   background: #fff;
   border-radius: 10px;
   border: 2px solid #ecf0f1;
@@ -520,10 +527,18 @@ async function saveScheduleName(entryId: string) {
 .autostatus-preset-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid #f0f0f0;
   transition: border-color 0.3s ease;
+}
+
+.autostatus-preset-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .autostatus-preset-number {
@@ -542,6 +557,7 @@ async function saveScheduleName(entryId: string) {
 
 .autostatus-preset-name-display {
   flex: 1;
+  min-width: 0;
   font-weight: 600;
   font-size: 14px;
   color: #2c3e50;
@@ -610,39 +626,46 @@ async function saveScheduleName(entryId: string) {
 }
 
 .autostatus-schedule-empty {
-  padding: 16px;
-  border-radius: 10px;
-  background: #f8f9fa;
-  border: 1px dashed #bdc3c7;
-  color: #7f8c8d;
-  margin-bottom: 16px;
+  text-align: center;
+  padding: 24px;
+  color: #95a5a6;
+  border: 1px dashed #ddd;
+  transition: all 0.3s ease;
 }
 
 .autostatus-schedule-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .autostatus-schedule-row {
-  display: grid;
-  grid-template-columns: 6px 1fr auto auto;
-  gap: 15px;
+  display: flex;
   align-items: center;
+  gap: 12px;
   padding: 15px;
   border: 1px solid #dee2e6;
   border-radius: 8px;
   background: #fff;
+  transition: all 0.25s ease;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .autostatus-schedule-disabled {
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .autostatus-schedule-color {
-  align-self: stretch;
-  border-radius: 999px;
+  width: 6px;
+  height: 40px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.autostatus-schedule-details {
+  flex: 1;
+  min-width: 0;
 }
 
 .autostatus-schedule-name {
@@ -650,10 +673,31 @@ async function saveScheduleName(entryId: string) {
   cursor: pointer;
 }
 
-.autostatus-schedule-time,
+.autostatus-schedule-time {
+  font-size: 15px;
+  font-weight: 700;
+  color: #2c3e50;
+  transition: color 0.3s ease;
+}
+
+.autostatus-schedule-time small {
+  font-weight: 400;
+  color: #f39c12;
+  margin-left: 4px;
+}
+
 .autostatus-schedule-days {
+  font-size: 12px;
+  color: #95a5a6;
+  margin-top: 2px;
+}
+
+.autostatus-schedule-preset {
   font-size: 13px;
-  color: #7f8c8d;
+  font-weight: 600;
+  color: #2c3e50;
+  white-space: nowrap;
+  transition: color 0.3s ease;
 }
 
 .autostatus-schedule-fallback {
@@ -675,19 +719,21 @@ async function saveScheduleName(entryId: string) {
   border-radius: 4px;
 }
 
+.autostatus-schedule-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .autostatus-schedule-add {
-  margin-top: 16px;
+  padding: 16px !important;
 }
 
 .autostatus-schedule-add-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-  align-items: end;
-}
-
-.autostatus-field-days {
-  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
 }
 
 .autostatus-day-picker {
@@ -697,11 +743,17 @@ async function saveScheduleName(entryId: string) {
 }
 
 .autostatus-day-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
   padding: 8px 10px;
   border: 1px solid #dee2e6;
   border-radius: 6px;
   background: #f8f9fa;
   cursor: pointer;
+  text-align: center;
+  line-height: 1;
   transition: all 0.2s ease;
 }
 
@@ -819,13 +871,17 @@ async function saveScheduleName(entryId: string) {
     align-items: stretch;
   }
 
-  .autostatus-schedule-row {
-    grid-template-columns: 6px 1fr;
+  .autostatus-preset-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
-  .autostatus-schedule-preset,
-  .autostatus-schedule-actions {
-    grid-column: 2;
+  .autostatus-preset-actions {
+    align-self: flex-end;
+  }
+
+  .autostatus-schedule-row {
+    flex-wrap: wrap;
   }
 }
 
@@ -842,23 +898,39 @@ async function saveScheduleName(entryId: string) {
 :global(body.dark-theme) .autostatus-section-hint,
 :global(body.dark-theme) .autostatus-field label,
 :global(body.dark-theme) .autostatus-field small,
-:global(body.dark-theme) .autostatus-schedule-time,
 :global(body.dark-theme) .autostatus-schedule-days,
 :global(body.dark-theme) .autostatus-schedule-fallback label,
-:global(body.dark-theme) .autostatus-schedule-empty,
 :global(body.dark-theme) .autostatus-presets-empty {
   color: #95a5a6;
 }
 
+:global(body.dark-theme) .autostatus-schedule-time {
+  color: #ecf0f1;
+}
+
+:global(body.dark-theme) .autostatus-schedule-preset {
+  color: #ecf0f1;
+}
+
+:global(body.dark-theme) .autostatus-schedule-empty {
+  background: #1e1e1e;
+  border-color: #454545;
+  color: #7f8c8d;
+}
+
 :global(body.dark-theme) .autostatus-preset-card,
-:global(body.dark-theme) .autostatus-schedule-row,
 :global(body.dark-theme) .autostatus-info-box,
 :global(body.dark-theme) .autostatus-day-btn,
-:global(body.dark-theme) .autostatus-osc-param code,
-:global(body.dark-theme) .autostatus-schedule-empty {
+:global(body.dark-theme) .autostatus-osc-param code {
   background: #2b2b2b;
   border-color: #454545;
   color: #ecf0f1;
+}
+
+:global(body.dark-theme) .autostatus-schedule-row {
+  background: #2b2b2b;
+  border-color: #454545;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 :global(body.dark-theme) .autostatus-preset-card:hover {

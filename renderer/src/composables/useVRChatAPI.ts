@@ -1,4 +1,4 @@
-import { ref, onMounted, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
 
 export interface VRChatUser {
@@ -32,17 +32,20 @@ const defaultStatus: VRChatApiStatus = {
   pipelineConnected: false
 }
 
+const status = ref<VRChatApiStatus>({ ...defaultStatus })
+const stats = ref<VRChatStats | null>(null)
+const linkStatus = ref<'unknown' | 'linked' | 'unlinked'>('unknown')
+const autoLoginAttempted = ref(false)
+const loading = ref(false)
+const error = ref<string | null>(null)
+const twoFactorCode = ref('')
+const loginUsername = ref('')
+const loginPassword = ref('')
+let vrchatApiInitialized = false
+let vrchatApiInitPromise: Promise<void> | null = null
+
 export function useVRChatAPI() {
   const api = useElectronAPI()
-  const status = ref<VRChatApiStatus>({ ...defaultStatus })
-  const stats = ref<VRChatStats | null>(null)
-  const linkStatus = ref<'unknown' | 'linked' | 'unlinked'>('unknown')
-  const autoLoginAttempted = ref(false)
-  const loading = ref(false)
-  const error = ref<string | null>(null)
-  const twoFactorCode = ref('')
-  const loginUsername = ref('')
-  const loginPassword = ref('')
 
   const isAuthenticated = computed(() => status.value.authenticated)
   const isPending2FA = computed(() => status.value.pending2FA)
@@ -121,18 +124,33 @@ export function useVRChatAPI() {
     linkStatus.value = result.linked ? 'linked' : 'unlinked'
   }
 
-  onMounted(async () => {
-    await loadStatus()
-    if (!status.value.authenticated) {
-      await restoreSession()
-    } else {
-      await loadStats()
-      await checkLinkStatus()
-    }
-    api.onVRChatPipelineEvent((_data: any) => {
-      // Pipeline events (friend-online/offline, notifications) can be handled here
+  async function initialize() {
+    if (vrchatApiInitialized) return
+    if (vrchatApiInitPromise) return vrchatApiInitPromise
+    vrchatApiInitPromise = Promise.resolve().then(async () => {
+      await loadStatus()
+      if (!status.value.authenticated) {
+        await restoreSession()
+      } else {
+        await loadStats()
+        await checkLinkStatus()
+      }
+      api.onVRChatPipelineEvent(async (_data: any) => {
+        await loadStatus()
+        if (status.value.authenticated) {
+          await loadStats()
+          await checkLinkStatus()
+        } else {
+          stats.value = null
+          linkStatus.value = 'unknown'
+        }
+      })
+      vrchatApiInitialized = true
     })
-  })
+    return vrchatApiInitPromise
+  }
+
+  onMounted(() => { void initialize() })
 
   return {
     status,
@@ -153,6 +171,7 @@ export function useVRChatAPI() {
     loadStats,
     shareWithARC,
     checkLinkStatus,
-    restoreSession
+    restoreSession,
+    initialize
   }
 }

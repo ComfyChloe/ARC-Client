@@ -5,6 +5,7 @@ import { useOscStatus } from './composables/useOscStatus'
 import { useServerConnection, type PanelInfo } from './composables/useServerConnection'
 import { useSettings } from './composables/useSettings'
 import { useOscLogs } from './composables/useOscLogs'
+import { useVRChatAPI } from './composables/useVRChatAPI'
 
 const route = useRoute()
 const extrasOpen = ref(true)
@@ -45,6 +46,7 @@ const {
 } = useServerConnection()
 
 useOscLogs()
+useVRChatAPI()
 
 const username = ref('')
 const password = ref('')
