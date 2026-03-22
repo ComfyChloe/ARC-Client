@@ -233,10 +233,19 @@ class VRChatAPIContainer {
       currentUser: this.currentUser ? {
         id: this.currentUser.id,
         displayName: this.currentUser.displayName,
-        username: this.currentUser.username
+        username: this.currentUser.username,
+        status: this.currentUser.status ?? null,
+        statusDescription: this.currentUser.statusDescription ?? null
       } : null,
       hasSavedSession: !!(this.config?.authToken || this.config?.twoFactorToken),
       pipelineConnected: this.pipelineConnected
+    }
+  }
+
+  getCurrentUserStatus(): { status: string | null, statusDescription: string | null } {
+    return {
+      status: this.currentUser?.status ?? null,
+      statusDescription: this.currentUser?.statusDescription ?? null
     }
   }
 

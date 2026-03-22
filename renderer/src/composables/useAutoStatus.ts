@@ -49,6 +49,8 @@ export interface AutoStatusStatus {
   avatarGuardActive: boolean
   vrchatApiAvailable: boolean
   lastOscValue: number
+  currentStatus: string | null
+  currentStatusDescription: string | null
   [key: string]: any
 }
 
@@ -57,7 +59,7 @@ export function useAutoStatus() {
   const presets = ref<Preset[]>([])
   const schedule = ref<ScheduleEntry[]>([])
   const settings = ref<AutoStatusSettings>({ cooldownSeconds: 10, timeFormat: '24h', alwaysAllowOverride: false })
-  const status = ref<AutoStatusStatus>({ lastAppliedPresetId: null, externallySet: false, avatarGuardActive: false, vrchatApiAvailable: false, lastOscValue: 0 })
+  const status = ref<AutoStatusStatus>({ lastAppliedPresetId: null, externallySet: false, avatarGuardActive: false, vrchatApiAvailable: false, lastOscValue: 0, currentStatus: null, currentStatusDescription: null })
 
   async function refresh() {
     const [config, s] = await Promise.all([
@@ -67,7 +69,7 @@ export function useAutoStatus() {
     presets.value = config.presets ?? []
     schedule.value = config.schedule ?? []
     settings.value = { cooldownSeconds: 10, timeFormat: '24h', alwaysAllowOverride: false, ...config.settings }
-    status.value = { lastAppliedPresetId: null, externallySet: false, avatarGuardActive: false, vrchatApiAvailable: false, lastOscValue: 0, ...s }
+    status.value = { lastAppliedPresetId: null, externallySet: false, avatarGuardActive: false, vrchatApiAvailable: false, lastOscValue: 0, currentStatus: null, currentStatusDescription: null, ...s }
   }
   async function createPreset() {
     const usedIds = presets.value.map(p => p.id)

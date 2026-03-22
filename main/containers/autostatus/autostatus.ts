@@ -49,12 +49,14 @@ interface OscData {
 
 interface VRChatApiContainer {
     isAuthenticated(): boolean
+    getCurrentUserStatus(): { status: string | null, statusDescription: string | null }
     setStatus(statusType: string | null, message: string | null): Promise<{ success: boolean, error?: string }>
 }
 
 const OSC_ADDRESS_PRESET = '/avatar/parameters/ARCOSC/vrc-status/statuspreset'
 const OSC_ADDRESS_STATUS = '/avatar/parameters/ARCOSC/vrc-status'
 const AVATAR_CHANGE_GUARD_MS = 30000
+const ARC_STATUS_ECHO_IGNORE_MS = 10000
 const SCHEDULE_CHECK_INTERVAL_MS = 60000
 const VALID_STATUSES: (string | null)[] = [null, 'active', 'join me', 'ask me', 'busy']
 const DIRECT_STATUS_MAP: Record<number, string> = { 1: 'join me', 2: 'active', 3: 'ask me', 4: 'busy' }
@@ -74,6 +76,9 @@ class AutoStatus {
     hasLastSetStatus: boolean
     lastSetStatus: string | null
     lastSetStatusDescription: string | null
+    lastArcStatusSetAt: number
+    currentStatus: string | null
+    currentStatusDescription: string | null
     lastActiveScheduleEntryId: string | null
 
     constructor() {
@@ -92,15 +97,68 @@ class AutoStatus {
         this.hasLastSetStatus = false
         this.lastSetStatus = null
         this.lastSetStatusDescription = null
+        this.lastArcStatusSetAt = 0
+        this.currentStatus = null
+        this.currentStatusDescription = null
         this.lastActiveScheduleEntryId = null
         debug.info('[AutoStatus] Container initialized')
     }
 
+    recordArcStatusSet(status: string | null, statusDescription: string | null, timestamp: number): void {
+        this.hasLastSetStatus = true
+        this.lastSetStatus = status
+        this.lastSetStatusDescription = statusDescription
+        this.lastArcStatusSetAt = timestamp
+        this.currentStatus = status
+        this.currentStatusDescription = statusDescription
+    }
+
+    getResultStatusValues(result: Record<string, unknown>, fallbackStatus: string | null, fallbackDescription: string | null): { status: string | null, statusDescription: string | null } {
+        const nextStatus = typeof result.newStatus === 'string'
+            ? result.newStatus
+            : result.newStatus === null
+                ? null
+                : fallbackStatus
+        const nextDescription = typeof result.newStatusDescription === 'string'
+            ? result.newStatusDescription
+            : result.newStatusDescription === null
+                ? null
+                : fallbackDescription
+        return {
+            status: nextStatus,
+            statusDescription: nextDescription
+        }
+    }
+
+    normalizeConfig(config: AutoStatusConfig): AutoStatusConfig {
+        return {
+            presets: Array.isArray(config.presets)
+                ? config.presets
+                    .map((preset) => ({
+                        ...preset,
+                        id: Number(preset.id)
+                    }))
+                    .filter((preset) => Number.isInteger(preset.id) && preset.id >= 1 && preset.id <= 8)
+                : [],
+            schedule: Array.isArray(config.schedule)
+                ? config.schedule.map((entry) => ({
+                    ...entry,
+                    presetId: Number(entry.presetId),
+                    daysOfWeek: Array.isArray(entry.daysOfWeek)
+                        ? entry.daysOfWeek.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+                        : []
+                }))
+                : [],
+            settings: config.settings || {}
+        }
+    }
+
     loadConfig(): AutoStatusConfig {
-        return configManager.getAutoStatusConfig() as unknown as AutoStatusConfig
+        return this.normalizeConfig(configManager.getAutoStatusConfig() as unknown as AutoStatusConfig)
     }
 
     saveConfig(): void {
+        this.config = this.normalizeConfig(this.config)
         configManager.updateAutoStatusConfig(this.config as unknown as Record<string, unknown>)
     }
 
@@ -110,6 +168,10 @@ class AutoStatus {
      */
     start(vrchatApiContainer: VRChatApiContainer): { success: boolean } {
         this.vrchatApi = vrchatApiContainer
+        if (vrchatApiContainer.isAuthenticated()) {
+            const currentStatus = vrchatApiContainer.getCurrentUserStatus()
+            this.syncCurrentStatus(currentStatus.status, currentStatus.statusDescription)
+        }
         this.startScheduleEngine()
         debug.info('[AutoStatus] Service started')
         return { success: true }
@@ -133,6 +195,12 @@ class AutoStatus {
         if (typeof this.onStatusChange === 'function') {
             this.onStatusChange(this.getStatus())
         }
+    }
+
+    syncCurrentStatus(status: string | null, statusDescription: string | null): void {
+        this.currentStatus = status ?? null
+        this.currentStatusDescription = statusDescription ?? null
+        this.notifyStatusChange()
     }
 
     /**
@@ -173,6 +241,7 @@ class AutoStatus {
             this.guardExpiryTimeout = null
         }
     }
+
     /**
      * Handle an external status change detected via VRChat pipeline.
      * Compares incoming status against what ARC last set to determine
@@ -181,9 +250,23 @@ class AutoStatus {
      * @param {string|null} newStatusDescription - Current VRChat status message
      */
     handleExternalStatusChange(newStatus: string | null, newStatusDescription: string | null): void {
-        if (!this.hasLastSetStatus) return
         const normalizedStatus = newStatus ?? null
         const normalizedDescription = newStatusDescription ?? null
+        this.currentStatus = normalizedStatus
+        this.currentStatusDescription = normalizedDescription
+        const withinArcEchoWindow = Date.now() - this.lastArcStatusSetAt <= ARC_STATUS_ECHO_IGNORE_MS
+        const matchesLastSetStatus = normalizedStatus === this.lastSetStatus
+        const matchesLastSetDescription = normalizedDescription === this.lastSetStatusDescription
+
+        if (withinArcEchoWindow && matchesLastSetStatus && matchesLastSetDescription) {
+            if (this.externallySet) {
+                this.externallySet = false
+                this.notifyStatusChange()
+            }
+            debug.info(`[AutoStatus] Ignoring VRChat API status echo from ARC-set status: ${normalizedStatus} — "${normalizedDescription || ''}"`)
+            return
+        }
+
         const statusDiffers = normalizedStatus !== this.lastSetStatus
         const descDiffers = normalizedDescription !== this.lastSetStatusDescription
         if (statusDiffers || descDiffers) {
@@ -195,12 +278,12 @@ class AutoStatus {
             this.notifyStatusChange()
         }
     }
+
     /**
      * Handle an incoming OSC message.
      * Processes two addresses:
      *   /avatar/parameters/ARCOSC/vrc-status/statuspreset (int 0-8) — preset trigger
      *   /avatar/parameters/ARCOSC/vrc-status (int 0-4) — direct status color
-     * @param {Object} oscData - { address, value, type }
      * @returns {boolean} true if the message was consumed by AutoStatus
      */
     handleOscMessage(oscData: OscData): boolean {
@@ -258,11 +341,10 @@ class AutoStatus {
         }
         const result = await this.vrchatApi.setStatus(statusType, null)
         if (result.success) {
+            const applied = this.getResultStatusValues(result, statusType, this.currentStatusDescription)
             this.lastStatusChangeTime = now
             this.lastAppliedPresetId = null
-            this.hasLastSetStatus = true
-            this.lastSetStatus = statusType
-            this.lastSetStatusDescription = null
+            this.recordArcStatusSet(applied.status, applied.statusDescription, now)
             debug.info(`[AutoStatus] Applied direct status: ${statusType} (color ${colorIndex})`)
             this.notifyStatusChange()
         } else {
@@ -278,10 +360,11 @@ class AutoStatus {
      * @returns {Promise<Object>}
      */
     async applyPreset(presetId: number, source: string = 'manual'): Promise<{ success: boolean, error?: string }> {
-        const preset = this.config.presets.find(p => p.id === presetId)
+        const normalizedPresetId = Number(presetId)
+        const preset = this.config.presets.find(p => p.id === normalizedPresetId)
         if (!preset) {
-            debug.warn(`[AutoStatus] Preset ${presetId} not found`)
-            return { success: false, error: `Preset ${presetId} not found` }
+            debug.warn(`[AutoStatus] Preset ${normalizedPresetId} not found`)
+            return { success: false, error: `Preset ${normalizedPresetId} not found` }
         }
         if (!this.vrchatApi) {
             debug.warn('[AutoStatus] VRChat API not available')
@@ -297,28 +380,27 @@ class AutoStatus {
         }
         // External override protection (skip for manual triggers)
         if (source !== 'manual' && this.externallySet && !this.config.settings?.alwaysAllowOverride) {
-            debug.info(`[AutoStatus] Skipping preset ${presetId} — status was changed externally (source: ${source})`)
+            debug.info(`[AutoStatus] Skipping preset ${normalizedPresetId} — status was changed externally (source: ${source})`)
             return { success: false, error: 'Status was changed externally' }
         }
         // Cooldown check
         const cooldown = (this.config.settings?.cooldownSeconds || 10) * 1000
         const now = Date.now()
         if (now - this.lastStatusChangeTime < cooldown) {
-            debug.info(`[AutoStatus] Cooldown active, skipping preset ${presetId}`)
+            debug.info(`[AutoStatus] Cooldown active, skipping preset ${normalizedPresetId}`)
             return { success: false, error: 'Cooldown active' }
         }
 
         const result = await this.vrchatApi.setStatus(preset.statusType || null, preset.statusMessage || null)
         if (result.success) {
+            const applied = this.getResultStatusValues(result, preset.statusType || null, preset.statusMessage || null)
             this.lastStatusChangeTime = now
-            this.lastAppliedPresetId = presetId
-            this.hasLastSetStatus = true
-            this.lastSetStatus = preset.statusType || null
-            this.lastSetStatusDescription = preset.statusMessage || null
-            debug.info(`[AutoStatus] Applied preset ${presetId} (${preset.name}): ${preset.statusType} — source: ${source}`)
+            this.lastAppliedPresetId = normalizedPresetId
+            this.recordArcStatusSet(applied.status, applied.statusDescription, now)
+            debug.info(`[AutoStatus] Applied preset ${normalizedPresetId} (${preset.name}): ${preset.statusType} — source: ${source}`)
             this.notifyStatusChange()
         } else {
-            debug.error(`[AutoStatus] Failed to apply preset ${presetId}: ${result.error}`)
+            debug.error(`[AutoStatus] Failed to apply preset ${normalizedPresetId}: ${result.error}`)
         }
         return result
     }
@@ -326,11 +408,12 @@ class AutoStatus {
     // --- Preset Management ---
 
     getPresets(): AutoStatusPreset[] {
+        this.config = this.normalizeConfig(this.config)
         return JSON.parse(JSON.stringify(this.config.presets))
     }
 
     setPreset(presetData: AutoStatusPreset): { success: boolean, error?: string, preset?: AutoStatusPreset } {
-        const id = presetData.id
+        const id = Number(presetData.id)
         if (id < 1 || id > 8) return { success: false, error: 'Preset ID must be 1-8' }
         const statusType = presetData.statusType === '' ? null : presetData.statusType
         if (!VALID_STATUSES.includes(statusType)) {
@@ -356,11 +439,12 @@ class AutoStatus {
     }
 
     deletePreset(presetId: number): { success: boolean, error?: string } {
-        const idx = this.config.presets.findIndex(p => p.id === presetId)
+        const normalizedPresetId = Number(presetId)
+        const idx = this.config.presets.findIndex(p => p.id === normalizedPresetId)
         if (idx < 0) return { success: false, error: 'Preset not found' }
         this.config.presets.splice(idx, 1)
         // Remove schedule entries referencing this preset
-        this.config.schedule = this.config.schedule.filter(s => s.presetId !== presetId)
+        this.config.schedule = this.config.schedule.filter(s => s.presetId !== normalizedPresetId)
         this.saveConfig()
         return { success: true }
     }
@@ -368,6 +452,7 @@ class AutoStatus {
     // --- Schedule Management ---
 
     getSchedule(): AutoStatusScheduleEntry[] {
+        this.config = this.normalizeConfig(this.config)
         return JSON.parse(JSON.stringify(this.config.schedule))
     }
 
@@ -378,8 +463,9 @@ class AutoStatus {
         if (!entry.startTime || !entry.endTime) {
             return { success: false, error: 'startTime and endTime are required (HH:mm)' }
         }
-        if (!this.config.presets.find(p => p.id === entry.presetId)) {
-            return { success: false, error: `Preset ${entry.presetId} not found` }
+        const normalizedPresetId = Number(entry.presetId)
+        if (!this.config.presets.find(p => p.id === normalizedPresetId)) {
+            return { success: false, error: `Preset ${normalizedPresetId} not found` }
         }
         const scheduleEntry: AutoStatusScheduleEntry = {
             id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
@@ -387,7 +473,7 @@ class AutoStatus {
             daysOfWeek: entry.daysOfWeek,
             startTime: entry.startTime,
             endTime: entry.endTime,
-            presetId: entry.presetId,
+            presetId: normalizedPresetId,
             fallbackStatusType: entry.fallbackStatusType || null,
             enabled: entry.enabled !== false
         }
@@ -399,7 +485,11 @@ class AutoStatus {
     updateScheduleEntry(entryId: string, updates: Partial<AutoStatusScheduleEntry>): { success: boolean, error?: string, entry?: AutoStatusScheduleEntry } {
         const idx = this.config.schedule.findIndex(s => s.id === entryId)
         if (idx < 0) return { success: false, error: 'Schedule entry not found' }
-        this.config.schedule[idx] = { ...this.config.schedule[idx], ...updates }
+        const normalizedUpdates = {
+            ...updates,
+            ...(updates.presetId !== undefined ? { presetId: Number(updates.presetId) } : {})
+        }
+        this.config.schedule[idx] = { ...this.config.schedule[idx], ...normalizedUpdates }
         this.saveConfig()
         return { success: true, entry: this.config.schedule[idx] }
     }
@@ -493,11 +583,11 @@ class AutoStatus {
         }
         const result = await this.vrchatApi.setStatus(statusType, null)
         if (result.success) {
-            this.lastStatusChangeTime = Date.now()
+            const now = Date.now()
+            const applied = this.getResultStatusValues(result, statusType, this.currentStatusDescription)
+            this.lastStatusChangeTime = now
             this.lastAppliedPresetId = null
-            this.hasLastSetStatus = true
-            this.lastSetStatus = statusType
-            this.lastSetStatusDescription = null
+            this.recordArcStatusSet(applied.status, applied.statusDescription, now)
             debug.info(`[AutoStatus] Applied schedule fallback status: ${statusType}`)
             this.notifyStatusChange()
         } else {
@@ -529,6 +619,8 @@ class AutoStatus {
         avatarGuardActive: boolean
         vrchatApiAvailable: boolean
         externallySet: boolean
+        currentStatus: string | null
+        currentStatusDescription: string | null
     } {
         return {
             lastAppliedPresetId: this.lastAppliedPresetId,
@@ -539,7 +631,9 @@ class AutoStatus {
             scheduleCount: this.config.schedule.length,
             avatarGuardActive: Date.now() - this.lastAvatarChangeTime < AVATAR_CHANGE_GUARD_MS,
             vrchatApiAvailable: !!(this.vrchatApi && this.vrchatApi.isAuthenticated()),
-            externallySet: this.externallySet
+            externallySet: this.externallySet,
+            currentStatus: this.currentStatus,
+            currentStatusDescription: this.currentStatusDescription
         }
     }
 

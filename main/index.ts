@@ -54,6 +54,15 @@ function updateSplashProgress(progress: number, message: string) {
     splashWindow.webContents.send('splash-progress', { progress, message })
   }
 }
+
+function syncAutoStatusWithVrchatAccount() {
+  if (!autoStatusContainer || !vrchatApiContainer) {
+    return
+  }
+  const currentStatus = vrchatApiContainer.getCurrentUserStatus()
+  autoStatusContainer.syncCurrentStatus(currentStatus.status, currentStatus.statusDescription)
+}
+
 function createWindow() {
   // Create splash window first
   splashWindow = new BrowserWindow({
@@ -1562,6 +1571,9 @@ ipcMain.handle('vrchatapi-login', async (_event, credentials: any) => {
     }
     const { username, password, rememberCredentials } = credentials
     const result = await vrchatApiContainer.login(username, password, rememberCredentials)
+    if (result?.success) {
+      syncAutoStatusWithVrchatAccount()
+    }
     return result
   } catch (error: any) {
     debug.error(`VRChat API login error: ${error.message}`)
@@ -1575,6 +1587,9 @@ ipcMain.handle('vrchatapi-verify-2fa', async (_event, data: any) => {
     }
     const { code, type } = data
     const result = await vrchatApiContainer.verify2FA(code, type)
+    if (result?.success) {
+      syncAutoStatusWithVrchatAccount()
+    }
     return result
   } catch (error: any) {
     debug.error(`VRChat API 2FA verification error: ${error.message}`)
@@ -1587,6 +1602,9 @@ ipcMain.handle('vrchatapi-logout', async () => {
       return { success: false, error: 'VRChat API container not initialized' }
     }
     const result = await vrchatApiContainer.logout()
+    if (result?.success && autoStatusContainer) {
+      autoStatusContainer.syncCurrentStatus(null, null)
+    }
     return result
   } catch (error: any) {
     debug.error(`VRChat API logout error: ${error.message}`)
@@ -1599,6 +1617,9 @@ ipcMain.handle('vrchatapi-restore-session', async () => {
       return { success: false, error: 'VRChat API container not initialized' }
     }
     const result = await vrchatApiContainer.restoreSession()
+    if (result?.success) {
+      syncAutoStatusWithVrchatAccount()
+    }
     return result
   } catch (error: any) {
     debug.error(`VRChat API session restore error: ${error.message}`)

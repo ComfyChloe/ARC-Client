@@ -23,12 +23,18 @@ const activePreset = computed(() => {
   return presets.value.find((preset) => preset.id === status.value.lastAppliedPresetId) ?? null
 })
 
-const activeStatusType = computed(() => {
-  const presetId = status.value.lastAppliedPresetId
-  if (!presetId) return null
-  const preset = presets.value.find((entry) => entry.id === presetId) ?? null
-  if (!preset) return null
-  return STATUS_TYPES.find((type) => type.value === preset.statusType) ?? null
+const currentStatusType = computed(() => {
+  return STATUS_TYPES.find((type) => type.value === status.value.currentStatus) ?? null
+})
+
+const bannerTitle = computed(() => {
+  return activePreset.value?.name ?? currentStatusType.value?.label ?? 'No Active Preset'
+})
+
+const bannerSubtitle = computed(() => {
+  if (status.value.currentStatusDescription) return status.value.currentStatusDescription
+  if (currentStatusType.value) return currentStatusType.value.label
+  return 'Waiting for trigger...'
 })
 
 const newSchedule = ref({
@@ -136,16 +142,10 @@ async function saveScheduleName(entryId: string) {
 
     <div class="autostatus-banner">
       <div class="autostatus-banner-left">
-        <div class="autostatus-banner-icon">{{ activeStatusType?.icon ?? '\u26AA' }}</div>
+        <div class="autostatus-banner-icon">{{ currentStatusType?.icon ?? '\u26AA' }}</div>
         <div>
-          <div class="autostatus-banner-title">{{ activePreset?.name ?? 'No Active Preset' }}</div>
-          <div class="autostatus-banner-subtitle">
-            <template v-if="activePreset">
-              {{ activeStatusType?.label ?? activePreset.statusType }}
-              <template v-if="activePreset.statusMessage"> — "{{ activePreset.statusMessage }}"</template>
-            </template>
-            <template v-else>Waiting for trigger...</template>
-          </div>
+          <div class="autostatus-banner-title">{{ bannerTitle }}</div>
+          <div class="autostatus-banner-subtitle">{{ bannerSubtitle }}</div>
         </div>
       </div>
       <div class="autostatus-banner-right">
