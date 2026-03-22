@@ -1,6 +1,6 @@
 {
   "name": "arc-osc-client",
-  "version": "0.90.2",
+  "version": "0.92.0",
   "author": "ComfyChloe",
   "description": "Standalone OSC Client for ARC-OSC",
   "main": "./out/main/index.js",
@@ -18,8 +18,7 @@
   "scripts": {
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "postbuild": "electron-builder",
+    "build": "electron-vite build && electron-builder --dir",
     "pack": "electron-builder --dir",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
@@ -68,13 +67,9 @@
       "userdata"
     ],
     "win": {
-      "target": "portable",
+      "target": "dir",
       "icon": "Assets/ARC.ico"
     },
-    "compression": "maximum",
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+    "compression": "maximum"
   }
 }

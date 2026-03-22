@@ -63,6 +63,10 @@ function syncAutoStatusWithVrchatAccount() {
   autoStatusContainer.syncCurrentStatus(currentStatus.status, currentStatus.statusDescription)
 }
 
+function getAssetPath(...segments: string[]) {
+  return path.join(app.getAppPath(), ...segments)
+}
+
 function createWindow() {
   // Create splash window first
   splashWindow = new BrowserWindow({
@@ -94,7 +98,7 @@ function createWindow() {
       webviewTag: true,
       preload: path.join(__dirname, '../preload/index.js')
     },
-    icon: path.join(__dirname, '../../Assets', 'ARC.ico'),
+    icon: getAssetPath('Assets', 'ARC.ico'),
     title: 'ARC-OSC Client',
     show: false // Start hidden so we can control when it appears
   })
