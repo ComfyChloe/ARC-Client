@@ -243,7 +243,11 @@ export function useOscLeash() {
       status.value = { ...status.value, ...data }
     })
   })
-  onUnmounted(stopPolling)
+  onUnmounted(() => {
+    stopPolling()
+    api.removeAllListeners('oscleash-movement-data')
+    api.removeAllListeners('oscleash-status-update')
+  })
 
   return {
     status,

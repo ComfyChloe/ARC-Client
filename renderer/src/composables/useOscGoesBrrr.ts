@@ -131,7 +131,10 @@ export function useOscGoesBrrr() {
       status.value = { ...defaultStatus, ...data }
     })
   })
-  onUnmounted(stopPolling)
+  onUnmounted(() => {
+    stopPolling()
+    api.removeAllListeners('ogb-status-update')
+  })
 
   return {
     status,

@@ -134,7 +134,10 @@ export function useHyperate() {
       }
     })
   })
-  onUnmounted(stopPolling)
+  onUnmounted(() => {
+    stopPolling()
+    api.removeAllListeners('hyperate-update')
+  })
 
   return {
     status,

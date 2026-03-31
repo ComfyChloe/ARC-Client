@@ -1,4 +1,4 @@
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
 
 export type FeedbackType = 'feature' | 'bug' | 'improvement' | 'other'
@@ -123,6 +123,9 @@ export function useFeedback() {
     await refreshList()
     await refreshStats()
     api.onFeedbackUpdate(handleFeedbackUpdate)
+  })
+  onUnmounted(() => {
+    api.removeAllListeners('feedback-update')
   })
 
   return {

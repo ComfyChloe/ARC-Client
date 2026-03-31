@@ -1,4 +1,4 @@
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
 
 export interface StatusType {
@@ -116,6 +116,9 @@ export function useAutoStatus() {
     api.onAutoStatusUpdate((data: any) => {
       status.value = { ...status.value, ...data }
     })
+  })
+  onUnmounted(() => {
+    api.removeAllListeners('autostatus-update')
   })
 
   return {

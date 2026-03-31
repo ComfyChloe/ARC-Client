@@ -12,6 +12,7 @@ const BUFFER_SIZE = 100
 const FLUSH_INTERVAL = 1000
 const MAX_ENTRIES = 2000
 const FLOAT_THROTTLE_INTERVAL = 750
+const MAX_FLOAT_TRACK = 1500
 
 // Module-level state — persists across navigation, never torn down
 const receivedLogs = ref<LogEntry[]>([])
@@ -47,6 +48,14 @@ export function useOscLogs() {
     const now = Date.now()
     const lastTime = lastFloatLogTimes.get(key) ?? 0
     lastFloatValues.set(key, { type, address, value, connectionId, timestamp: now })
+    if (lastFloatLogTimes.size > MAX_FLOAT_TRACK) {
+      const pruneCount = Math.floor(MAX_FLOAT_TRACK * 0.1)
+      const sorted = [...lastFloatLogTimes.entries()].sort((a, b) => a[1] - b[1])
+      for (let i = 0; i < pruneCount; i++) {
+        lastFloatLogTimes.delete(sorted[i][0])
+        lastFloatValues.delete(sorted[i][0])
+      }
+    }
     const existing = pendingFloatTimeouts.get(key)
     if (existing) clearTimeout(existing)
     if (now - lastTime >= FLOAT_THROTTLE_INTERVAL) {
@@ -105,7 +114,13 @@ export function useOscLogs() {
   function clearReceived() { receivedLogs.value = [] }
   function clearForwarded() { forwardedLogs.value = [] }
   function clearArcReceived() { arcReceivedLogs.value = [] }
-  function clearAll() { clearReceived(); clearForwarded(); clearArcReceived() }
+  function clearAll() {
+    clearReceived(); clearForwarded(); clearArcReceived()
+    lastFloatLogTimes.clear()
+    lastFloatValues.clear()
+    pendingFloatTimeouts.forEach(t => clearTimeout(t))
+    pendingFloatTimeouts.clear()
+  }
 
   async function initialize() {
     if (oscLogsInitialized) return

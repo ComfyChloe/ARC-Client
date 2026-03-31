@@ -1,4 +1,4 @@
-import { ref, shallowRef, onMounted, onUnmounted } from 'vue'
+import { ref, shallowRef, triggerRef, onMounted } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
 import { debugLog } from './useDebugLog'
 
@@ -40,7 +40,6 @@ const error = ref<string | null>(null)
 const savedUsername = ref('')
 const savedPassword = ref('')
 const savePasswordChecked = ref(false)
-let paramUpdateTimer: ReturnType<typeof setTimeout> | null = null
 let serverConnectionInitialized = false
 let serverConnectionInitPromise: Promise<void> | null = null
 
@@ -177,12 +176,8 @@ export function useServerConnection() {
       })
       api.onWebSocketParameterUpdate((data: any) => {
         if (data.parameters) {
-          parameters.value = { ...parameters.value, ...data.parameters }
-          if (paramUpdateTimer) clearTimeout(paramUpdateTimer)
-          paramUpdateTimer = setTimeout(() => {
-            parameters.value = { ...parameters.value }
-            paramUpdateTimer = null
-          }, 250)
+          Object.assign(parameters.value, data.parameters)
+          triggerRef(parameters)
         }
       })
       api.onWebSocketPanelConnectionsUpdate((data: any) => {
@@ -207,9 +202,6 @@ export function useServerConnection() {
 
   onMounted(async () => {
     await initialize()
-  })
-  onUnmounted(() => {
-    if (paramUpdateTimer) clearTimeout(paramUpdateTimer)
   })
 
   return {
