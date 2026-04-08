@@ -6,7 +6,7 @@
 
 [![Version](https://img.shields.io/badge/version-0.90.2-blue.svg)](https://github.com/ComfyChloe/ARC-Client)
 [![Electron](https://img.shields.io/badge/electron-33.0.0-47848F.svg?logo=electron&logoColor=white)](https://electronjs.org/)
-[![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-ComfyChloe%20Non--Commercial%20Copyleft%20License%201.2-lightgrey.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-Open%20Beta-brightgreen.svg)]()
 
 *Seamlessly bridge VRChat OSC with the ARC, privacy-first, open-source, and fully transparent.*
@@ -428,9 +428,9 @@ This project is currently in **Open beta**. If you're interested in contributing
 
 ## 📄 License
 
-This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** (CC BY-NC-SA 4.0) — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **ComfyChloe Non-Commercial Copyleft License 1.2** — see the [LICENSE](LICENSE) file for details.
 
-This means you are free to share and adapt this work for non-commercial purposes, as long as you give appropriate credit and distribute any derivatives under the same license.
+This means you may use, share, and modify the code, but redistributed versions must remain under the same license, must include source code, and may not be sold or redistributed as closed-source software without separate written permission.
 
 ---
 
