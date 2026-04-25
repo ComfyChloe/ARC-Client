@@ -262,10 +262,10 @@ function linksBreakdown(panel: PanelInfo): string {
       <div v-if="isAuthenticated && isConnected" class="sidebar-section">
         <h3>Avatar - (Server Side)</h3>
         <div class="avatar-info">
-          <div id="avatar-name" class="avatar-name-sidebar">{{ currentAvatar.displayName }}</div>
-          <div id="avatar-id" class="avatar-id-sidebar">{{ currentAvatar.id }}</div>
+          <div id="avatar-name" class="avatar-name-sidebar">{{ currentAvatar?.displayName ?? 'No avatar detected' }}</div>
+          <div id="avatar-id" class="avatar-id-sidebar">{{ currentAvatar ? currentAvatar.id : 'ID: Not available' }}</div>
         </div>
-        <button class="btn btn-warning sidebar-button" type="button" @click="unloadAvatar">Unload Avatar</button>
+        <button v-if="currentAvatar" class="btn btn-warning sidebar-button" type="button" @click="unloadAvatar">Unload Avatar</button>
       </div>
 
       <div class="sidebar-section" id="auth-section">
