@@ -259,7 +259,7 @@ function linksBreakdown(panel: PanelInfo): string {
         <router-link to="/settings" class="btn btn-primary nav-link" :class="{ active: isActive('/settings') }">Settings</router-link>
       </div>
 
-      <div v-if="currentAvatar" class="sidebar-section">
+      <div v-if="isAuthenticated && isConnected" class="sidebar-section">
         <h3>Avatar - (Server Side)</h3>
         <div class="avatar-info">
           <div id="avatar-name" class="avatar-name-sidebar">{{ currentAvatar.displayName }}</div>
