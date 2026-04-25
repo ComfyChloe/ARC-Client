@@ -462,6 +462,9 @@ body {
 .osc-page-legacy .oscquery-status-text.is-inactive {
     color: #e74c3c;
 }
+.osc-page-legacy .oscquery-status-text.is-restarting {
+    color: #f39c12;
+}
 .osc-page-legacy .oscquery-legacy-box {
     margin-top: 20px;
     padding: 15px;

@@ -565,6 +565,11 @@ async function initOscQueryService() {
     } else {
       debug.info('Reusing existing OSC Query service instance')
     }
+    // Stop the service if it's running before re-initializing so HTTP and UDP
+    // servers are fully torn down before the new bind address is applied
+    if (oscQueryService.isRunning) {
+      await oscQueryService.stop()
+    }
     // Initialize with legacy port
     await oscQueryService.initialize(
       serverConfig.legacyOscPort,
@@ -708,6 +713,7 @@ ipcMain.handle('set-config', (_event, newConfig: any) => {
   // Restart OSC-Query if bind address changed
   if (oscQueryBindAddressChanged) {
     debug.info('OSC-Query bind address changed, restarting OSC-Query service')
+    sendToRenderer('oscquery-status', { status: 'restarting' })
     initOscQueryService()
   }
   if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
@@ -776,7 +782,8 @@ ipcMain.handle('oscquery-reset-all', async () => {
       await oscQueryService.stop()
     }
     oscQueryService.resetAll()
-    debug.info('OSC Query service reset - will fully re-initialize on next start')
+    debug.info('OSC Query service reset - re-initializing with new ports')
+    await initOscQueryService()
     return { success: true }
   }
   return { success: false, error: 'OSC Query service not initialized' }

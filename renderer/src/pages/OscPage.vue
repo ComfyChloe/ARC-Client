@@ -7,6 +7,7 @@ const api = useElectronAPI()
 
 const {
   queryRunning,
+  queryRestarting,
   localPort, targetPort, targetAddress, oscQueryBindAddress,
   additionalConnections, unsubscriptions, blockedParams,
   updateOscPorts,
@@ -25,7 +26,10 @@ const sendMessage = ref<string | null>(null)
 
 const incomingConnections = computed(() => additionalConnections.value.filter((conn) => conn.type === 'incoming'))
 const outgoingConnections = computed(() => additionalConnections.value.filter((conn) => conn.type === 'outgoing'))
-const queryStatusText = computed(() => queryRunning.value ? 'OSC-Query service is active and listening to all incoming OSC data' : 'OSC-Query service is currently stopped')
+const queryStatusText = computed(() => {
+  if (queryRestarting.value) return 'OSC-Query service is restarting...'
+  return queryRunning.value ? 'OSC-Query service is active and listening to all incoming OSC data' : 'OSC-Query service is currently stopped'
+})
 const blockedEmpty = computed(() => blockedParams.value.length === 0)
 const blockedCountLabel = computed(() => `${blockedParams.value.length} blocked path(s)`)
 
@@ -238,8 +242,8 @@ async function handleSendOsc() {
       <p class="osc-settings-copy">
         Automatic service discovery for VRChat using OSC-Query protocol. <strong>By default, all OSC data is received (/*)</strong>.
       </p>
-      <p class="oscquery-status-text" :class="queryRunning ? 'is-active' : 'is-inactive'">
-        {{ queryRunning ? '✓' : '●' }} {{ queryStatusText }}
+      <p class="oscquery-status-text" :class="queryRestarting ? 'is-restarting' : queryRunning ? 'is-active' : 'is-inactive'">
+        {{ queryRestarting ? '↻' : queryRunning ? '✓' : '●' }} {{ queryStatusText }}
       </p>
 
       <div class="oscquery-box oscquery-legacy-box">

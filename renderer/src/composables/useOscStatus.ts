@@ -25,6 +25,7 @@ const oscToggling = ref(false)
 const oscPort = ref(0)
 const oscStatus = ref<'connected' | 'disabled' | 'stopping' | 'error' | 'off'>('off')
 const queryRunning = ref(false)
+const queryRestarting = ref(false)
 const localPort = ref(9001)
 const targetPort = ref(9000)
 const targetAddress = ref('127.0.0.1')
@@ -221,12 +222,19 @@ export function useOscStatus() {
       api.onOscQueryStatus((data: any) => {
         if (data.status === 'started') {
           queryRunning.value = true
+          queryRestarting.value = false
           debugLog(`OSC-Query service started on HTTP port ${data.httpPort}`)
           loadUnsubscriptions()
+        } else if (data.status === 'restarting') {
+          queryRunning.value = false
+          queryRestarting.value = true
+          debugLog('OSC-Query service restarting...')
         } else if (data.status === 'error') {
+          queryRestarting.value = false
           debugLog(`OSC-Query service error: ${data.error}`, 'error')
         } else if (data.status === 'stopped') {
           queryRunning.value = false
+          queryRestarting.value = false
           debugLog('OSC-Query service stopped')
         }
       })
@@ -248,6 +256,7 @@ export function useOscStatus() {
     oscPort,
     oscStatus,
     queryRunning,
+    queryRestarting,
     localPort,
     targetPort,
     targetAddress,
