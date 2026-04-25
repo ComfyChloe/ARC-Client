@@ -8,8 +8,8 @@ import { useOscLogs } from './composables/useOscLogs'
 import { useVRChatAPI } from './composables/useVRChatAPI'
 
 const route = useRoute()
-const extrasOpen = ref(true)
-const vrchatOpen = ref(true)
+const extrasOpen = ref(false)
+const vrchatOpen = ref(false)
 
 const {
   snowEnabled,
@@ -66,7 +66,7 @@ watch(savedPassword, (value) => {
 
 watch(() => route.path, (path) => {
   if (path !== '/logs' && path !== '/settings' && path !== '/' && path !== '/osc') {
-    extrasOpen.value = true
+    // extrasOpen.value = true
   }
   if (vrchatPaths.includes(path)) {
     vrchatOpen.value = true
