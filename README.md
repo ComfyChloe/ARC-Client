@@ -4,9 +4,9 @@
 
 **The transparent, feature-rich desktop bridge for VRChat remote control**
 
-[![Version](https://img.shields.io/badge/version-0.86.5-blue.svg)](https://github.com/ComfyChloe/ARC-Client)
-[![Electron](https://img.shields.io/badge/electron-28.0.0-47848F.svg?logo=electron&logoColor=white)](https://electronjs.org/)
-[![License](https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.90.2-blue.svg)](https://github.com/ComfyChloe/ARC-Client)
+[![Electron](https://img.shields.io/badge/electron-33.0.0-47848F.svg?logo=electron&logoColor=white)](https://electronjs.org/)
+[![License](https://img.shields.io/badge/license-ComfyChloe%20Non--Commercial%20Copyleft%20License%201.2-lightgrey.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-Open%20Beta-brightgreen.svg)]()
 
 *Seamlessly bridge VRChat OSC with the ARC, privacy-first, open-source, and fully transparent.*
@@ -21,7 +21,7 @@
 
 ## 📋 About
 
-ARC-OSC Client is a standalone Electron desktop application that serves as the bridge between VRChat and the ARC-OSC server. It enables real-time avatar parameter synchronization, heart rate streaming and VRChat API integration
+ARC-OSC Client is a standalone Electron desktop application that serves as the bridge between VRChat and the ARC-OSC server. It enables real-time avatar parameter synchronization, heart rate streaming, VRChat API integration, and a Vue 3 + TypeScript desktop interface built on Electron Vite.
 
 > **🔒 Transparency First**: This client's source code is public to ensure users know exactly what they're running. Privacy matters.
 
@@ -110,15 +110,49 @@ Stream your heart rate directly into VRChat avatar parameters using **HypeRate**
 ### 🎮 VRChat API Integration
 Optional VRChat API login for enhanced features. Access your friends list, current instance information, and more — with full 2FA support.
 
-- Auto-Login
+- Account statistics dashboard
+- Auto-Status integration
 - Auto-Inviter (Future releases)
-- Auto-Status (Future releases)
 
 <details>
 <summary>📸 Preview</summary>
 
 <!-- Add your VRChat API screenshot here -->
 *Screenshot placeholder: VRChat API Panel*
+
+</details>
+
+### 🤖 Auto-Status Automation
+Manage VRChat status presets directly from the client and trigger them through OSC or scheduled time windows.
+
+- Configure up to 8 status presets
+- Set status color and optional status message
+- Trigger presets from OSC parameters
+- Schedule preset windows with fallback statuses
+- Detect externally changed statuses and avoid overwriting them
+- Load the current VRChat account status on startup when VRChat API is available
+
+<details>
+<summary>📸 Preview</summary>
+
+<!-- Add your Auto-Status screenshot here -->
+*Screenshot placeholder: Auto-Status Panel*
+
+</details>
+
+### 🗓️ VRC Timeline
+Browse VRChat community events directly inside the client through the integrated VRC Timeline view.
+
+- Embedded `vrc.tl` webview
+- Safe external-link interception
+- Quick copy/open actions for external URLs
+- Experimental in-client browsing support
+
+<details>
+<summary>📸 Preview</summary>
+
+<!-- Add your VRC Timeline screenshot here -->
+*Screenshot placeholder: VRC Timeline Panel*
 
 </details>
 
@@ -210,11 +244,11 @@ npm run dev
 ### Build for Production
 
 ```powershell
-# Create distributable package
+# Create unpacked Windows distribution
 npm run build
 ```
 
-The built application will be available in the `dist/` folder.
+The built application will be available in the `dist/win-unpacked/` folder. The normal build process does not create an all-in-one installer.
 
 ---
 
@@ -344,7 +378,7 @@ Explore the ARC-OSC Client interface through these screenshots:
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │    VRChat       │────▶│  ARC-OSC Client  │────▶│  ARC-OSC Server │
-│  (OSC @ 9001)   │◀────│   (Electron)     │◀────│   (WebSocket)   │
+│  (OSC @ 9001)   │◀────│ (Electron/Vue/TS)│◀────│   (WebSocket)   │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
          │                      │
          │                      ├──── HypeRate WebSocket
@@ -358,27 +392,30 @@ Explore the ARC-OSC Client interface through these screenshots:
 
 ```
 ARC-Client/
-├── main.js              # Electron main process
-├── preload.js           # Secure preload script
+├── main/                # Electron main process (TypeScript)
+│   ├── index.ts         # App entry and IPC registration
+│   ├── containers/      # Feature containers and integrations
+│   ├── services/        # Core services (OSC, WebSocket, config, encryption)
+│   └── types/           # Shared type declarations
+├── preload/             # Secure preload bridge (TypeScript)
+│   └── index.ts
+├── renderer/            # Electron renderer root
+│   ├── index.html       # Main renderer entry
+│   ├── splash.html      # Startup splash screen
+│   └── src/             # Vue 3 + TypeScript application
+│       ├── App.vue      # Shell and navigation
+│       ├── pages/       # Routed feature pages
+│       ├── composables/ # Shared feature state / IPC wrappers
+│       └── assets/      # Global styles
+├── electron.vite.config.ts # Electron Vite build configuration
 ├── package.json         # Dependencies & scripts
 ├── secrets.json         # API keys (user-created)
-├── Containers/          # Feature modules
-│   ├── Hyperate.js      # HypeRate integration
-│   ├── OscGoesBrrr.js   # Haptic device integration
-│   ├── OscGoesBrrr/     # OSCGoesBrrr submodules
-│   │   ├── ButtplugClient.js  # Buttplug.io protocol
-│   │   └── GameDevice.js      # Avatar contact tracking
-│   ├── OSCLeash.js      # Leash locomotion control
-│   ├── VRC-API.js       # VRChat API wrapper
-│   └── ...
-├── utils/               # Utility modules
-│   ├── oscService.js    # OSC communication
-│   ├── oscQueryService.js  # OSC-Query protocol
-│   ├── websocketManager.js # ARC server connection
-│   └── ...
-├── renderer/            # UI components
+├── tsconfig.json        # Shared TypeScript config
+├── tsconfig.node.json   # Main/preload TypeScript config
+├── tsconfig.web.json    # Renderer TypeScript config
 ├── Guides/              # User documentation
-└── userdata/            # Persistent user configuration
+├── userdata/            # Persistent user configuration
+└── dist/                # Built output (`win-unpacked`)
 ```
 
 ---
@@ -391,9 +428,9 @@ This project is currently in **Open beta**. If you're interested in contributing
 
 ## 📄 License
 
-This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** (CC BY-NC-SA 4.0) — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **ComfyChloe Non-Commercial Copyleft License 1.2** — see the [LICENSE](LICENSE) file for details.
 
-This means you are free to share and adapt this work for non-commercial purposes, as long as you give appropriate credit and distribute any derivatives under the same license.
+This means you may use, share, and modify the code, but redistributed versions must remain under the same license, must include source code, and may not be sold or redistributed as closed-source software without separate written permission.
 
 ---
 
