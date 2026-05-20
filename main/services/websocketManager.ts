@@ -63,7 +63,14 @@ class WebSocketManager {
             const { app } = require('electron')
             const clientVersion = app.getVersion()
             const socketUrl = this.connectionConfig.serverUrl
-            const isDevMode = !socketUrl.includes('arcosc.app') && !socketUrl.includes('beta.arcosc.app')
+            // Disable TLS verification only when (a) connecting to a non-prod
+            // host AND (b) running an unpackaged dev build. Packaged builds
+            // ALWAYS verify, regardless of the host string \u2014 this prevents a
+            // distributed binary from silently accepting attacker certs if
+            // someone points it at a custom host.
+            const looksLikeDevHost = !socketUrl.includes('arcosc.app') && !socketUrl.includes('beta.arcosc.app')
+            const isPackaged = !!app.isPackaged
+            const allowInsecure = looksLikeDevHost && !isPackaged
             this.socket = io(socketUrl, {
                 query: { username, password, clientVersion },
                 transports: ['websocket'],
@@ -72,7 +79,7 @@ class WebSocketManager {
                 reconnectionDelay: this.connectionConfig.reconnectDelay,
                 reconnectionAttempts: this.connectionConfig.maxReconnectAttempts,
                 secure: socketUrl.startsWith('wss://'),
-                rejectUnauthorized: !isDevMode,
+                rejectUnauthorized: !allowInsecure,
                 forceNew: true
             })
             await this.setupEventHandlers()

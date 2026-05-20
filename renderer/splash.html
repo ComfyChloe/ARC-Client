@@ -207,34 +207,30 @@
     <div class="version" id="version">v0.0.0</div>
 
     <script>
-        const { ipcRenderer } = require('electron');
-        // Listen for progress updates from main process
-        ipcRenderer.on('splash-progress', (event, data) => {
-            const { progress, message } = data;
-            const progressBar = document.getElementById('progressBar');
-            const loadingText = document.getElementById('loadingText');
-            console.log(`Splash progress: ${progress}% - ${message}`);
-            if (progressBar && progress !== undefined) {
-                progressBar.style.width = `${progress}%`;
-            }
-            if (loadingText && message) {
-                loadingText.innerHTML = `<span class="loading-dots">${message}</span>`;
-            }
-        });
-        // Listen for version updates
-        ipcRenderer.on('splash-version', (event, version) => {
-            const versionElement = document.getElementById('version');
-            if (versionElement) {
-                versionElement.textContent = `v${version}`;
-            }
-        });
-        // Request version on load
-        ipcRenderer.invoke('get-client-version').then(version => {
-            const versionElement = document.getElementById('version');
-            if (versionElement) {
-                versionElement.textContent = `v${version}`;
-            }
-        });
+        // splashAPI is exposed by preload/splash.ts via contextBridge.
+        // Splash window runs sandboxed; no direct Node access here.
+        const api = window.splashAPI;
+        if (api) {
+            api.onProgress((data) => {
+                const { progress, message } = data || {};
+                const progressBar = document.getElementById('progressBar');
+                const loadingText = document.getElementById('loadingText');
+                if (progressBar && progress !== undefined) {
+                    progressBar.style.width = `${progress}%`;
+                }
+                if (loadingText && message) {
+                    loadingText.innerHTML = `<span class="loading-dots">${message}</span>`;
+                }
+            });
+            api.onVersion((version) => {
+                const versionElement = document.getElementById('version');
+                if (versionElement) versionElement.textContent = `v${version}`;
+            });
+            api.getVersion().then((version) => {
+                const versionElement = document.getElementById('version');
+                if (versionElement) versionElement.textContent = `v${version}`;
+            }).catch(() => { /* ignore */ });
+        }
     </script>
 </body>
 </html>

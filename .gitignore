@@ -31,3 +31,4 @@ dist/
 out/
 userdata/
 secrets.json
+.codegraph

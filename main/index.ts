@@ -79,8 +79,12 @@ function createWindow() {
     resizable: false,
     skipTaskbar: true,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      // Splash window runs sandboxed; only a tiny `splashAPI` is exposed via
+      // the dedicated preload below. No raw Node access is needed here.
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      preload: path.join(__dirname, '../preload/splash.js')
     }
   })
   loadRendererWindow(splashWindow, 'splash.html')
