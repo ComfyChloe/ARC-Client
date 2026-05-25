@@ -33,11 +33,13 @@ const statusClass = computed(() => {
   return 'status-disconnected'
 })
 
+// Watch each intiface field as an individual primitive so Vue uses Object.is comparisons.
+// This prevents the 1s polling loop (which replaces status.value entirely) from
+// resetting user input when the backend value hasn't actually changed.
+watch(() => status.value.intifaceAddress, (val) => { intifaceAddress.value = val }, { immediate: true })
+watch(() => status.value.intifacePort, (val) => { intifacePort.value = val }, { immediate: true })
+watch(() => status.value.intifaceWss, (val) => { intifaceWss.value = val }, { immediate: true })
 watch(status, (currentStatus) => {
-  intifaceAddress.value = currentStatus.intifaceAddress
-  intifacePort.value = currentStatus.intifacePort
-  intifaceWss.value = currentStatus.intifaceWss
-
   if (!selectedDeviceId.value && currentStatus.devices.length > 0) {
     void selectDevice(currentStatus.devices[0].id)
   }
@@ -131,7 +133,17 @@ async function handleSelectDevice(event: Event) {
         <div v-for="device in status.devices" :key="device.id" class="ogb-device-card" @click="selectDevice(device.id)">
           <div class="ogb-device-header">
             <div class="ogb-device-name">{{ device.name }}</div>
-            <div class="ogb-device-battery" v-if="device.batteryLevel != null">Battery {{ Math.round(device.batteryLevel * 100) }}%</div>
+            <div class="ogb-device-battery" v-if="device.batteryLevel != null">
+              <svg class="ogb-battery-icon" viewBox="0 0 28 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="0" y="1" width="24" height="12" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                <rect x="24.5" y="4" width="3" height="6" rx="1" fill="currentColor"/>
+                <rect x="1.5" y="2.5" :width="Math.max(0, (device.batteryLevel / 100) * 21)" height="9" rx="1.5"
+                      :fill="device.batteryLevel >= 60 ? '#2ecc71' : device.batteryLevel >= 20 ? '#f39c12' : '#e74c3c'"/>
+              </svg>
+              <span :style="{ color: device.batteryLevel >= 60 ? '#2ecc71' : device.batteryLevel >= 20 ? '#f39c12' : '#e74c3c', fontWeight: 600 }">
+                {{ Math.round(device.batteryLevel) }}%
+              </span>
+            </div>
           </div>
           <div class="ogb-features-list">
             <div v-for="(feature, index) in device.features" :key="index" class="ogb-feature">

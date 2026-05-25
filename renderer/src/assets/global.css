@@ -2316,8 +2316,20 @@ body.dark-theme .ogb-device-name {
 }
 
 .ogb-device-battery {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 0.85em;
     color: #6c757d;
+}
+.ogb-battery-icon {
+    width: 28px;
+    height: 14px;
+    flex-shrink: 0;
+    color: #6c757d;
+}
+body.dark-theme .ogb-battery-icon {
+    color: #95a5a6;
 }
 
 /* Feature list */
