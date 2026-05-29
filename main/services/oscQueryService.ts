@@ -113,47 +113,58 @@ class OSCQueryService extends EventEmitter {
         super()
         this.httpPort = null
         this.oscPort = null
-        this.assignedHttpPort = null
-        this.assignedOscPort = null
+        this.assignedHttpPort = null // Persistent HTTP port (assigned once, reused on restart)
+        this.assignedOscPort = null  // Persistent OSC port (assigned once, reused on restart)
         this.httpServer = null
-        this.oscUdpPort = null
-        this.vrchatListenerPort = null
+        this.oscUdpPort = null // OSC UDP listener on random port (for OSC Query protocol)
+        this.vrchatListenerPort = null // Passive listener on port 9001 (VRChat's default output)
         this.bonjour = null
         this.bonjourService = null
         this.isRunning = false
-        this.appName = null
-        this.assignedAppName = null
-        this.unsubscriptions = new Set()
-        this.hardcodedUnsubscriptions = new Set()
+        this.appName = null // Will be generated once and reused
+        this.assignedAppName = null // Persistent service name (assigned once, reused on restart)
+        this.unsubscriptions = new Set() // Paths to ignore (unsubscribe from)
+        this.hardcodedUnsubscriptions = new Set() // Hardcoded paths that cannot be removed
         this._discoveryTimer = null
-        this._discoveryInterval = null
-        this._currentVRChatOscQueryAddress = null
-        this._currentVRChatOscAddress = null
-        this._currentVRChatServiceName = null
-        this._livenessCheckFailures = 0
-        this._lastOscMessageTime = null
-        this._oscFlowMonitorInterval = null
-        this._reAdvertiseInterval = null
-        this._persistentBrowser = null
-        this.oscAdvertisedIp = null
-        this._localIpAddresses = []
+        this._discoveryInterval = null // Continuous discovery interval
+        this._currentVRChatOscQueryAddress = null // Track current VRChat OSCQuery address
+        this._currentVRChatOscAddress = null // Track current VRChat OSC address
+        this._currentVRChatServiceName = null // Track VRChat's service name to detect restarts
+        // Liveness & health monitoring
+        this._livenessCheckFailures = 0 // Count consecutive liveness check failures
+        this._lastOscMessageTime = null // Track last received OSC message
+        this._oscFlowMonitorInterval = null // Monitor OSC data flow
+        this._reAdvertiseInterval = null // Periodic mDNS re-advertisement
+        this._persistentBrowser = null // Long-lived mDNS browser
+        // Network configuration
+        this.oscAdvertisedIp = null // IP address to advertise in HOST_INFO
+        this._localIpAddresses = [] // Cache of local IP addresses
         this.bindAddress = '0.0.0.0'
-        this.LIVENESS_FAILURE_THRESHOLD = 2
-        this.OSC_FLOW_TIMEOUT_WARNING = 30000
-        this.OSC_FLOW_TIMEOUT_RECONNECT = 60000
-        this.READVERTISE_INTERVAL = 30000
+        // Configuration constants
+        this.LIVENESS_FAILURE_THRESHOLD = 2 // Failures before clearing connection
+        this.OSC_FLOW_TIMEOUT_WARNING = 30000 // 30s without data = warning
+        this.OSC_FLOW_TIMEOUT_RECONNECT = 60000 // 60s without data = reconnect
+        this.READVERTISE_INTERVAL = 30000 // Re-advertise every 30 seconds
+        // Hardcode heartrate parameter to never be forwarded to ARC
         this.hardcodedUnsubscriptions.add('/avatar/parameters/ARCOSC/Heartrate/*')
+        // Hardcode face tracking parameters
         this.hardcodedUnsubscriptions.add('/avatar/parameters/v2/*')
         this.hardcodedUnsubscriptions.add('/avatar/parameters/FT/*')
         this.hardcodedUnsubscriptions.add('/avatar/parameters/EyeTracking*')
         this.hardcodedUnsubscriptions.add('/avatar/parameters/LipTracking*')
+        // SRanipal / Vive face tracking parameters
         this.hardcodedUnsubscriptions.add('/avatar/parameters/Face/*')
         this.hardcodedUnsubscriptions.add('/avatar/parameters/Eye/*')
         this.hardcodedUnsubscriptions.add('/avatar/parameters/Lip/*')
+        // OSC Trackers / body tracking
         this.hardcodedUnsubscriptions.add('/tracking/*')
+        // Server-managed blocklist (pushed from ARC-OSC server, cannot be removed by user)
         this.serverBlocklist = new Set()
+        // Server-managed suppressions (dynamic, from rate monitoring)
         this.serverSuppressions = new Set()
+        // Per-address metadata from server (isPanelParam, isInAvatarJson)
         this.serverSuppressionMetadata = {}
+        // Root node for OSC parameter tree
         this.rootNode = {
             description: "ARC OSC Client - VRChat Integration",
             access: OSCQAccess.NO_VALUE,
