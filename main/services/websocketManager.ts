@@ -224,6 +224,15 @@ class WebSocketManager {
         }
         this.socket.emit('request-unsuppress', { address })
     }
+    requestClearAllSuppressions(): Promise<{ success: boolean; count?: number; cooldown?: boolean; remainingMs?: number; error?: string }> {
+        if (!this.isConnected || !this.socket) {
+            return Promise.reject(new Error('Not connected to server'))
+        }
+        return new Promise((resolve) => {
+            this.socket!.once('clear-all-suppressed-ack', resolve)
+            this.socket!.emit('request-clear-all-suppressed')
+        })
+    }
     sendMessage(event: string, data: unknown): Promise<unknown> {
         return new Promise((resolve, reject) => {
             if (!this.isConnected || !this.socket) {

@@ -37,6 +37,7 @@ const api = {
   getServerSuppressions: () => ipcRenderer.invoke('get-server-suppressions'),
   getHardcodedUnsubscriptions: () => ipcRenderer.invoke('get-hardcoded-unsubscriptions'),
   requestUnsuppress: (address: string) => ipcRenderer.invoke('request-unsuppress', address),
+  clearAllSuppressions: () => ipcRenderer.invoke('clear-all-suppressions'),
   // OSC Query status and control
   getOscQueryStatus: () => ipcRenderer.invoke('get-oscquery-status'),
   oscQueryForceReconnect: () => ipcRenderer.invoke('oscquery-force-reconnect'),

@@ -1221,6 +1221,14 @@ ipcMain.handle('request-unsuppress', (_event, address: string) => {
     return { success: false, error: error.message }
   }
 })
+ipcMain.handle('clear-all-suppressions', async () => {
+  if (!wsManager) return { success: false, error: 'Not connected to server' }
+  try {
+    return await wsManager.requestClearAllSuppressions()
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
 ipcMain.handle('get-hardcoded-unsubscriptions', () => {
   if (!oscQueryService) return { patterns: [] }
   return { patterns: oscQueryService.getHardcodedUnsubscriptions() }

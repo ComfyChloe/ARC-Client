@@ -1,4 +1,4 @@
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useElectronAPI } from './useElectronAPI'
 import { debugLog } from './useDebugLog'
 
@@ -33,6 +33,21 @@ const oscQueryBindAddress = ref('0.0.0.0')
 const additionalConnections = ref<OscConnection[]>([])
 const unsubscriptions = ref<string[]>([])
 const blockedParams = ref<BlockedParam[]>([])
+const lastClearTime = ref<number>(0)
+const CLEAR_COOLDOWN_MS = 15 * 60 * 1000
+const clearCooldownRemaining = ref<number>(0)
+let cooldownInterval: ReturnType<typeof setInterval> | null = null
+function _startCooldownTimer() {
+  if (cooldownInterval) return
+  cooldownInterval = setInterval(() => {
+    const remaining = Math.max(0, Math.ceil((lastClearTime.value + CLEAR_COOLDOWN_MS - Date.now()) / 1000))
+    clearCooldownRemaining.value = remaining
+    if (remaining <= 0 && cooldownInterval) {
+      clearInterval(cooldownInterval)
+      cooldownInterval = null
+    }
+  }, 1000)
+}
 let oscStatusInitialized = false
 let oscStatusInitPromise: Promise<void> | null = null
 
@@ -183,6 +198,23 @@ export function useOscStatus() {
   async function requestUnsuppress(address: string) {
     await api.requestUnsuppress(address)
   }
+  const isClearOnCooldown = computed(() => clearCooldownRemaining.value > 0)
+  async function clearAllSuppressions(): Promise<void> {
+    if (isClearOnCooldown.value) return
+    const result = await api.clearAllSuppressions()
+    if (result?.cooldown && result?.remainingMs) {
+      // Server says cooldown is still active — sync client state to server time
+      clearCooldownRemaining.value = Math.ceil(result.remainingMs / 1000)
+      lastClearTime.value = Date.now() - (CLEAR_COOLDOWN_MS - result.remainingMs)
+      _startCooldownTimer()
+      return
+    }
+    if (!result?.success) return
+    lastClearTime.value = Date.now()
+    clearCooldownRemaining.value = Math.ceil(CLEAR_COOLDOWN_MS / 1000)
+    _startCooldownTimer()
+    await loadBlockedParams()
+  }
   function handleOscServerStatus(data: any) {
     if (data.status === 'connection-ready' || data.status === 'connection-error') {
       const statusText = data.status === 'connection-ready' ? 'Ready' : 'Error'
@@ -264,6 +296,8 @@ export function useOscStatus() {
     additionalConnections,
     unsubscriptions,
     blockedParams,
+    clearCooldownRemaining,
+    isClearOnCooldown,
     toggleOsc,
     updateOscPorts,
     oscQueryForceReconnect,
@@ -277,6 +311,7 @@ export function useOscStatus() {
     removeUnsubscription,
     loadBlockedParams,
     requestUnsuppress,
+    clearAllSuppressions,
     MAX_ADDITIONAL_CONNECTIONS
   }
 }
