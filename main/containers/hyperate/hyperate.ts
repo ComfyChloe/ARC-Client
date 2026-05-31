@@ -47,6 +47,10 @@ class HyperateAddon {
   lastError: string | null
   reconnecting: boolean
   oscService: OscService | null
+  lastHrUpdate: number | null
+  watchdogInterval: ReturnType<typeof setInterval> | null
+  watchdogCount: number
+  readonly STALE_THRESHOLD_MS: number
   constructor() {
     this.enabled = false
     this.ws = null
@@ -68,6 +72,10 @@ class HyperateAddon {
     this.lastError = null // Last error message for UI display
     this.reconnecting = false // Whether currently waiting to reconnect
     this.oscService = null
+    this.lastHrUpdate = null
+    this.watchdogInterval = null
+    this.watchdogCount = 0
+    this.STALE_THRESHOLD_MS = 3 * 60 * 1000 // 3 minutes — matches HypeRDesktop STALE_SECS
     debug.info('HypeRate addon initialized')
   }
   setStatusChangeCallback(callback: ((status: ReturnType<HyperateAddon['getStatus']>) => void) | null): void {
@@ -195,8 +203,11 @@ class HyperateAddon {
         this.reconnectAttempts = 0
         this.lastError = null
         this.reconnecting = false
+        this.lastHrUpdate = null
+        this.watchdogCount = 0
         debug.info('Connected to HypeRate WebSocket')
         this.setupHeartbeat()
+        this.setupWatchdog()
         this.loadSavedTrackers()
         this.notifyStatusChange()
       })
@@ -302,6 +313,12 @@ class HyperateAddon {
       cleaned = true
       debug.info('Cleared heartbeat interval')
     }
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval)
+      this.watchdogInterval = null
+      cleaned = true
+      debug.info('Cleared watchdog interval')
+    }
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout)
       this.reconnectTimeout = null
@@ -317,16 +334,13 @@ class HyperateAddon {
       return
     }
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      debug.logError(`HypeRate: Max reconnection attempts (${this.maxReconnectAttempts}) reached. Stopping addon.`)
-      this.lastError = `Max reconnection attempts (${this.maxReconnectAttempts}) reached`
-      this.reconnecting = false
-      this.stop()
-      return
+      debug.warn(`HypeRate: ${this.maxReconnectAttempts} reconnect attempts reached — resetting counter and retrying`)
+      this.reconnectAttempts = 0
     }
     this.reconnectAttempts++
     this.reconnecting = true
     this.notifyStatusChange()
-    debug.info(`HypeRate: Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${this.reconnectDelay / 1000} seconds`)
+    debug.info(`HypeRate: Scheduling reconnect attempt ${this.reconnectAttempts} in ${this.reconnectDelay / 1000} seconds`)
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null
       this.reconnecting = false
@@ -341,14 +355,63 @@ class HyperateAddon {
     }
     this.heartbeatInterval = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({
-          topic: "phoenix",
-          event: "heartbeat",
-          payload: {},
-          ref: 0
-        }))
+        try {
+          this.ws.send(JSON.stringify({
+            topic: "phoenix",
+            event: "heartbeat",
+            payload: {},
+            ref: 0
+          }))
+        } catch (error) {
+          debug.warn(`HypeRate heartbeat send failed: ${(error as Error).message} — forcing reconnect`)
+          this.cleanup()
+          if (this.ws) {
+            this.removeAllListeners()
+            this.ws.close()
+            this.ws = null
+          }
+          if (this.enabled && !this.reconnecting) {
+            this.scheduleReconnect()
+          }
+        }
       }
     }, 30000) // 30 seconds as recommended
+  }
+  setupWatchdog(): void {
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval)
+    }
+    this.watchdogCount = 0
+    this.watchdogInterval = setInterval(() => {
+      if (this.trackers.size === 0) return
+      const now = Date.now()
+      const stale = this.lastHrUpdate === null || (now - this.lastHrUpdate) > this.STALE_THRESHOLD_MS
+      if (!stale) {
+        this.watchdogCount = 0
+        return
+      }
+      this.watchdogCount++
+      const since = this.lastHrUpdate
+        ? `${Math.round((now - this.lastHrUpdate) / 1000)}s ago`
+        : 'never'
+      if (this.watchdogCount >= 2) {
+        debug.warn(`HypeRate watchdog: ${this.watchdogCount} stale checks — forcing reconnect (last HR: ${since})`)
+        this.cleanup()
+        if (this.ws) {
+          this.removeAllListeners()
+          this.ws.close()
+          this.ws = null
+        }
+        this.reconnectAttempts = 0
+        this.reconnecting = false
+        if (this.enabled) {
+          this.scheduleReconnect()
+        }
+      } else {
+        debug.warn(`HypeRate watchdog: no HR data for ${since} — re-joining ${this.trackers.size} channel(s)`)
+        Array.from(this.trackers.keys()).forEach(id => this.joinChannel(id))
+      }
+    }, 30000)
   }
   loadSavedTrackers(): void {
     // Load trackers from saved config
@@ -425,6 +488,8 @@ class HyperateAddon {
         tracker.lastUpdate = Date.now()
         this.trackers.set(deviceId, tracker)
       }
+      this.lastHrUpdate = Date.now()
+      this.watchdogCount = 0
       // Only update lastHeartRate and send to VRChat if this is the primary tracker
       if (deviceId === this.primaryTracker) {
         this.lastHeartRate = heartRate
