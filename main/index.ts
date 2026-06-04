@@ -550,6 +550,9 @@ async function initOscQueryService() {
         // Forward to WebSocket if connected
         if (wsManager && wsManager.isConnected) {
           try {
+            if (oscQueryService.isLocalOnly(oscData.address)) {
+              return
+            }
             wsManager.sendOscData({
               address: oscData.address,
               value: oscData.value,

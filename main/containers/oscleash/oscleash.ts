@@ -530,6 +530,7 @@ class OSCLeashAddon {
   program: OSCLeashProgram | null
   onStatusChange: ((status: unknown) => void) | null
   onMovementUpdate: ((data: unknown) => void) | null
+  _localOnlyAddresses: string[]
   constructor() {
     this.enabled = false
     this.oscQuery = null
@@ -542,6 +543,7 @@ class OSCLeashAddon {
     this.program = null
     this.onStatusChange = null // Callback for status changes
     this.onMovementUpdate = null // Callback for movement updates
+    this._localOnlyAddresses = []
     
     debug.info('OSCLeash addon initialized')
   }
@@ -597,6 +599,23 @@ class OSCLeashAddon {
     return this.enabled
   }
 
+  _buildLocalOnlyAddresses(): string[] {
+    const addresses: string[] = []
+    for (const leashName of this.settings.Leashes) {
+      addresses.push(`/avatar/parameters/${leashName}_Stretch`)
+      addresses.push(`/avatar/parameters/${leashName}_IsGrabbed`)
+      addresses.push(`/avatar/parameters/${leashName}_Angle`)
+    }
+    const dir = this.settings.DirectionalParameters
+    addresses.push(`/avatar/parameters/${dir.Z_Positive_Param}`)
+    addresses.push(`/avatar/parameters/${dir.Z_Negative_Param}`)
+    addresses.push(`/avatar/parameters/${dir.X_Positive_Param}`)
+    addresses.push(`/avatar/parameters/${dir.X_Negative_Param}`)
+    addresses.push(`/avatar/parameters/${dir.Y_Positive_Param}`)
+    addresses.push(`/avatar/parameters/${dir.Y_Negative_Param}`)
+    return addresses
+  }
+
   start(oscQuery: EventEmitter | null = null, oscService: OscService | null = null): boolean {
     if (!oscQuery) {
       debug.logError('Cannot start OSCLeash: No OSC-Query service provided')
@@ -640,6 +659,12 @@ class OSCLeashAddon {
         this.program!.stopLeashMonitoring(leash)
       }
       this.packageController.listen()
+
+      // Register all leash addresses as local-only so they are never forwarded to the server
+      this._localOnlyAddresses = this._buildLocalOnlyAddresses()
+      for (const addr of this._localOnlyAddresses) {
+        (this.oscQuery as any).addLocalOnlyAddress?.(addr)
+      }
 
       // Do NOT automatically set leash as active - wait for OSC grab detection
       // this.leashes[0].Active = true // REMOVED - leashes should only be active when grabbed
@@ -690,6 +715,12 @@ class OSCLeashAddon {
       this.packageController.removeAllListeners()
       this.packageController = null
     }
+
+    // Unregister local-only addresses so forwarding resumes if the addon is restarted
+    for (const addr of this._localOnlyAddresses) {
+      (this.oscQuery as any).removeLocalOnlyAddress?.(addr)
+    }
+    this._localOnlyAddresses = []
 
     this.program = null
     this.leashes = []

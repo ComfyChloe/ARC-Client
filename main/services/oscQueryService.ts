@@ -108,6 +108,7 @@ class OSCQueryService extends EventEmitter {
     serverBlocklist: Set<string>
     serverSuppressions: Set<string>
     serverSuppressionMetadata: SuppressionMetadata
+    localOnlyPatterns: Set<string>
     rootNode: OscQueryNode
     constructor() {
         super()
@@ -162,6 +163,8 @@ class OSCQueryService extends EventEmitter {
         this.serverBlocklist = new Set()
         // Server-managed suppressions (dynamic, from rate monitoring)
         this.serverSuppressions = new Set()
+        // Local-only addresses: received by modules but never forwarded to the server
+        this.localOnlyPatterns = new Set()
         // Per-address metadata from server (isPanelParam, isInAvatarJson)
         this.serverSuppressionMetadata = {}
         // Root node for OSC parameter tree
@@ -1300,6 +1303,24 @@ class OSCQueryService extends EventEmitter {
      */
     getServerBlocklist(): string[] {
         return Array.from(this.serverBlocklist)
+    }
+    /**
+     * Register an address as local-only (modules receive it, but it is never forwarded to the server)
+     */
+    addLocalOnlyAddress(address: string): void {
+        this.localOnlyPatterns.add(address)
+    }
+    /**
+     * Unregister a local-only address (restores normal forwarding)
+     */
+    removeLocalOnlyAddress(address: string): void {
+        this.localOnlyPatterns.delete(address)
+    }
+    /**
+     * Returns true if the address should be handled locally and not forwarded to the server
+     */
+    isLocalOnly(address: string): boolean {
+        return this.localOnlyPatterns.has(address)
     }
     /**
      * Add server-managed suppression addresses (from rate monitoring)
