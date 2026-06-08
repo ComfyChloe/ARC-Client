@@ -92,6 +92,11 @@ const router = createRouter({
       path: '/auto-inviter',
       name: 'auto-inviter',
       component: () => import('./pages/AutoInviterPage.vue')
+    },
+    {
+      path: '/xsoverlay',
+      name: 'xsoverlay',
+      component: () => import('./pages/XSOverlayPage.vue')
     }
   ]
 })

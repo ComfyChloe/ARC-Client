@@ -104,6 +104,14 @@ const api = {
   arcLinkStart: () => ipcRenderer.invoke('arclink-start'),
   arcLinkStop: () => ipcRenderer.invoke('arclink-stop'),
   arcLinkGetStatus: () => ipcRenderer.invoke('arclink-get-status'),
+  // XS Overlay API
+  xsOverlayGetStatus: () => ipcRenderer.invoke('xsoverlay-get-status'),
+  xsOverlayStart: () => ipcRenderer.invoke('xsoverlay-start'),
+  xsOverlayStop: () => ipcRenderer.invoke('xsoverlay-stop'),
+  xsOverlayGetConfig: () => ipcRenderer.invoke('xsoverlay-get-config'),
+  xsOverlayUpdateConfig: (config: any) => ipcRenderer.invoke('xsoverlay-update-config', config),
+  xsOverlayGetAutostart: () => ipcRenderer.invoke('xsoverlay-get-autostart'),
+  xsOverlaySetAutostart: (enabled: boolean) => ipcRenderer.invoke('xsoverlay-set-autostart', enabled),
   // VRChat account linking
   sendVRChatLink: (vrchatUserId: string, vrchatUsername: string) => ipcRenderer.invoke('send-vrchat-link', vrchatUserId, vrchatUsername),
   checkVRChatLink: () => ipcRenderer.invoke('check-vrchat-link'),
@@ -202,6 +210,12 @@ const api = {
   },
   onAutoStatusUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('autostatus-update', (_event, data) => callback(data))
+  },
+  onXsOverlayStatus: (callback: (data: any) => void) => {
+    ipcRenderer.on('xsoverlay-status', (_event, data) => callback(data))
+  },
+  onXsOverlayNotification: (callback: (data: any) => void) => {
+    ipcRenderer.on('xsoverlay-notification', (_event, data) => callback(data))
   },
   onFeedbackUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('feedback-update', (_event, data) => callback(data))

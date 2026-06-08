@@ -12,6 +12,7 @@ import OSCLeashAddon from './containers/oscleash/oscleash'
 import VRChatAPIContainer from './containers/vrchat-api/vrchat-api'
 import OscGoesBrrrAddon from './containers/oscgoesbrrr/oscgoesbrrr'
 import AutoStatusContainer from './containers/autostatus/autostatus'
+import XSOverlayAddon from './containers/xsoverlay/xsoverlay'
 import Calendar from './containers/calendar/calendar'
 import OpenShock from './containers/openshock/openshock'
 import ARCLink from './containers/arclink/arclink'
@@ -31,6 +32,7 @@ let oscLeashAddon: any
 let vrchatApiContainer: any
 let oscGoesBrrrAddon: any
 let autoStatusContainer: any
+let xsOverlayAddon: any
 let calendarContainer: any
 let openShockContainer: any
 let arcLinkContainer: any
@@ -317,6 +319,9 @@ function initWebSocket() {
       sendToRenderer('websocket-avatar-change', data)
       const displayName = data.name ? `${data.name} (${data.id})` : data.id
       debug.logWebSocketConnection(`Avatar changed: ${displayName} for user ${data.username || 'Unknown'}`)
+      if (xsOverlayAddon && xsOverlayAddon.isEnabled()) {
+        xsOverlayAddon.handleAvatarChange(data)
+      }
     })
     wsManager.on('parameter-update', (data: any) => {
       sendToRenderer('websocket-parameter-update', data)
@@ -326,6 +331,9 @@ function initWebSocket() {
     })
     wsManager.on('panel-connections-update', (data: any) => {
       sendToRenderer('websocket-panel-connections-update', data)
+      if (xsOverlayAddon && xsOverlayAddon.isEnabled()) {
+        xsOverlayAddon.handlePanelConnectionsUpdate(data)
+      }
     })
     wsManager.on('feedback-update', (data: any) => {
       sendToRenderer('feedback-update', data)
@@ -1740,6 +1748,82 @@ ipcMain.handle('arclink-get-status', async () => {
   if (!arcLinkContainer) return { success: false, error: 'Not initialized' }
   return arcLinkContainer.getStatus()
 })
+// XS Overlay IPC handlers
+ipcMain.handle('xsoverlay-get-status', () => {
+  if (xsOverlayAddon) {
+    return xsOverlayAddon.getStatus()
+  }
+  return { enabled: false, connected: false, xsOverlayRunning: false, config: null, notificationLog: [] }
+})
+ipcMain.handle('xsoverlay-start', () => {
+  try {
+    if (!xsOverlayAddon) {
+      return { success: false, error: 'XS Overlay addon not initialized' }
+    }
+    const result = xsOverlayAddon.start()
+    return { success: result }
+  } catch (error: any) {
+    debug.error(`Failed to start XS Overlay addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('xsoverlay-stop', () => {
+  try {
+    if (xsOverlayAddon) {
+      xsOverlayAddon.stop()
+    }
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to stop XS Overlay addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('xsoverlay-get-config', () => {
+  try {
+    if (xsOverlayAddon) {
+      return xsOverlayAddon.getConfig()
+    }
+    return null
+  } catch (error: any) {
+    debug.error(`Failed to get XS Overlay config: ${error.message}`)
+    return null
+  }
+})
+ipcMain.handle('xsoverlay-update-config', (_event, newConfig: any) => {
+  try {
+    if (!xsOverlayAddon) {
+      return { success: false, error: 'XS Overlay addon not initialized' }
+    }
+    const result = xsOverlayAddon.updateConfig(newConfig)
+    return { success: result }
+  } catch (error: any) {
+    debug.error(`Failed to update XS Overlay config: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('xsoverlay-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings()
+    return { enabled: appSettings.xsOverlayAutostart || false }
+  } catch (error: any) {
+    debug.error(`Failed to get XS Overlay autostart setting: ${error.message}`)
+    return { enabled: false }
+  }
+})
+ipcMain.handle('xsoverlay-set-autostart', (_event, enabled: boolean) => {
+  try {
+    const result = configManager.updateAppSettings({ xsOverlayAutostart: enabled })
+    if (result) {
+      debug.info(`XS Overlay autostart ${enabled ? 'enabled' : 'disabled'}`)
+      return { success: true, enabled }
+    } else {
+      throw new Error('Failed to save autostart setting')
+    }
+  } catch (error: any) {
+    debug.error(`Failed to set XS Overlay autostart: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
 // ────────── App Lifecycle ──────────
 app.whenReady().then(async () => {
   debug.logAppStartup()
@@ -1754,6 +1838,7 @@ app.whenReady().then(async () => {
   vrchatApiContainer = new VRChatAPIContainer()
   oscGoesBrrrAddon = new OscGoesBrrrAddon()
   autoStatusContainer = new AutoStatusContainer()
+  xsOverlayAddon = new XSOverlayAddon()
   calendarContainer = new Calendar()
   openShockContainer = new OpenShock()
   arcLinkContainer = new ARCLink()
@@ -1795,6 +1880,17 @@ app.whenReady().then(async () => {
     }
   })
   autoStatusContainer.start(vrchatApiContainer)
+  // Set up XS Overlay status and notification callbacks
+  xsOverlayAddon.setStatusChangeCallback((status: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('xsoverlay-status', status)
+    }
+  })
+  xsOverlayAddon.setNotificationLogCallback((entry: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('xsoverlay-notification', entry)
+    }
+  })
   // Set up pipeline event forwarding
   vrchatApiContainer.setPipelineEventCallback((event: string, data: any) => {
     if (event === 'user-update' && autoStatusContainer && data?.user) {
@@ -1820,6 +1916,11 @@ app.whenReady().then(async () => {
   if (appSettings.oscAutostart) {
     oscEnabled = true
     debug.info('OSC autostart enabled from saved config')
+  }
+  // Start XS Overlay if autostart is enabled
+  if (appSettings.xsOverlayAutostart && !xsOverlayAddon.isEnabled()) {
+    debug.info('Starting XS Overlay addon based on autostart setting...')
+    xsOverlayAddon.start()
   }
   const needsOscForAutostart = appSettings.hyperateAutostart || appSettings.oscleashAutostart
   // Wait for main window to finish loading
@@ -2047,6 +2148,17 @@ function cleanup(source = 'unknown') {
     debug.error(`Error stopping HypeRate addon: ${error.message}`)
     debug.error(`HypeRate cleanup stack trace: ${error.stack}`)
     hyperateAddon = null
+  }
+  try {
+    if (xsOverlayAddon) {
+      debug.info('Stopping XS Overlay addon during cleanup...')
+      xsOverlayAddon.destroy()
+      xsOverlayAddon = null
+      debug.info('XS Overlay addon cleanup completed')
+    }
+  } catch (error: any) {
+    debug.error(`Error stopping XS Overlay addon: ${error.message}`)
+    xsOverlayAddon = null
   }
   try {
     if (vrchatApiContainer) {

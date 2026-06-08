@@ -10,6 +10,7 @@ interface AppSettings {
   oscleashAutostart: boolean
   ogbAutostart: boolean
   oscAutostart: boolean
+  xsOverlayAutostart: boolean
   theme: string
   lastUsername: string
   savedPassword: string
@@ -88,6 +89,21 @@ interface AutoStatusConfig {
   [key: string]: unknown
 }
 
+interface XSOverlayConfig {
+  enabled: boolean
+  autoStart: boolean
+  port: number
+  notifications: {
+    panelConnections: boolean
+    avatarChanges: boolean
+  }
+  notificationTimeout: number
+  notificationHeight: number
+  notificationOpacity: number
+  notificationVolume: number
+  notificationAudioPath: string
+  [key: string]: unknown
+}
 interface AppConfig {
   legacyOscPort: number
   targetOscPort: number
@@ -104,6 +120,7 @@ interface AppConfig {
   vrchatapi: VRChatAPIConfig
   oscgoesbrrr: OscGoesbrrrConfig
   autostatus: AutoStatusConfig
+  xsOverlay: XSOverlayConfig
   configVersion: number
   [key: string]: unknown
 }
@@ -128,6 +145,7 @@ class ConfigManager {
         oscleashAutostart: false,
         ogbAutostart: false,
         oscAutostart: false,
+        xsOverlayAutostart: false,
         theme: 'light',
         lastUsername: '',
         savedPassword: '',
@@ -194,6 +212,21 @@ class ConfigManager {
           timeFormat: '24h',
           alwaysAllowOverride: false
         }
+      },
+      // XS Overlay configuration
+      xsOverlay: {
+        enabled: false,
+        autoStart: false,
+        port: 42070,
+        notifications: {
+          panelConnections: true,
+          avatarChanges: true
+        },
+        notificationTimeout: 5,
+        notificationHeight: 175,
+        notificationOpacity: 1,
+        notificationVolume: 0.7,
+        notificationAudioPath: 'default'
       },
       // Version for future migration support
       configVersion: 1
@@ -272,6 +305,7 @@ class ConfigManager {
       oscleashAutostart: this.config.appSettings?.oscleashAutostart || false,
       ogbAutostart: this.config.appSettings?.ogbAutostart || false,
       oscAutostart: this.config.appSettings?.oscAutostart || false,
+      xsOverlayAutostart: this.config.appSettings?.xsOverlayAutostart || false,
       theme: this.config.appSettings?.theme || 'light',
       lastUsername: this.config.appSettings?.lastUsername || '',
       savedPassword: this.config.appSettings?.savedPassword || '',
@@ -297,6 +331,9 @@ class ConfigManager {
     }
     if (settings.oscAutostart !== undefined) {
       this.config.appSettings.oscAutostart = settings.oscAutostart
+    }
+    if (settings.xsOverlayAutostart !== undefined) {
+      this.config.appSettings.xsOverlayAutostart = settings.xsOverlayAutostart
     }
     if (settings.theme !== undefined) {
       this.config.appSettings.theme = settings.theme
