@@ -324,7 +324,7 @@ class XSOverlayAddon {
         return
       }
       if (!this.pongReceived) {
-        No pong since last ping — connection is dead
+        // debug.warn('No pong since last ping — connection is dead')
         debug.warn('XS Overlay pong timeout — closing dead connection')
         try { this.ws.terminate() } catch (_e) { /* ignore */ }
         return
