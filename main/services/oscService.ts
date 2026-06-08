@@ -2,6 +2,8 @@ import osc from 'osc'
 import { EventEmitter } from 'node:events'
 import debug from './debugger'
 
+const BIND_ALL = '0.0.0.0'
+
 interface OscArg {
   type: string
   value?: unknown
@@ -42,6 +44,7 @@ class OscService extends EventEmitter {
   localPort: number | null
   targetPort: number
   targetAddress: string
+  bindAddress: string
   additionalConnections: AdditionalConnection[]
   oscLeashListeners: Map<string, (value: unknown) => void>
 
@@ -53,12 +56,14 @@ class OscService extends EventEmitter {
     this.localPort = null
     this.targetPort = 9000
     this.targetAddress = '127.0.0.1'
+    this.bindAddress = BIND_ALL
     this.additionalConnections = []
     this.oscLeashListeners = new Map()
   }
-  initialize(localPort: number | null = null, targetPort = 9000, targetAddress = '127.0.0.1'): boolean {
+  initialize(localPort: number | null = null, targetPort = 9000, targetAddress = '127.0.0.1', bindAddress = BIND_ALL): boolean {
     this.targetPort = targetPort
     this.targetAddress = targetAddress
+    this.bindAddress = bindAddress
     if (localPort === null) {
       this.localPort = this.findAvailablePort(9001, 9100)
     } else {
@@ -66,7 +71,7 @@ class OscService extends EventEmitter {
     }
     try {
       this.primaryUdpPort = new osc.UDPPort({
-        localAddress: "0.0.0.0",
+        localAddress: bindAddress,
         localPort: this.localPort,
         remoteAddress: this.targetAddress,
         remotePort: this.targetPort,
@@ -154,7 +159,7 @@ class OscService extends EventEmitter {
       
       try {
         portData.client = new osc.UDPPort({
-          localAddress: "0.0.0.0",
+          localAddress: this.bindAddress ?? BIND_ALL,
           localPort: 0,
           remoteAddress: connection.address || '127.0.0.1',
           remotePort: connection.port,

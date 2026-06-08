@@ -2,6 +2,7 @@ import './bootstrap' // MUST be first — sets userData path before service cons
 import { app, BrowserWindow, ipcMain, dialog, session, shell, clipboard } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import { spawn, ChildProcess } from 'child_process'
 import { encryptData, decryptData } from './services/encryption'
 import osc from 'osc'
 import debug from './services/debugger'
@@ -18,8 +19,16 @@ import OpenShock from './containers/openshock/openshock'
 import ARCLink from './containers/arclink/arclink'
 import WebSocketManager from './services/websocketManager'
 import configManager from './services/configManager'
+
+const BIND_ALL = '0.0.0.0'
 let mainWindow: BrowserWindow | null
 let splashWindow: BrowserWindow | null
+let debugTailPid: number | undefined
+let debugLogPath: string | undefined
+const DEBUG_MODE = !process.argv.includes('--no-debug')
+let originalConsoleLog: typeof console.log
+let originalConsoleError: typeof console.error
+let originalConsoleWarn: typeof console.warn
 let oscServer: any
 let oscClient: any
 let oscService: any
@@ -55,6 +64,56 @@ function updateSplashProgress(progress: number, message: string) {
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('splash-progress', { progress, message })
   }
+}
+function createDebugConsole() {
+  if (!DEBUG_MODE) return
+  // Store original console methods to tee output to log file
+  originalConsoleLog = console.log
+  originalConsoleError = console.error
+  originalConsoleWarn = console.warn
+  // Create structured log directory: logs/Debug/Console/{Month}/{Day}-{UnixTimestamp}.log
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const unixTimestamp = Math.floor(Date.now() / 1000)
+  const logFileName = `${day}-${unixTimestamp}.log`
+  const logDir = path.join(app.getPath('userData'), 'logs', 'Debug', 'Console', month)
+  const logPath = path.join(logDir, logFileName)
+  if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true })
+  if (!fs.existsSync(logPath)) fs.writeFileSync(logPath, '')
+  debugLogPath = logPath
+  // Format and write a line to the debug log file
+  const writeDebugLog = (parts: unknown[]) => {
+    const ts = new Date().toISOString()
+    const line = parts.map(a => typeof a === 'string' ? a : JSON.stringify(a, null, 2)).join(' ')
+    try { fs.appendFileSync(logPath, `[${ts}] ${line}\n`) } catch {}
+  }
+  // Tee all console output to the log file
+  console.log = (...args: unknown[]) => { originalConsoleLog(...args); writeDebugLog(args) }
+  console.error = (...args: unknown[]) => { originalConsoleError(...args); writeDebugLog(['ERROR:', ...args]) }
+  console.warn = (...args: unknown[]) => { originalConsoleWarn(...args); writeDebugLog(['WARN:', ...args]) }
+  console.log(`[DebugConsole] Logging to ${logPath}`)
+  // Spawn an external PowerShell window tailing the log file
+  const escapePS = (s: string) => s.replace(/'/g, "''")
+  const psCommand = [
+    `$p = Start-Process -WindowStyle Normal -PassThru -FilePath powershell -ArgumentList `,
+    `  '-NoExit', `,
+    `  '-Command', `,
+    `  "$Host.UI.RawUI.WindowTitle = '${escapePS('ARC-OSC Debug Console')}'; `,
+    `  if (-Not (Test-Path '${escapePS(logPath)}')) { New-Item -ItemType File -Path '${escapePS(logPath)}' | Out-Null }; `,
+    `  Write-Host 'Tailing ${escapePS(logPath)}'; `,
+    `  Get-Content -Path '${escapePS(logPath)}' -Wait -Tail 50";`,
+    `Write-Output $p.Id`,
+  ].join(' ')
+  const child: ChildProcess = spawn('powershell', ['-NoProfile', '-Command', psCommand], {
+    windowsHide: true,
+  })
+  let out = ''
+  child.stdout?.on('data', (d) => (out += String(d)))
+  child.on('close', () => {
+    const pid = parseInt(out.trim(), 10)
+    if (!Number.isNaN(pid)) debugTailPid = pid
+  })
 }
 
 function syncAutoStatusWithVrchatAccount() {
@@ -617,7 +676,7 @@ function initOscClient() {
     oscClient.close()
   }
   oscClient = new osc.UDPPort({
-    localAddress: '0.0.0.0',
+    localAddress: BIND_ALL,
     localPort: 0,
     remoteAddress: serverConfig.targetOscAddress,
     remotePort: serverConfig.targetOscPort
@@ -768,6 +827,9 @@ ipcMain.handle('set-window-state', (_event, windowState: any) => {
 ipcMain.handle('get-debug-stats', () => {
   return debug.getStats()
 })
+ipcMain.handle('get-debug-mode', () => {
+  return { debugMode: DEBUG_MODE }
+})
 ipcMain.handle('get-osc-status', () => {
   if (oscService) {
     const status = oscService.getStatus()
@@ -780,6 +842,12 @@ ipcMain.handle('get-osc-status', () => {
 ipcMain.handle('get-oscquery-status', () => {
   if (oscQueryService) {
     return oscQueryService.getStatus()
+  }
+  return { error: 'OSC Query service not initialized', isRunning: false }
+})
+ipcMain.handle('get-oscquery-network-diagnostics', () => {
+  if (oscQueryService) {
+    return oscQueryService.getNetworkDiagnostics()
   }
   return { error: 'OSC Query service not initialized', isRunning: false }
 })
@@ -1847,6 +1915,8 @@ app.whenReady().then(async () => {
   debug.logAppStartup()
   // Create splash window immediately after log cleanup
   createWindow()
+  // Create debug console if --debug flag is present
+  createDebugConsole()
   // Start OSC IPC batching and memory management
   setupOscIpcBatching()
   // Initialize addons
@@ -2102,6 +2172,17 @@ function cleanup(source = 'unknown') {
     }
   } catch (error: any) {
     debug.error(`Error closing splash window: ${error.message}`)
+  }
+  try {
+    if (debugTailPid) {
+      if (originalConsoleLog) console.log = originalConsoleLog
+      if (originalConsoleError) console.error = originalConsoleError
+      if (originalConsoleWarn) console.warn = originalConsoleWarn
+      spawn('taskkill', ['/PID', String(debugTailPid), '/T', '/F'], { stdio: 'ignore' }).on('error', () => {})
+      debugTailPid = undefined
+    }
+  } catch (error: any) {
+    debug.error(`Error closing debug console: ${error.message}`)
   }
   try {
     if (oscService) {

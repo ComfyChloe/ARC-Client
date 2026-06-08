@@ -179,6 +179,37 @@ class OSCQueryService extends EventEmitter {
         }
     }
     /**
+     * Formatted section header for debug console output
+     * @private
+     */
+    _logSection(title: string): void {
+        console.log(`\n${'='.repeat(60)}`)
+        console.log(`  ${title}`)
+        console.log(`${'='.repeat(60)}`)
+    }
+    /**
+     * Formatted key-value log line
+     * @private
+     */
+    _logKV(key: string, value: string | number | boolean | null, indent = 2): void {
+        const pad = ' '.repeat(indent)
+        const valStr = value === null ? 'null' : String(value)
+        console.log(`${pad}${key.padEnd(22)} ${valStr}`)
+    }
+    /**
+     * Formatted status badge
+     * @private
+     */
+    _logStatus(label: string, ok: boolean, detail?: string): void {
+        const badge = ok ? '[OK]' : '[!!]'
+        const suffix = detail ? ` - ${detail}` : ''
+        if (ok) {
+            console.log(`  ${badge} ${label}${suffix}`)
+        } else {
+            console.warn(`  ${badge} ${label}${suffix}`)
+        }
+    }
+    /**
      * Initialize the OSC Query service
      * @param {number} legacyPort - Legacy OSC port (not used, kept for compatibility)
      * @param {number} httpPort - Optional HTTP port (auto-detected if not provided)
@@ -210,18 +241,46 @@ class OSCQueryService extends EventEmitter {
         // Store bind address for use during start
         this.bindAddress = bindAddress || DEFAULT_FALLBACK_ADDRESS
         this._localIpAddresses = this._getLocalIpAddresses()
-        // Determine the advertised OSC IP based on bind address
+        // Determine the advertised OSC IP for mDNS/HOST_INFO
+        // IMPORTANT: Always advertise a non-loopback LAN IP when possible.
+        // VRChat uses mDNS multicast (224.0.0.251:5353) to discover OSCQuery services,
+        // and advertising 127.0.0.1 can fail on Windows with virtual network adapters
+        // (Docker, WSL, Hyper-V, VPN) because the multicast may route through the wrong interface.
+        const detectedLanIp = this._getLocalIpAddress()
         if (this.bindAddress === DEFAULT_FALLBACK_ADDRESS) {
             // Binding to all interfaces — auto-detect primary IP for advertisement
-            this.oscAdvertisedIp = this._getLocalIpAddress() || DEFAULT_FALLBACK_IP
+            this.oscAdvertisedIp = detectedLanIp || DEFAULT_FALLBACK_IP
+        } else if (this._isLoopback(this.bindAddress) && detectedLanIp) {
+            // Binding to loopback (127.0.0.1) — advertise the LAN IP for mDNS discovery
+            // VRChat on the same machine can still connect via localhost, but mDNS needs a
+            // routable address so VRChat's multicast queries reach us through the correct interface
+            this.oscAdvertisedIp = detectedLanIp
         } else {
-            // Specific bind address — advertise it directly
+            // Specific non-loopback bind address — advertise it directly
             this.oscAdvertisedIp = this.bindAddress
         }
-        console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}, Bind Address: ${this.bindAddress}`)
-        console.log(`[OSCQuery] Network Configuration:`)
-        console.log(`  - Advertised IP: ${this.oscAdvertisedIp}`)
-        console.log(`  - Local IPs: ${this._localIpAddresses.join(', ') || 'none detected'}`)
+        this._logSection('OSCQuery Initialization')
+        this._logKV('OSC Port:', this.oscPort)
+        this._logKV('HTTP Port:', this.httpPort)
+        this._logKV('Bind Address:', this.bindAddress)
+        this._logKV('Advertised IP:', this.oscAdvertisedIp)
+        this._logKV('Loopback Bind:', this._isLoopback(this.bindAddress))
+        if (this._isLoopback(this.bindAddress) && detectedLanIp) {
+            this._logStatus('Loopback Promotion', true, `${this.bindAddress} -> ${detectedLanIp} for mDNS`)
+        }
+        console.log(`  Detected LAN IPs:`)
+        if (this._localIpAddresses.length > 0) {
+            this._localIpAddresses.forEach(ip => console.log(`    - ${ip}`))
+        } else {
+            console.warn(`    (none detected)`)
+        }
+        this._logStatus('Network Interfaces', this._localIpAddresses.length > 0, `${this._localIpAddresses.length} non-loopback IPv4 address(es)`)
+        if (this._localIpAddresses.length === 0) {
+            console.warn('  [!!] WARNING: No non-loopback IPv4 addresses detected!')
+            console.warn('        mDNS discovery will likely fail.')
+            console.warn('        Possible causes: no active network adapter, all adapters internal,')
+            console.warn('        or firewall blocking interface enumeration.')
+        }
 
         // Setup OSC Query endpoints
         this._setupEndpoints()
@@ -539,27 +598,24 @@ class OSCQueryService extends EventEmitter {
             if (!this.assignedAppName) {
                 const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase()
                 this.assignedAppName = `ARC-OSC-Client-${randomSuffix}`
-                console.log(`[OSCQuery] First start - generated new service name: ${this.assignedAppName}`)
-            } else {
-                console.log(`[OSCQuery] Reusing persistent service name: ${this.assignedAppName}`)
             }
             this.appName = this.assignedAppName
+            this._logSection('OSCQuery Service Start')
+            this._logKV('Service Name:', this.appName)
             
             // Close any existing OSC UDP port before creating a new one
             if (this.oscUdpPort) {
                 try {
-                    console.log('[OSCQuery] Closing existing OSC UDP port before restart...')
+                    console.log('  Closing existing OSC UDP port before restart...')
                     this.oscUdpPort.close()
                     this.oscUdpPort = null
-                    // Wait a moment for the port to be fully released
                     await new Promise(resolve => setTimeout(resolve, 200))
                 } catch (error) {
-                    console.error('[OSCQuery] Error closing existing OSC UDP port:', error)
+                    console.error('  Error closing existing OSC UDP port:', error)
                 }
             }
             // Create HTTP server
             this.httpServer = http.createServer(this._handleRequest.bind(this))
-            // Start HTTP server
             await new Promise<void>((resolve, reject) => {
                 this.httpServer!.once('error', reject)
                 this.httpServer!.listen(this.httpPort!, this.bindAddress, () => {
@@ -567,60 +623,63 @@ class OSCQueryService extends EventEmitter {
                     resolve()
                 })
             })
-            console.log(`[OSCQuery] HTTP Server started on ${this.bindAddress}:${this.httpPort}`)
+            this._logStatus('HTTP Server', true, `${this.bindAddress}:${this.httpPort}`)
             // Create OSC UDP listener on the configured OSC port
             this.oscUdpPort = new osc.UDPPort({
                 localAddress: this.bindAddress,
                 localPort: this.oscPort,
                 metadata: true
             })
-            // Setup OSC message handler
             this.oscUdpPort.on('message', (oscMsg) => {
                 this._handleOscMessage(oscMsg)
             })
             this.oscUdpPort.on('ready', () => {
-                console.log(`[OSCQuery] OSC UDP listener started on port ${this.oscPort}`)
+                this._logStatus('OSC UDP Listener', true, `${this.bindAddress}:${this.oscPort}`)
             })
             this.oscUdpPort.on('error', (error) => {
-                console.error(`[OSCQuery] OSC UDP port error:`, error)
+                this._logStatus('OSC UDP Listener', false, error.message)
                 this.emit('error', error)
             })
-            // Open the OSC UDP port
             this.oscUdpPort.open()
             
-            // DISABLED: VRChat listener on port 9001
-            // This was causing port binding conflicts (EACCES errors)
-            // OSC data will be received through the main OSC Query port instead
-            console.log('[OSCQuery] VRChat port 9001 listener disabled - using OSC Query port for all communication')
             // Initialize Bonjour for mDNS
+            this._logSection('mDNS Configuration')
             const bonjourOpts: Record<string, string> = {}
             if (this.bindAddress && this.bindAddress !== DEFAULT_FALLBACK_ADDRESS) {
-                // Bind mDNS to specific interface when user specified one
                 bonjourOpts.interface = this.bindAddress
-                console.log(`[OSCQuery] Binding mDNS to interface: ${this.bindAddress}`)
+                this._logKV('mDNS Interface:', this.bindAddress)
+            } else {
+                this._logKV('mDNS Interface:', 'auto-detect (default)')
             }
             this.bonjour = new Bonjour(bonjourOpts)
-            // Advertise service via mDNS with error handling for name conflicts
+            // Advertise service via mDNS
             try {
-                this.bonjourService = this.bonjour.publish({
+                const publishConfig = {
                     name: this.appName,
                     type: 'oscjson',
                     port: this.httpPort!,
-                    protocol: 'tcp',
-                    host: this.oscAdvertisedIp ?? undefined  // Explicit IP for VLAN support
-                })
-                console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}'`)
+                    protocol: 'tcp' as const,
+                    host: this.oscAdvertisedIp ?? undefined
+                }
+                console.log(`  Publishing:`)
+                this._logKV('  Name:', publishConfig.name)
+                this._logKV('  Type:', `_oscjson._tcp`)
+                this._logKV('  Port:', publishConfig.port)
+                this._logKV('  Protocol:', publishConfig.protocol)
+                this._logKV('  Host:', publishConfig.host)
+                this.bonjourService = this.bonjour.publish(publishConfig)
+                this._logStatus('mDNS Advertisement', true, 'Service published')
+                console.log(`  Multicast Address: 224.0.0.251:5353`)
+                console.log(`  Discovery Protocol: OSCQuery (oscjson)`)
+                console.log(`  VRChat will query _oscjson._tcp on mDNS multicast to find this service`)
             } catch (publishError: unknown) {
-                // If service name is already in use, try to destroy and retry once
                 if ((publishError as Error).message && (publishError as Error).message.includes('already in use')) {
-                    console.log('[OSCQuery] Service name in use, attempting cleanup and retry...')
+                    console.log('  Service name in use, attempting cleanup and retry...')
                     try {
                         if (this.bonjour) {
                             this.bonjour.destroy()
                         }
-                        // Wait a moment for cleanup
                         await new Promise(resolve => setTimeout(resolve, 500))
-                        // Reinitialize and retry
                         const retryBonjourOpts: Record<string, string> = {}
                         if (this.bindAddress && this.bindAddress !== DEFAULT_FALLBACK_ADDRESS) {
                             retryBonjourOpts.interface = this.bindAddress
@@ -631,11 +690,11 @@ class OSCQueryService extends EventEmitter {
                             type: 'oscjson',
                             port: this.httpPort!,
                             protocol: 'tcp',
-                            host: this.oscAdvertisedIp ?? undefined  // Explicit IP
+                            host: this.oscAdvertisedIp ?? undefined
                         })
-                        console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}' (after retry)`)
+                        this._logStatus('mDNS Advertisement', true, 'Published (after retry)')
                     } catch (retryError) {
-                        console.error('[OSCQuery] Failed to publish service after retry:', retryError)
+                        this._logStatus('mDNS Advertisement', false, 'Failed after retry')
                         throw retryError
                     }
                 } else {
@@ -680,14 +739,13 @@ class OSCQueryService extends EventEmitter {
      */
     triggerDiscovery(): void {
         if (!this.bonjour) {
-            console.log('[OSCQuery] Bonjour not initialized, skipping discovery trigger')
+            console.warn('  Bonjour not initialized, skipping discovery trigger')
             return
         }
         // Perform a brief scan to wake up the network
         const browser = this.bonjour.find({ type: 'oscjson' }, (service) => {
             // Service found (silent)
         })
-        // Stop discovery after 1 second
         setTimeout(() => {
             try {
                 browser.stop()
@@ -698,32 +756,28 @@ class OSCQueryService extends EventEmitter {
     }
     /**
      * Start continuous VRChat discovery using long-lived browser pattern
-     * Uses persistent browser instead of creating/destroying every 5 seconds
      * @private
      */
     _startVRChatDiscovery(): void {
-        // Clear any existing discovery setup
         this._stopVRChatDiscovery()
-        console.log('[OSCQuery] Starting continuous VRChat discovery with long-lived browser...')
-        // Create a persistent browser that listens for service changes
+        this._logSection('VRChat Discovery Active')
+        this._logKV('Browser Type:', 'persistent (long-lived)')
+        this._logKV('Query Type:', '_oscjson._tcp')
+        this._logKV('Liveness Check:', 'every 5s')
         try {
             this._persistentBrowser = this.bonjour!.find({ type: 'oscjson' })
-            // Handle service discovery (service appears)
             this._persistentBrowser.on('up', async (service) => {
                 if (!this.isRunning) return
                 await this._handleServiceDiscovered(service)
             })
-            // Handle service removal (service disappears)
             this._persistentBrowser.on('down', (service) => {
                 if (!this.isRunning) return
                 this._handleServiceRemoved(service)
             })
-            console.log('[OSCQuery] Long-lived browser started')
+            this._logStatus('mDNS Browser', true, 'Listening for VRChat services')
         } catch (error) {
-            console.error('[OSCQuery] Failed to start long-lived browser:', error)
+            this._logStatus('mDNS Browser', false, (error as Error).message)
         }
-        // Also run periodic liveness checks every 5 seconds
-        // This catches cases where mDNS doesn't fire 'down' events properly
         this._discoveryInterval = setInterval(() => {
             this._performLivenessCheck()
         }, 5000)
@@ -737,62 +791,63 @@ class OSCQueryService extends EventEmitter {
         if (!service.name || !service.name.startsWith('VRChat-Client-')) {
             return
         }
-        // Get service details from mDNS
         const port = service.port
         const serviceName = service.name
         if (!port) {
             return
         }
-        // Get the IP from mDNS and from the actual packet source
-        // VRChat always reports 127.0.0.1 in its A record, but we can use the packet source
+        this._logSection('mDNS Service Discovered')
+        this._logKV('Service Name:', serviceName)
+        // Resolve the host IP with VLAN/cross-network support
         const mdnsReportedHost = service.host || service.addresses?.[0] || '127.0.0.1'
         const packetSourceIp = service.referer?.address
         let host
-        // VRCFaceTracking's approach: if mDNS says loopback but packet came from different IP,
-        // use the packet source. This handles VLAN/cross-network scenarios correctly.
+        let resolutionMethod = 'mDNS reported'
         if (this._isLoopback(mdnsReportedHost) && packetSourceIp && !this._isLoopback(packetSourceIp)) {
-            // mDNS reported loopback but packet came from different IP - use actual source
-            // This is key for VLAN support where VRChat runs on a different network segment
             host = packetSourceIp
-            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} - mDNS reported ${mdnsReportedHost} but packet from ${packetSourceIp}, using actual source IP`)
+            resolutionMethod = 'packet source (VLAN/cross-network)'
+            this._logStatus('IP Resolution', true, `mDNS said ${mdnsReportedHost}, using packet source ${packetSourceIp}`)
         } else if (this._isLoopback(mdnsReportedHost) || !mdnsReportedHost) {
-            // Both are loopback or mDNS didn't report - assume local connection
             host = '127.0.0.1'
-            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} at ${host}:${port} (local)`)
+            resolutionMethod = 'local loopback'
         } else {
-            // Use what mDNS reported (non-loopback address)
             host = mdnsReportedHost
-            console.log(`[OSCQuery] Discovered VRChat service: ${serviceName} at ${host}:${port} (mDNS reported)`)
         }
+        this._logKV('Resolved Host:', host)
+        this._logKV('OSCQuery Port:', port)
+        this._logKV('Resolution Method:', resolutionMethod)
         const oscQueryAddress = `${host}:${port}`
         // Verify the service is alive with HTTP request
+        console.log(`  Verifying service at http://${oscQueryAddress}/?HOST_INFO ...`)
         const isAlive = await this._verifyVRChatService(host, port)
         if (isAlive) {
-            console.log(`[OSCQuery] VRChat service ${serviceName} is alive, fetching OSC port...`)
+            this._logStatus('HTTP Reachability', true, `http://${oscQueryAddress}`)
             // Get OSC port from HOST_INFO
             const oscPort = await this._getVRChatOscPort(host, port)
             if (oscPort) {
                 const oscAddress = `${host}:${oscPort}`
-                console.log(`[OSCQuery] VRChat OSC port: ${oscPort} -> connection established`)
-                // Check if VRChat restarted (different service name)
+                this._logSection('VRChat Connection Established')
+                this._logKV('VRChat Service:', serviceName)
+                this._logKV('OSCQuery URL:', oscQueryAddress)
+                this._logKV('OSC Data Port:', oscPort)
+                this._logKV('OSC Data Target:', oscAddress)
+                this._logStatus('Bidirectional OSC', true, 'Ready to send/receive')
                 if (this._currentVRChatServiceName && this._currentVRChatServiceName !== serviceName) {
-                    console.log(`[OSCQuery] VRChat restart detected: ${this._currentVRChatServiceName} -> ${serviceName}`)
+                    console.warn(`  VRChat restart detected: ${this._currentVRChatServiceName} -> ${serviceName}`)
                     this.emit('vrchat-restarted', {
                         oldServiceName: this._currentVRChatServiceName,
                         newServiceName: serviceName
                     })
                 }
                 this._currentVRChatServiceName = serviceName
-                this._livenessCheckFailures = 0; // Reset failure counter
-                // Update state if changed
+                this._livenessCheckFailures = 0
                 this._updateVRChatAddresses(oscQueryAddress, oscAddress)
             } else {
-                console.log(`[OSCQuery] VRChat service alive but couldn't get OSC port`)
-                // OSCQuery service exists but couldn't get OSC port
+                console.warn('  VRChat service alive but HOST_INFO did not contain OSC_PORT')
                 this._updateVRChatAddresses(oscQueryAddress, null)
             }
         } else {
-            console.log(`[OSCQuery] VRChat service ${serviceName} at ${oscQueryAddress} is not responding`)
+            this._logStatus('HTTP Reachability', false, `http://${oscQueryAddress} not responding`)
         }
     }
     /**
@@ -838,26 +893,23 @@ class OSCQueryService extends EventEmitter {
             const port = parseInt(portStr, 10)
             const isAlive = await this._verifyVRChatService(host, port)
             if (isAlive) {
-                // Connection is healthy, reset failure counter
                 if (this._livenessCheckFailures > 0) {
-                    console.log('[OSCQuery] VRChat connection restored')
+                    this._logStatus('VRChat Connection', true, `Restored after ${this._livenessCheckFailures} failure(s)`)
                 }
                 this._livenessCheckFailures = 0
             } else {
-                // Connection failed
                 this._livenessCheckFailures++
-                console.log(`[OSCQuery] VRChat liveness check failed (${this._livenessCheckFailures}/${this.LIVENESS_FAILURE_THRESHOLD})`)
+                console.warn(`  Liveness check FAILED (${this._livenessCheckFailures}/${this.LIVENESS_FAILURE_THRESHOLD})`)
                 if (this._livenessCheckFailures >= this.LIVENESS_FAILURE_THRESHOLD) {
-                    console.log('[OSCQuery] VRChat connection lost - clearing addresses')
+                    console.warn('  VRChat connection LOST - clearing addresses, will re-discover')
                     this._updateVRChatAddresses(null, null)
                     this._currentVRChatServiceName = null
                     this._livenessCheckFailures = 0
-                    // Emit connection lost event
                     this.emit('vrchat-connection-lost')
                 }
             }
         } catch (error) {
-            console.error('[OSCQuery] Error during liveness check:', error)
+            console.error('  Liveness check error:', error)
         }
     }
     /**
@@ -1019,31 +1071,28 @@ class OSCQueryService extends EventEmitter {
      */
     _updateVRChatAddresses(oscQueryAddress: string | null, oscAddress: string | null): void {
         let changed = false
-        // Update OSCQuery address
         if (this._currentVRChatOscQueryAddress !== oscQueryAddress) {
             const previousAddress = this._currentVRChatOscQueryAddress
             this._currentVRChatOscQueryAddress = oscQueryAddress
             changed = true
             if (oscQueryAddress) {
-                console.log(`[OSCQuery] Found VRChat OSCQuery service: ${oscQueryAddress}`)
+                console.log(`  OSCQuery endpoint: ${oscQueryAddress}`)
             } else if (previousAddress) {
-                console.log(`[OSCQuery] Lost VRChat OSCQuery service`)
+                console.warn(`  OSCQuery endpoint: LOST (${previousAddress})`)
             }
             this.emit('vrchat-oscquery-address-changed', oscQueryAddress)
         }
-        // Update OSC address
         if (this._currentVRChatOscAddress !== oscAddress) {
             const previousAddress = this._currentVRChatOscAddress
             this._currentVRChatOscAddress = oscAddress
             changed = true
             if (oscAddress) {
-                console.log(`[OSCQuery] Found VRChat OSC service: ${oscAddress}`)
+                console.log(`  OSC Data endpoint: ${oscAddress}`)
             } else if (previousAddress) {
-                console.log(`[OSCQuery] Lost VRChat OSC service`)
+                console.warn(`  OSC Data endpoint: LOST (${previousAddress})`)
             }
             this.emit('vrchat-osc-address-changed', oscAddress)
         }
-        // Emit combined event if anything changed
         if (changed) {
             this.emit('vrchat-addresses-changed', {
                 oscQueryAddress: this._currentVRChatOscQueryAddress,
@@ -1071,68 +1120,56 @@ class OSCQueryService extends EventEmitter {
             return
         }
         try {
-            console.log('[OSCQuery] Stopping service...')
-            // Clear any pending discovery timer
+            this._logSection('OSCQuery Service Stop')
             if (this._discoveryTimer) {
                 clearTimeout(this._discoveryTimer)
                 this._discoveryTimer = null
             }
-            // Stop all monitoring and discovery timers
             this._stopVRChatDiscovery()
             this._stopReAdvertiseTimer()
             this._stopOscFlowMonitor()
-            // Reset health monitoring state
             this._livenessCheckFailures = 0
             this._lastOscMessageTime = null
             this._currentVRChatServiceName = null
-            // Stop OSC UDP listener FIRST to prevent new messages
             if (this.oscUdpPort) {
                 try {
-                    // Remove all event listeners to prevent memory leaks
                     this.oscUdpPort.removeAllListeners()
                     this.oscUdpPort.close()
                     this.oscUdpPort = null
-                    console.log('[OSCQuery] OSC UDP listener stopped')
-                    // Wait for port to be fully released
+                    this._logStatus('OSC UDP Listener', true, 'Stopped')
                     await new Promise(resolve => setTimeout(resolve, 200))
                 } catch (error) {
-                    console.error('[OSCQuery] Error stopping OSC UDP listener:', error)
+                    this._logStatus('OSC UDP Listener', false, (error as Error).message)
                 }
             }
-            // Stop VRChat passive listener on port 9001
             if (this.vrchatListenerPort) {
                 try {
-                    // For native dgram socket, just close it
                     this.vrchatListenerPort.removeAllListeners()
                     this.vrchatListenerPort.close()
                     this.vrchatListenerPort = null
-                    console.log('[OSCQuery] VRChat passive listener stopped')
                     await new Promise(resolve => setTimeout(resolve, 100))
                 } catch (error) {
-                    console.error('[OSCQuery] Error stopping VRChat listener:', error)
+                    // ignore
                 }
             }
-            // Stop mDNS service to unpublish from network
             if (this.bonjourService) {
                 try {
                     this.bonjourService.stop?.()
                     this.bonjourService = null
+                    this._logStatus('mDNS Advertisement', true, 'Unpublished')
                 } catch (error) {
-                    console.error('[OSCQuery] Error stopping Bonjour service:', error)
+                    this._logStatus('mDNS Advertisement', false, (error as Error).message)
                 }
             }
-            // Destroy Bonjour instance
             if (this.bonjour) {
                 try {
                     this.bonjour.destroy()
-                    // Wait for Bonjour to fully clean up network resources
                     await new Promise(resolve => setTimeout(resolve, 100))
                     this.bonjour = null
                 } catch (error) {
-                    console.error('[OSCQuery] Error destroying Bonjour:', error)
+                    // ignore
                 }
             }
-            // Stop HTTP server last
             if (this.httpServer) {
                 await new Promise<void>((resolve) => {
                     this.httpServer!.close(() => {
@@ -1140,12 +1177,13 @@ class OSCQueryService extends EventEmitter {
                         resolve()
                     })
                 })
+                this._logStatus('HTTP Server', true, 'Stopped')
             }
             this.isRunning = false
             this.emit('stopped')
-            console.log('[OSCQuery] Service stopped')
+            console.log('  Service shutdown complete')
         } catch (error) {
-            console.error('[OSCQuery] Error stopping service:', error)
+            console.error('  Error during shutdown:', error)
             this.emit('error', error)
         }
     }
@@ -1239,6 +1277,44 @@ class OSCQueryService extends EventEmitter {
             timeSinceLastOscMessage: timeSinceLastOsc,
             isVRChatConnected: !!this._currentVRChatOscQueryAddress,
             isReceivingOscData: timeSinceLastOsc !== null && timeSinceLastOsc < this.OSC_FLOW_TIMEOUT_WARNING
+        }
+    }
+    /**
+     * Get detailed network diagnostics for troubleshooting mDNS discovery issues
+     * Useful when VRChat doesn't detect the OSCQuery service
+     */
+    getNetworkDiagnostics(): Record<string, unknown> {
+        const interfaces = os.networkInterfaces()
+        const interfaceDetails: Record<string, { address: string; family: string; internal: boolean }[]> = {}
+        for (const [name, addrs] of Object.entries(interfaces)) {
+            interfaceDetails[name] = (addrs || []).map(iface => ({
+                address: iface.address,
+                family: iface.family,
+                internal: iface.internal
+            }))
+        }
+        return {
+            isRunning: this.isRunning,
+            bindAddress: this.bindAddress,
+            advertisedIp: this.oscAdvertisedIp,
+            detectedLanIp: this._getLocalIpAddress(),
+            allLocalIps: this._localIpAddresses,
+            isLoopbackBind: this._isLoopback(this.bindAddress),
+            networkInterfaces: interfaceDetails,
+            bonjourActive: !!this.bonjour,
+            bonjourServiceActive: !!this.bonjourService,
+            httpPort: this.httpPort,
+            oscPort: this.oscPort,
+            serviceName: this.appName,
+            // Common issues checklist
+            diagnostics: {
+                hasNonLoopbackIp: this._localIpAddresses.length > 0,
+                advertisedIpIsLoopback: this._isLoopback(this.oscAdvertisedIp),
+                interfaceCount: Object.keys(interfaces).length,
+                nonInternalInterfaces: Object.entries(interfaces)
+                    .filter(([, addrs]) => (addrs || []).some(a => !a.internal && a.family === 'IPv4'))
+                    .map(([name]) => name)
+            }
         }
     }
     /**

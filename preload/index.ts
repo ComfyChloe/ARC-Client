@@ -40,6 +40,7 @@ const api = {
   clearAllSuppressions: () => ipcRenderer.invoke('clear-all-suppressions'),
   // OSC Query status and control
   getOscQueryStatus: () => ipcRenderer.invoke('get-oscquery-status'),
+  getOscQueryNetworkDiagnostics: () => ipcRenderer.invoke('get-oscquery-network-diagnostics'),
   oscQueryForceReconnect: () => ipcRenderer.invoke('oscquery-force-reconnect'),
   oscQueryResetAll: () => ipcRenderer.invoke('oscquery-reset-all'),
   // HypeRate API
