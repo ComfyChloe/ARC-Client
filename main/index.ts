@@ -972,7 +972,7 @@ ipcMain.handle('check-vrchat-link', async () => {
     if (!wsManager || !wsManager.isConnected) {
       throw new Error('Not connected to ARC WebSocket server')
     }
-    debug.info(`Checking VRChat account link status`)
+    //debug.info(`Checking VRChat account link status`)
     const response = await wsManager.checkVRChatLink()
     //debug.info(`VRChat link status: ${response.linked ? 'linked' : 'not linked'}`)
     return response
@@ -1674,10 +1674,11 @@ ipcMain.handle('vrchatapi-get-stats', async () => {
 })
 // --- AutoStatus IPC Handlers ---
 ipcMain.handle('autostatus-get-config', () => {
-  if (!autoStatusContainer) return { presets: [], schedule: [], settings: {} }
+  if (!autoStatusContainer) return { presets: [], schedule: [], locationRules: [], settings: {} }
   return {
     presets: autoStatusContainer.getPresets(),
     schedule: autoStatusContainer.getSchedule(),
+    locationRules: autoStatusContainer.getLocationRules(),
     settings: autoStatusContainer.getSettings()
   }
 })
@@ -1712,6 +1713,23 @@ ipcMain.handle('autostatus-delete-schedule', async (_event, entryId: string) => 
 ipcMain.handle('autostatus-update-settings', async (_event, settings: any) => {
   if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
   return autoStatusContainer.updateSettings(settings)
+})
+// Location Rule IPC handlers
+ipcMain.handle('autostatus-get-location-rules', () => {
+  if (!autoStatusContainer) return []
+  return autoStatusContainer.getLocationRules()
+})
+ipcMain.handle('autostatus-add-location-rule', async (_event, rule: any) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
+  return autoStatusContainer.addLocationRule(rule)
+})
+ipcMain.handle('autostatus-update-location-rule', async (_event, ruleId: string, updates: any) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
+  return autoStatusContainer.updateLocationRule(ruleId, updates)
+})
+ipcMain.handle('autostatus-delete-location-rule', async (_event, ruleId: string) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
+  return autoStatusContainer.deleteLocationRule(ruleId)
 })
 // Calendar IPC handlers
 ipcMain.handle('calendar-fetch', async () => {

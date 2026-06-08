@@ -93,6 +93,10 @@ const api = {
   autoStatusUpdateSchedule: (entryId: string, updates: any) => ipcRenderer.invoke('autostatus-update-schedule', entryId, updates),
   autoStatusDeleteSchedule: (entryId: string) => ipcRenderer.invoke('autostatus-delete-schedule', entryId),
   autoStatusUpdateSettings: (settings: any) => ipcRenderer.invoke('autostatus-update-settings', settings),
+  autoStatusGetLocationRules: () => ipcRenderer.invoke('autostatus-get-location-rules'),
+  autoStatusAddLocationRule: (rule: any) => ipcRenderer.invoke('autostatus-add-location-rule', rule),
+  autoStatusUpdateLocationRule: (ruleId: string, updates: any) => ipcRenderer.invoke('autostatus-update-location-rule', ruleId, updates),
+  autoStatusDeleteLocationRule: (ruleId: string) => ipcRenderer.invoke('autostatus-delete-location-rule', ruleId),
   // Calendar API
   calendarFetch: () => ipcRenderer.invoke('calendar-fetch'),
   calendarGetStatus: () => ipcRenderer.invoke('calendar-get-status'),
