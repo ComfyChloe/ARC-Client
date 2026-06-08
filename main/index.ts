@@ -974,7 +974,7 @@ ipcMain.handle('check-vrchat-link', async () => {
     }
     debug.info(`Checking VRChat account link status`)
     const response = await wsManager.checkVRChatLink()
-    debug.info(`VRChat link status: ${response.linked ? 'linked' : 'not linked'}`)
+    //debug.info(`VRChat link status: ${response.linked ? 'linked' : 'not linked'}`)
     return response
   } catch (error: any) {
     debug.error(`Failed to check VRChat link status: ${error.message}`)
