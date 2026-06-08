@@ -45,6 +45,10 @@ const EXTENSIONS = {
     CLIPMODE: true,
 } as const
 
+const DEFAULT_BIND_ADDRESS = '127.0.0.1'
+const DEFAULT_FALLBACK_ADDRESS = '0.0.0.0'
+const DEFAULT_FALLBACK_IP = '127.0.0.1'
+
 interface OscQueryNode {
     description?: string
     access?: number
@@ -140,7 +144,7 @@ class OSCQueryService extends EventEmitter {
         // Network configuration
         this.oscAdvertisedIp = null // IP address to advertise in HOST_INFO
         this._localIpAddresses = [] // Cache of local IP addresses
-        this.bindAddress = '0.0.0.0'
+        this.bindAddress = DEFAULT_BIND_ADDRESS
         // Configuration constants
         this.LIVENESS_FAILURE_THRESHOLD = 2 // Failures before clearing connection
         this.OSC_FLOW_TIMEOUT_WARNING = 30000 // 30s without data = warning
@@ -178,9 +182,9 @@ class OSCQueryService extends EventEmitter {
      * Initialize the OSC Query service
      * @param {number} legacyPort - Legacy OSC port (not used, kept for compatibility)
      * @param {number} httpPort - Optional HTTP port (auto-detected if not provided)
-     * @param {string} bindAddress - IP address to bind to (default: '0.0.0.0' for all interfaces)
+     * @param {string} bindAddress - IP address to bind to (default: '127.0.0.1' for local only)
      */
-    async initialize(legacyPort: number | null = null, httpPort: number | null = null, bindAddress = '0.0.0.0'): Promise<void> {
+    async initialize(legacyPort: number | null = null, httpPort: number | null = null, bindAddress = DEFAULT_BIND_ADDRESS): Promise<void> {
         // Reuse previously assigned ports if they exist (for persistent VRChat connection)
         // Otherwise, assign new random ports on first initialization
         if (this.assignedOscPort === null) {
@@ -204,14 +208,15 @@ class OSCQueryService extends EventEmitter {
             this.assignedHttpPort = httpPort; // Store explicitly provided port
         }
         // Store bind address for use during start
-        this.bindAddress = bindAddress || '0.0.0.0'
+        this.bindAddress = bindAddress || DEFAULT_FALLBACK_ADDRESS
         this._localIpAddresses = this._getLocalIpAddresses()
         // Determine the advertised OSC IP based on bind address
-        if (bindAddress && bindAddress !== '0.0.0.0') {
-            this.oscAdvertisedIp = bindAddress
+        if (this.bindAddress === DEFAULT_FALLBACK_ADDRESS) {
+            // Binding to all interfaces — auto-detect primary IP for advertisement
+            this.oscAdvertisedIp = this._getLocalIpAddress() || DEFAULT_FALLBACK_IP
         } else {
-            // Binding to all interfaces
-            this.oscAdvertisedIp = this._getLocalIpAddress() || '127.0.0.1'
+            // Specific bind address — advertise it directly
+            this.oscAdvertisedIp = this.bindAddress
         }
         console.log(`[OSCQuery] Initializing with OSC Port: ${this.oscPort}, HTTP Port: ${this.httpPort}, Bind Address: ${this.bindAddress}`)
         console.log(`[OSCQuery] Network Configuration:`)
@@ -589,7 +594,7 @@ class OSCQueryService extends EventEmitter {
             console.log('[OSCQuery] VRChat port 9001 listener disabled - using OSC Query port for all communication')
             // Initialize Bonjour for mDNS
             const bonjourOpts: Record<string, string> = {}
-            if (this.bindAddress && this.bindAddress !== '0.0.0.0') {
+            if (this.bindAddress && this.bindAddress !== DEFAULT_FALLBACK_ADDRESS) {
                 // Bind mDNS to specific interface when user specified one
                 bonjourOpts.interface = this.bindAddress
                 console.log(`[OSCQuery] Binding mDNS to interface: ${this.bindAddress}`)
@@ -617,7 +622,7 @@ class OSCQueryService extends EventEmitter {
                         await new Promise(resolve => setTimeout(resolve, 500))
                         // Reinitialize and retry
                         const retryBonjourOpts: Record<string, string> = {}
-                        if (this.bindAddress && this.bindAddress !== '0.0.0.0') {
+                        if (this.bindAddress && this.bindAddress !== DEFAULT_FALLBACK_ADDRESS) {
                             retryBonjourOpts.interface = this.bindAddress
                         }
                         this.bonjour = new Bonjour(retryBonjourOpts)

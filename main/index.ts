@@ -589,7 +589,7 @@ async function initOscQueryService() {
     await oscQueryService.initialize(
       serverConfig.legacyOscPort,
       null, // httpPort (auto-assigned)
-      serverConfig.oscQueryBindAddress || '0.0.0.0'
+      serverConfig.oscQueryBindAddress || '127.0.0.1'
     )
     // Load and set unsubscriptions from config
     const unsubscriptions = serverConfig.oscQueryUnsubscriptions || []

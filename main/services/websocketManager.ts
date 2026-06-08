@@ -35,7 +35,7 @@ class WebSocketManager {
         this.isAuthenticated = false
         this.currentUser = null
         this.connectionConfig = {
-            serverUrl: 'wss://avatar.comfychloe.uk:48255',
+            serverUrl: 'wss://arcosc.app:48255',
             autoReconnect: true,
             reconnectDelay: 3000,
             maxReconnectAttempts: 5
