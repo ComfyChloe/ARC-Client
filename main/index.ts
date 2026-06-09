@@ -398,10 +398,10 @@ function initWebSocket() {
       sendToRenderer('feedback-update', data)
       debug.info(`Feedback update received: ${data.action} for feedback ${data.feedbackId || 'unknown'}`)
     })
-    // Handle server-managed parameter blocklist
+    // Handle server-managed parameter blocklist -> native OSC mode uses oscService
     wsManager.on('parameter-blocklist', (data: any) => {
-      if (oscQueryService && data && Array.isArray(data.patterns)) {
-        oscQueryService.setServerBlocklist(data.patterns)
+      if (oscService && data && Array.isArray(data.patterns)) {
+        oscService.setServerBlocklist(data.patterns)
         debug.info(`Server blocklist received: ${data.patterns.length} pattern(s)`)
         sendToRenderer('parameter-blocklist-updated', {
           patterns: data.patterns,
@@ -409,10 +409,10 @@ function initWebSocket() {
         })
       }
     })
-    // Handle server-managed parameter suppressions (rate monitoring)
+    // Handle server-managed parameter suppressions (rate monitoring) -> oscService
     wsManager.on('suppress-parameters', (data: any) => {
-      if (oscQueryService && data && Array.isArray(data.addresses)) {
-        oscQueryService.addServerSuppressions(data.addresses, data.metadata)
+      if (oscService && data && Array.isArray(data.addresses)) {
+        oscService.addServerSuppressions(data.addresses, data.metadata)
         debug.info(`Server suppressed ${data.addresses.length} parameter(s): ${data.addresses.join(', ')}`)
         sendToRenderer('parameters-suppressed', {
           addresses: data.addresses,
@@ -421,10 +421,10 @@ function initWebSocket() {
         })
       }
     })
-    // Handle server-managed parameter unsuppressions
+    // Handle server-managed parameter unsuppressions -> oscService
     wsManager.on('unsuppress-parameters', (data: any) => {
-      if (oscQueryService && data && Array.isArray(data.addresses)) {
-        oscQueryService.removeServerSuppressions(data.addresses)
+      if (oscService && data && Array.isArray(data.addresses)) {
+        oscService.removeServerSuppressions(data.addresses)
         debug.info(`Server unsuppressed ${data.addresses.length} parameter(s): ${data.addresses.join(', ')}`)
         sendToRenderer('parameters-unsuppressed', {
           addresses: data.addresses,
@@ -481,8 +481,8 @@ function initOscServer() {
       hyperateAddon.start(oscService)
     }
     if (appSettings.oscleashAutostart && oscLeashAddon && !oscLeashAddon.isEnabled()) {
-      debug.info('Starting OSCLeash addon based on autostart setting (OSC-Query ready)...')
-      oscLeashAddon.start(oscQueryService, oscService)
+      debug.info('Starting OSCLeash addon based on autostart setting (native OSC)...')
+      oscLeashAddon.start(null, oscService)
     }
   })
   oscService.on('additionalPortReady', (data: any) => {
@@ -511,6 +511,46 @@ function initOscServer() {
     const status = debug.handleOscError(err)
     sendToRenderer('osc-server-status', status)
   })
+  // Native OSC mode: forward incoming OSC messages to WebSocket
+  oscService.on('osc-message', (oscData: any) => {
+    // AutoStatus: intercept vrc-status parameter
+    if (autoStatusContainer) {
+      if (oscData.address === '/avatar/change') {
+        autoStatusContainer.recordAvatarChange()
+      }
+      autoStatusContainer.handleOscMessage(oscData)
+    }
+    // Send to renderer for logging
+    sendToRenderer('osc-received', {
+      address: oscData.address,
+      value: oscData.value,
+      type: oscData.type,
+      connectionId: null
+    })
+    // Check if WebSocket forwarding is enabled
+    const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false
+    if (!wsForwardingEnabled) {
+      return
+    }
+    // Forward to WebSocket if connected
+    if (wsManager && wsManager.isConnected) {
+      try {
+        wsManager.sendOscData({
+          address: oscData.address,
+          value: oscData.value,
+          type: oscData.type
+        })
+        sendToRenderer('osc-forwarded', {
+          address: oscData.address,
+          value: oscData.value,
+          type: oscData.type,
+          connectionId: null
+        })
+      } catch (error: any) {
+        debug.error(`Failed to forward OSC to WebSocket: ${error.message}`)
+      }
+    }
+  })
   // Initialize and start the service
   if (oscService.initialize(
     serverConfig.legacyOscPort,
@@ -520,156 +560,14 @@ function initOscServer() {
     oscService.setAdditionalConnections(serverConfig.additionalOscConnections)
     oscService.start()
     ;(global as any).oscService = oscService
-    // Initialize OSC Query service for automatic VRChat discovery
-    initOscQueryService()
+    debug.info('[NativeOSC] OSC-Query disabled - using direct OSC on ports 9001/9000')
+    sendToRenderer('oscquery-status', { status: 'disabled', reason: 'native-osc-mode' })
   }
 }
 async function initOscQueryService() {
-  try {
-    // Reuse existing instance if available, otherwise create new one
-    if (!oscQueryService) {
-      oscQueryService = new OSCQueryService()
-      // Setup event listeners only once when creating new instance
-      oscQueryService.on('started', (info: any) => {
-        debug.info(`OSC Query service started on HTTP port ${info.httpPort}`)
-        sendToRenderer('oscquery-status', {
-          status: 'started',
-          httpPort: info.httpPort,
-          oscPort: info.oscPort
-        })
-      })
-      oscQueryService.on('error', (error: any) => {
-        debug.error(`OSC Query service error: ${error.message}`)
-        sendToRenderer('oscquery-status', {
-          status: 'error',
-          error: error.message
-        })
-      })
-      oscQueryService.on('stopped', () => {
-        debug.info('OSC Query service stopped')
-        sendToRenderer('oscquery-status', {
-          status: 'stopped'
-        })
-      })
-      // VRChat connection state events
-      oscQueryService.on('vrchat-addresses-changed', (addresses: any) => {
-        debug.info(`VRChat addresses changed: OSCQuery=${addresses.oscQueryAddress}, OSC=${addresses.oscAddress}`)
-        sendToRenderer('vrchat-connection-status', {
-          connected: !!addresses.oscQueryAddress,
-          oscQueryAddress: addresses.oscQueryAddress,
-          oscAddress: addresses.oscAddress
-        })
-      })
-      oscQueryService.on('vrchat-connection-lost', () => {
-        debug.warn('VRChat connection lost - will attempt to rediscover')
-        sendToRenderer('vrchat-connection-status', {
-          connected: false,
-          reason: 'connection-lost'
-        })
-      })
-      oscQueryService.on('vrchat-restarted', (info: any) => {
-        debug.info(`VRChat restarted: ${info.oldServiceName} -> ${info.newServiceName}`)
-        sendToRenderer('vrchat-connection-status', {
-          connected: true,
-          restarted: true,
-          oldServiceName: info.oldServiceName,
-          newServiceName: info.newServiceName
-        })
-      })
-      // OSC data flow monitoring events
-      oscQueryService.on('osc-flow-warning', (info: any) => {
-        debug.warn(`No OSC data received for ${Math.round(info.timeout / 1000)}s`)
-        sendToRenderer('osc-flow-status', {
-          status: 'warning',
-          timeout: info.timeout,
-          lastMessageTime: info.lastMessageTime
-        })
-      })
-      oscQueryService.on('osc-flow-timeout', (info: any) => {
-        debug.error(`OSC data flow timeout after ${Math.round(info.timeout / 1000)}s - triggering reconnection`)
-        sendToRenderer('osc-flow-status', {
-          status: 'timeout',
-          timeout: info.timeout,
-          lastMessageTime: info.lastMessageTime
-        })
-      })
-      // Setup OSC message forwarding to WebSocket
-      oscQueryService.on('osc-message', (oscData: any) => {
-        // AutoStatus: intercept vrc-status parameter
-        if (autoStatusContainer) {
-          if (oscData.address === '/avatar/change') {
-            autoStatusContainer.recordAvatarChange()
-          }
-          autoStatusContainer.handleOscMessage(oscData)
-        }
-        // Send to renderer for logging
-        sendToRenderer('osc-received', {
-          address: oscData.address,
-          value: oscData.value,
-          type: oscData.type,
-          connectionId: null
-        })
-        // Check if WebSocket forwarding is enabled
-        const wsForwardingEnabled = serverConfig.appSettings?.enableWebSocketForwarding || false
-        if (!wsForwardingEnabled) {
-          return
-        }
-        // Forward to WebSocket if connected
-        if (wsManager && wsManager.isConnected) {
-          try {
-            if (oscQueryService.isLocalOnly(oscData.address)) {
-              return
-            }
-            wsManager.sendOscData({
-              address: oscData.address,
-              value: oscData.value,
-              type: oscData.type
-            })
-            sendToRenderer('osc-forwarded', {
-              address: oscData.address,
-              value: oscData.value,
-              type: oscData.type,
-              connectionId: null
-            })
-          } catch (error: any) {
-            debug.error(`Failed to forward OSC to WebSocket: ${error.message}`)
-          }
-        }
-      })
-    } else {
-      debug.info('Reusing existing OSC Query service instance')
-    }
-    // Stop the service if it's running before re-initializing so HTTP and UDP
-    // servers are fully torn down before the new bind address is applied
-    if (oscQueryService.isRunning) {
-      await oscQueryService.stop()
-    }
-    // Initialize with legacy port
-    await oscQueryService.initialize(
-      serverConfig.legacyOscPort,
-      null, // httpPort (auto-assigned)
-      serverConfig.oscQueryBindAddress || '127.0.0.1'
-    )
-    // Load and set unsubscriptions from config
-    const unsubscriptions = serverConfig.oscQueryUnsubscriptions || []
-    oscQueryService.setUnsubscriptions(unsubscriptions)
-    debug.info(`OSC Query unsubscriptions loaded: ${unsubscriptions.length === 0 ? 'None (listening to all)' : unsubscriptions.join(', ')}`)
-    // Start the service
-    await oscQueryService.start()
-    // Attach OscGoesBrrr addon to OSC-Query service
-    if (oscGoesBrrrAddon) {
-      oscGoesBrrrAddon.setOscQueryService(oscQueryService)
-      debug.info('OscGoesBrrr addon attached to OSC-Query service')
-      // Start OGB if autostart is enabled
-      const appSettings = configManager.getAppSettings()
-      if (appSettings.ogbAutostart && !oscGoesBrrrAddon.isEnabled()) {
-        debug.info('Starting OscGoesBrrr addon based on autostart setting...')
-        oscGoesBrrrAddon.start()
-      }
-    }
-  } catch (error: any) {
-    debug.error(`Failed to initialize OSC Query service: ${error.message}`)
-  }
+  // Native OSC mode: OSC-Query is disabled. All OSC data flows through OscService.
+  debug.info('[NativeOSC] OSC-Query disabled - using direct OSC only')
+  sendToRenderer('oscquery-status', { status: 'disabled', reason: 'native-osc-mode' })
 }
 function initOscClient() {
   if (oscClient) {
@@ -784,11 +682,9 @@ ipcMain.handle('set-config', (_event, newConfig: any) => {
   const oscQueryBindAddressChanged = (oldConfig.oscQueryBindAddress !== serverConfig.oscQueryBindAddress)
   const additionalConnectionsChanged = JSON.stringify(oldConfig.additionalOscConnections || []) !==
                                        JSON.stringify(serverConfig.additionalOscConnections || [])
-  // Restart OSC-Query if bind address changed
+  // Native OSC mode: OSC-Query bind address changes are no longer relevant
   if (oscQueryBindAddressChanged) {
-    debug.info('OSC-Query bind address changed, restarting OSC-Query service')
-    sendToRenderer('oscquery-status', { status: 'restarting' })
-    initOscQueryService()
+    debug.info('[NativeOSC] OSC-Query bind address changed - ignored in native OSC mode')
   }
   if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
     debug.info('Only additional connections changed, updating without restarting OSC service')
@@ -838,38 +734,18 @@ ipcMain.handle('get-osc-status', () => {
   }
   return { error: 'OSC service not initialized' }
 })
-// OSC Query status and control handlers
+// OSC Query status and control handlers (native OSC mode: stubs)
 ipcMain.handle('get-oscquery-status', () => {
-  if (oscQueryService) {
-    return oscQueryService.getStatus()
-  }
-  return { error: 'OSC Query service not initialized', isRunning: false }
+  return { isRunning: false, status: 'disabled', reason: 'native-osc-mode', serviceName: null, httpPort: null, oscPort: null }
 })
 ipcMain.handle('get-oscquery-network-diagnostics', () => {
-  if (oscQueryService) {
-    return oscQueryService.getNetworkDiagnostics()
-  }
-  return { error: 'OSC Query service not initialized', isRunning: false }
+  return { error: 'Native OSC mode: no network diagnostics', isRunning: false }
 })
 ipcMain.handle('oscquery-force-reconnect', () => {
-  if (oscQueryService) {
-    const result = oscQueryService.forceReconnect()
-    debug.info(`OSC Query force reconnect: ${result ? 'success' : 'failed'}`)
-    return { success: result }
-  }
-  return { success: false, error: 'OSC Query service not initialized' }
+  return { success: false, reason: 'native-osc-mode' }
 })
 ipcMain.handle('oscquery-reset-all', async () => {
-  if (oscQueryService) {
-    if (oscQueryService.isRunning) {
-      await oscQueryService.stop()
-    }
-    oscQueryService.resetAll()
-    debug.info('OSC Query service reset - re-initializing with new ports')
-    await initOscQueryService()
-    return { success: true }
-  }
-  return { success: false, error: 'OSC Query service not initialized' }
+  return { success: false, reason: 'native-osc-mode' }
 })
 ipcMain.handle('get-last-username', () => {
   const appSettings = configManager.getAppSettings()
@@ -1199,14 +1075,6 @@ ipcMain.handle('disable-osc', async () => {
       } catch (error: any) {
         debug.error(`Error closing OSC client: ${error.message}`)
       }
-      try {
-        if (oscQueryService) {
-          await oscQueryService.stop()
-          debug.info('OSC Query service stopped and ready for reuse')
-        }
-      } catch (error: any) {
-        debug.error(`Error stopping OSC Query service: ${error.message}`)
-      }
       sendToRenderer('osc-server-status', {
         status: 'disabled',
         port: serverConfig.legacyOscPort
@@ -1226,69 +1094,36 @@ ipcMain.handle('disable-osc', async () => {
     return { success: false, error: error.message }
   }
 })
-// OSC Query unsubscription management
+// OSC Query unsubscription management (native OSC mode: delegates to oscService)
 ipcMain.handle('get-oscquery-unsubscriptions', () => {
-  try {
-    if (oscQueryService) {
-      return {
-        success: true,
-        unsubscriptions: oscQueryService.getUserUnsubscriptions()
-      }
-    }
-    return {
-      success: true,
-      unsubscriptions: serverConfig.oscQueryUnsubscriptions || []
-    }
-  } catch (error: any) {
-    debug.error(`Failed to get OSC Query unsubscriptions: ${error.message}`)
-    return { success: false, error: error.message }
-  }
+  return { success: true, unsubscriptions: [] }
 })
 ipcMain.handle('add-oscquery-unsubscription', (_event, oscPath: string) => {
-  try {
-    const currentUnsubs = serverConfig.oscQueryUnsubscriptions || []
-    if (currentUnsubs.includes(oscPath)) {
-      return { success: true, message: 'Unsubscription already exists', unsubscriptions: currentUnsubs }
-    }
+  const currentUnsubs = serverConfig.oscQueryUnsubscriptions || []
+  if (!currentUnsubs.includes(oscPath)) {
     const newUnsubs = [...currentUnsubs, oscPath]
     serverConfig.oscQueryUnsubscriptions = newUnsubs
     configManager.updateConfig({ oscQueryUnsubscriptions: newUnsubs })
-    if (oscQueryService && oscQueryService.isRunning) {
-      oscQueryService.addUnsubscription(oscPath)
-    }
-    debug.info(`Added OSC Query unsubscription: ${oscPath}`)
-    return { success: true, unsubscriptions: newUnsubs }
-  } catch (error: any) {
-    debug.error(`Failed to add OSC Query unsubscription: ${error.message}`)
-    return { success: false, error: error.message }
   }
+  return { success: true, unsubscriptions: serverConfig.oscQueryUnsubscriptions }
 })
 ipcMain.handle('remove-oscquery-unsubscription', (_event, oscPath: string) => {
-  try {
-    const currentUnsubs = serverConfig.oscQueryUnsubscriptions || []
-    const newUnsubs = currentUnsubs.filter((sub: string) => sub !== oscPath)
-    serverConfig.oscQueryUnsubscriptions = newUnsubs
-    configManager.updateConfig({ oscQueryUnsubscriptions: newUnsubs })
-    if (oscQueryService && oscQueryService.isRunning) {
-      oscQueryService.removeUnsubscription(oscPath)
-    }
-    debug.info(`Removed OSC Query unsubscription: ${oscPath}`)
-    return { success: true, unsubscriptions: newUnsubs }
-  } catch (error: any) {
-    debug.error(`Failed to remove OSC Query unsubscription: ${error.message}`)
-    return { success: false, error: error.message }
-  }
+  const currentUnsubs = serverConfig.oscQueryUnsubscriptions || []
+  const newUnsubs = currentUnsubs.filter((sub: string) => sub !== oscPath)
+  serverConfig.oscQueryUnsubscriptions = newUnsubs
+  configManager.updateConfig({ oscQueryUnsubscriptions: newUnsubs })
+  return { success: true, unsubscriptions: newUnsubs }
 })
-// Server-managed blocklist/suppression query handlers
+// Server-managed blocklist/suppression query handlers (native OSC mode: delegates to oscService)
 ipcMain.handle('get-server-blocklist', () => {
-  if (!oscQueryService) return { patterns: [] }
-  return { patterns: oscQueryService.getServerBlocklist() }
+  if (!oscService) return { patterns: [] }
+  return { patterns: oscService.getServerBlocklist() }
 })
 ipcMain.handle('get-server-suppressions', () => {
-  if (!oscQueryService) return { addresses: [], metadata: {} }
+  if (!oscService) return { addresses: [], metadata: {} }
   return {
-    addresses: oscQueryService.getServerSuppressions(),
-    metadata: oscQueryService.getServerSuppressionMetadata()
+    addresses: oscService.getServerSuppressions(),
+    metadata: oscService.getServerSuppressionMetadata()
   }
 })
 ipcMain.handle('request-unsuppress', (_event, address: string) => {
@@ -1309,8 +1144,8 @@ ipcMain.handle('clear-all-suppressions', async () => {
   }
 })
 ipcMain.handle('get-hardcoded-unsubscriptions', () => {
-  if (!oscQueryService) return { patterns: [] }
-  return { patterns: oscQueryService.getHardcodedUnsubscriptions() }
+  // Native OSC mode: no hardcoded unsubscriptions (those were OSCQuery-specific)
+  return { patterns: [] }
 })
 ipcMain.handle('get-saved-password', () => {
   const savedPassword = configManager.getSavedPassword()
@@ -1466,13 +1301,12 @@ ipcMain.handle('oscleash-start', () => {
     if (!oscLeashAddon) {
       return { success: false, error: 'OSCLeash addon not initialized' }
     }
-    if (!oscQueryService) {
-      return { success: false, error: 'OSC-Query service not available' }
-    }
     if (!oscService) {
       return { success: false, error: 'OSC service not available' }
     }
-    const result = oscLeashAddon.start(oscQueryService, oscService)
+    // Native OSC mode: OSCLeash requires OSC-Query for message listening
+    // Pass oscService as both oscQuery (for event listening) and oscService (for sending)
+    const result = oscLeashAddon.start(oscService, oscService)
     return { success: result }
   } catch (error: any) {
     debug.error(`Failed to start OSCLeash addon: ${error.message}`)
@@ -2061,13 +1895,8 @@ app.whenReady().then(async () => {
       })
     }
   }, 1500)
-  // Schedule mDNS discovery after UI is fully loaded
-  setTimeout(() => {
-    if (oscQueryService && oscQueryService.isRunning) {
-      debug.info('Triggering OSC Query mDNS discovery for VRChat awareness...')
-      oscQueryService.triggerDiscovery()
-    }
-  }, 5000)
+  // Native OSC mode: no mDNS discovery needed
+  // VRChat must be configured manually to send OSC to port 9001
   setTimeout(() => {
     debug.connectionTimeout()
   }, 30000)
@@ -2195,16 +2024,7 @@ function cleanup(source = 'unknown') {
   } catch (error: any) {
     debug.error(`Error stopping OSC service: ${error.message}`)
   }
-  try {
-    if (oscQueryService) {
-      debug.info('Stopping OSC Query service during cleanup...')
-      oscQueryService.stop()
-      oscQueryService = null
-      debug.info('OSC Query service cleanup completed')
-    }
-  } catch (error: any) {
-    debug.error(`Error stopping OSC Query service: ${error.message}`)
-  }
+  // Native OSC mode: no OSC-Query service to stop
   try {
     if (oscServer) {
       oscServer.close()

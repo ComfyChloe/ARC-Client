@@ -47,6 +47,10 @@ class OscService extends EventEmitter {
   bindAddress: string
   additionalConnections: AdditionalConnection[]
   oscLeashListeners: Map<string, (value: unknown) => void>
+  // Native OSC mode: server-managed blocklist/suppression (previously in OSCQueryService)
+  serverBlocklist: Set<string>
+  serverSuppressions: Set<string>
+  localOnlyPatterns: Set<string>
 
   constructor() {
     super()
@@ -59,6 +63,9 @@ class OscService extends EventEmitter {
     this.bindAddress = BIND_ALL
     this.additionalConnections = []
     this.oscLeashListeners = new Map()
+    this.serverBlocklist = new Set()
+    this.serverSuppressions = new Set()
+    this.localOnlyPatterns = new Set()
   }
   initialize(localPort: number | null = null, targetPort = 9000, targetAddress = '127.0.0.1', bindAddress = BIND_ALL): boolean {
     this.targetPort = targetPort
@@ -101,13 +108,27 @@ class OscService extends EventEmitter {
       })
     })
     this.primaryUdpPort!.on("message", (oscMessage: OscMessage) => {
+      const address = oscMessage.address
+      // Drop messages matching blocklist, suppressions, or localOnly patterns
+      if (this._isBlocked(address) || this._isSuppressed(address) || this.isLocalOnly(address)) {
+        return
+      }
+      // Emit for WebSocket forwarding
+      const value = oscMessage.args && oscMessage.args.length > 0 ? oscMessage.args[0].value : null
+      const type = oscMessage.args && oscMessage.args.length > 0 ? oscMessage.args[0].type : 'f'
+      this.emit('osc-message', {
+        address,
+        value,
+        type,
+        timestamp: Date.now()
+      })
+      // OSCLeash listeners
       if (this.oscLeashListeners.size > 0) {
-        const address = oscMessage.address
         const callback = this.oscLeashListeners.get(address)
         if (callback) {
           try {
-            const value = oscMessage.args && oscMessage.args.length > 0 ? oscMessage.args[0].value : 0
-            callback(value)
+            const leashValue = oscMessage.args && oscMessage.args.length > 0 ? oscMessage.args[0].value : 0
+            callback(leashValue)
           } catch (error) {
             const err = error as Error
             debug.error(`Error in OSCLeash listener for ${address}: ${err.message}`, {
@@ -428,6 +449,8 @@ class OscService extends EventEmitter {
     outgoingConnections: number
     primaryPortReady: boolean
     additionalPortsDetails: AdditionalPortDetail[]
+    serverBlocklistCount: number
+    serverSuppressionsCount: number
   } {
     const status = {
       isListening: this.isListening,
@@ -438,7 +461,9 @@ class OscService extends EventEmitter {
       activeAdditionalPorts: this.additionalPorts.size,
       outgoingConnections: this.additionalConnections.filter(c => c.type === 'outgoing').length,
       primaryPortReady: !!(this.primaryUdpPort && this.isListening),
-      additionalPortsDetails: [] as AdditionalPortDetail[]
+      additionalPortsDetails: [] as AdditionalPortDetail[],
+      serverBlocklistCount: this.serverBlocklist.size,
+      serverSuppressionsCount: this.serverSuppressions.size
     }
     this.additionalPorts.forEach((portData, connectionId) => {
       const connection = this.additionalConnections.find(c => c.id === connectionId)
@@ -455,6 +480,72 @@ class OscService extends EventEmitter {
     return status
   }
 
+  // --- Blocklist / Suppression / LocalOnly (native OSC mode) ---
+  setServerBlocklist(patterns: string[]): void {
+    this.serverBlocklist.clear()
+    if (Array.isArray(patterns)) {
+      patterns.forEach(p => this.serverBlocklist.add(p))
+    }
+    debug.info(`Server blocklist updated: ${this.serverBlocklist.size} pattern(s)`)
+    this.emit('server-blocklist-updated', Array.from(this.serverBlocklist))
+  }
+  getServerBlocklist(): string[] {
+    return Array.from(this.serverBlocklist)
+  }
+  addServerSuppressions(addresses: string[], metadata?: Record<string, unknown>): void {
+    if (Array.isArray(addresses)) {
+      addresses.forEach(addr => this.serverSuppressions.add(addr))
+      debug.info(`Server suppressions added: ${addresses.length} address(es), total: ${this.serverSuppressions.size}`)
+      this.emit('server-suppressions-updated', Array.from(this.serverSuppressions))
+    }
+  }
+  removeServerSuppressions(addresses: string[]): void {
+    if (Array.isArray(addresses)) {
+      addresses.forEach(addr => this.serverSuppressions.delete(addr))
+      debug.info(`Server suppressions removed: ${addresses.length} address(es), remaining: ${this.serverSuppressions.size}`)
+      this.emit('server-suppressions-updated', Array.from(this.serverSuppressions))
+    }
+  }
+  clearServerSuppressions(): void {
+    this.serverSuppressions.clear()
+    debug.info('Server suppressions cleared')
+    this.emit('server-suppressions-updated', [])
+  }
+  getServerSuppressions(): string[] {
+    return Array.from(this.serverSuppressions)
+  }
+  getServerSuppressionMetadata(): Record<string, unknown> {
+    return {}
+  }
+  addLocalOnlyAddress(address: string): void {
+    this.localOnlyPatterns.add(address)
+  }
+  removeLocalOnlyAddress(address: string): void {
+    this.localOnlyPatterns.delete(address)
+  }
+  isLocalOnly(address: string): boolean {
+    return this.localOnlyPatterns.has(address)
+  }
+  _isBlocked(address: string): boolean {
+    for (const pattern of this.serverBlocklist) {
+      if (this._matchPattern(address, pattern)) return true
+    }
+    return false
+  }
+  _isSuppressed(address: string): boolean {
+    for (const pattern of this.serverSuppressions) {
+      if (this._matchPattern(address, pattern)) return true
+    }
+    return false
+  }
+  _matchPattern(address: string, pattern: string): boolean {
+    if (address === pattern) return true
+    if (pattern.includes('*')) {
+      const regex = new RegExp('^' + pattern.replace(/\//g, '\\/').replace(/\*/g, '.*') + '$')
+      return regex.test(address)
+    }
+    return false
+  }
   registerOSCLeashListener(address: string, callback: (value: unknown) => void): void {
     this.oscLeashListeners.set(address, callback)
   }
