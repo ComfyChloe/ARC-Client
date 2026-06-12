@@ -2,8 +2,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 import WebSocket from 'ws'
+import Database from 'better-sqlite3'
 import debug from '../../services/debugger'
 import configManager from '../../services/configManager'
+import { getDb } from '../../services/sqlDbService'
 
 interface TrackerData {
   joinedAt: number
@@ -51,6 +53,22 @@ class HyperateAddon {
   watchdogInterval: ReturnType<typeof setInterval> | null
   watchdogCount: number
   readonly STALE_THRESHOLD_MS: number
+  // HR history DB members
+  private hrFlushTimer: ReturnType<typeof setInterval> | null
+  private hrCleanupTimer: ReturnType<typeof setInterval> | null
+  private hrWriteBuffer: Array<{ trackerId: string; heartRate: number; recordedAt: number }>
+  private hrFlushStmt: Database.Statement | null
+  private lastCaptureTime: number
+  private captureRateMs: number
+  private static readonly HR_FLUSH_MS = 2000
+  private static readonly HR_CLEANUP_MS = 24 * 60 * 60 * 1000
+  private static readonly HR_RETENTION_MAP: Record<number, number> = {
+    1: 1 * 24 * 60 * 60 * 1000,
+    3: 3 * 24 * 60 * 60 * 1000,
+    7: 7 * 24 * 60 * 60 * 1000,
+    30: 30 * 24 * 60 * 60 * 1000,
+    [-1]: -1
+  }
   constructor() {
     this.enabled = false
     this.ws = null
@@ -76,6 +94,12 @@ class HyperateAddon {
     this.watchdogInterval = null
     this.watchdogCount = 0
     this.STALE_THRESHOLD_MS = 3 * 60 * 1000 // 3 minutes — matches HypeRDesktop STALE_SECS
+    this.hrFlushTimer = null
+    this.hrCleanupTimer = null
+    this.hrWriteBuffer = []
+    this.hrFlushStmt = null
+    this.lastCaptureTime = 0
+    this.captureRateMs = this.loadCaptureRate()
     debug.info('HypeRate addon initialized')
   }
   setStatusChangeCallback(callback: ((status: ReturnType<HyperateAddon['getStatus']>) => void) | null): void {
@@ -171,6 +195,8 @@ class HyperateAddon {
     this.lastError = null // Clear any previous errors
     this.reconnecting = false
     this.reconnectAttempts = 0
+    this.prepareHrStatement()
+    this.startHrTimers()
     this.notifyStatusChange() // Notify UI of state change immediately
     this.connect()
     debug.info('HypeRate addon started')
@@ -186,6 +212,8 @@ class HyperateAddon {
     this.reconnecting = false
     this.lastError = null // Clear error on manual stop
     this.disconnect()
+    this.stopHrTimers()
+    this.flushHrBuffer()
     this.notifyStatusChange() // Notify UI of state change immediately
     debug.info('HypeRate addon stopped successfully')
   }
@@ -490,6 +518,7 @@ class HyperateAddon {
       }
       this.lastHrUpdate = Date.now()
       this.watchdogCount = 0
+      this.bufferHrReading(deviceId, heartRate)
       // Only update lastHeartRate and send to VRChat if this is the primary tracker
       if (deviceId === this.primaryTracker) {
         this.lastHeartRate = heartRate
@@ -619,6 +648,139 @@ class HyperateAddon {
       lastError: this.lastError,
       reconnecting: this.reconnecting
     }
+  }
+  // --- HR History DB methods ---
+  private prepareHrStatement(): void {
+    try {
+      const db = getDb()
+      this.hrFlushStmt = db.prepare(
+        'INSERT INTO heartrate_log (tracker_id, recorded_at, heart_rate) VALUES (?, ?, ?)'
+      )
+      debug.info('[HypeRate] HR statement prepared')
+    } catch (error) {
+      debug.error(`[HypeRate] HR statement prep failed: ${(error as Error).message}`)
+    }
+  }
+  private bufferHrReading(trackerId: string, heartRate: number): void {
+    if (heartRate <= 0) return
+    this.hrWriteBuffer.push({ trackerId, heartRate, recordedAt: Date.now() })
+  }
+  private flushHrBuffer(): void {
+    if (!this.hrFlushStmt || this.hrWriteBuffer.length === 0) return
+    const batch = this.hrWriteBuffer.splice(0, this.hrWriteBuffer.length)
+    try {
+      const db = getDb()
+      const insertMany = db.transaction((rows: typeof batch) => {
+        for (const row of rows) {
+          this.hrFlushStmt!.run(row.trackerId, row.recordedAt, row.heartRate)
+        }
+      })
+      insertMany(batch)
+    } catch (error) {
+      debug.error(`[HypeRate] HR flush failed: ${(error as Error).message}`)
+    }
+  }
+  private startHrTimers(): void {
+    this.stopHrTimers()
+    this.hrFlushTimer = setInterval(() => this.flushHrBuffer(), HyperateAddon.HR_FLUSH_MS)
+    this.hrCleanupTimer = setInterval(() => {
+      const ret = this.getHistoryRetention()
+      this.runHrCleanup(ret)
+    }, HyperateAddon.HR_CLEANUP_MS)
+  }
+  private stopHrTimers(): void {
+    if (this.hrFlushTimer) { clearInterval(this.hrFlushTimer); this.hrFlushTimer = null }
+    if (this.hrCleanupTimer) { clearInterval(this.hrCleanupTimer); this.hrCleanupTimer = null }
+  }
+  private runHrCleanup(retentionDays: number): void {
+    const retentionMs = HyperateAddon.HR_RETENTION_MAP[retentionDays in HyperateAddon.HR_RETENTION_MAP ? retentionDays : 7]
+    if (retentionMs === -1) return
+    try {
+      const db = getDb()
+      const cutoff = Date.now() - retentionMs
+      const result = db.prepare('DELETE FROM heartrate_log WHERE recorded_at < ?').run(cutoff)
+      if (result.changes > 0) {
+        debug.info(`[HypeRate] Cleaned up ${result.changes} old HR records`)
+      }
+    } catch (error) {
+      debug.error(`[HypeRate] HR cleanup failed: ${(error as Error).message}`)
+    }
+  }
+  getHistory(trackerId: string, fromMs: number, toMs: number, maxPoints?: number) {
+    this.flushHrBuffer()
+    try {
+      const db = getDb()
+      let rows: { recorded_at: number; heart_rate: number }[]
+      if (maxPoints && maxPoints > 0) {
+        const rangeMs = toMs - fromMs
+        const bucketMs = rangeMs / maxPoints
+        rows = db.prepare(`
+          SELECT CAST((recorded_at - ?) / ? AS INTEGER) AS bucket,
+                 AVG(heart_rate) AS heart_rate, MIN(recorded_at) AS recorded_at
+          FROM heartrate_log
+          WHERE tracker_id = ? AND recorded_at >= ? AND recorded_at <= ?
+          GROUP BY bucket ORDER BY recorded_at ASC
+        `).all(fromMs, bucketMs, trackerId, fromMs, toMs) as any[]
+      } else {
+        rows = db.prepare(`
+          SELECT recorded_at, heart_rate FROM heartrate_log
+          WHERE tracker_id = ? AND recorded_at >= ? AND recorded_at <= ?
+          ORDER BY recorded_at ASC LIMIT 50000
+        `).all(trackerId, fromMs, toMs) as any[]
+      }
+      return rows.map(r => ({ time: r.recorded_at, value: Math.round(r.heart_rate) }))
+    } catch (error) {
+      debug.error(`[HypeRate] HR query failed: ${(error as Error).message}`)
+      return []
+    }
+  }
+  getHistoryStats(trackerId: string, fromMs: number, toMs: number) {
+    this.flushHrBuffer()
+    try {
+      const db = getDb()
+      const row = db.prepare(`
+        SELECT MIN(heart_rate) AS min_hr, MAX(heart_rate) AS max_hr,
+               ROUND(AVG(heart_rate)) AS avg_hr, COUNT(*) AS count,
+               MIN(recorded_at) AS first_at, MAX(recorded_at) AS last_at
+        FROM heartrate_log
+        WHERE tracker_id = ? AND recorded_at >= ? AND recorded_at <= ?
+      `).get(trackerId, fromMs, toMs) as any
+      if (!row || row.count === 0) {
+        return { min: null, max: null, avg: null, count: 0, firstAt: null, lastAt: null }
+      }
+      return { min: row.min_hr, max: row.max_hr, avg: row.avg_hr, count: row.count, firstAt: row.first_at, lastAt: row.last_at }
+    } catch (error) {
+      debug.error(`[HypeRate] HR stats failed: ${(error as Error).message}`)
+      return { min: null, max: null, avg: null, count: 0, firstAt: null, lastAt: null }
+    }
+  }
+  getHistoryConfig() {
+    return { retentionDays: this.getHistoryRetention() }
+  }
+  setHistoryRetention(retentionDays: number): boolean {
+    configManager.updateHyperateConfig({ retentionDays } as any)
+    this.runHrCleanup(retentionDays)
+    debug.info(`[HypeRate] History retention set to ${retentionDays} days`)
+    return true
+  }
+  getHistoryRetention(): number {
+    const cfg = configManager.getHyperateConfig()
+    return (cfg as any).retentionDays ?? 7
+  }
+  private loadCaptureRate(): number {
+    const cfg = configManager.getHyperateConfig()
+    const val = (cfg as any).captureRateMs
+    return typeof val === 'number' && val >= 500 ? val : 2000
+  }
+  getCaptureRate(): number {
+    return this.captureRateMs
+  }
+  setCaptureRate(ms: number): boolean {
+    const clamped = Math.max(500, Math.min(30000, ms))
+    this.captureRateMs = clamped
+    configManager.updateHyperateConfig({ captureRateMs: clamped } as any)
+    debug.info(`[HypeRate] Capture rate set to ${clamped}ms`)
+    return true
   }
   getTrackers() {
     const trackerList: {

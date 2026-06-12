@@ -54,6 +54,13 @@ const api = {
   hyperateUpdateTrackerState: (deviceId: string, enabled: boolean) => ipcRenderer.invoke('hyperate-update-tracker-state', deviceId, enabled),
   hyperateGetAutostart: () => ipcRenderer.invoke('hyperate-get-autostart'),
   hyperateSetAutostart: (enabled: boolean) => ipcRenderer.invoke('hyperate-set-autostart', enabled),
+  // HypeRate History API
+  hyperateGetHistory: (trackerId: string, fromMs: number, toMs: number, maxPoints?: number) => ipcRenderer.invoke('hyperate-get-history', trackerId, fromMs, toMs, maxPoints),
+  hyperateGetStats: (trackerId: string, fromMs: number, toMs: number) => ipcRenderer.invoke('hyperate-get-stats', trackerId, fromMs, toMs),
+  hyperateGetHistoryConfig: () => ipcRenderer.invoke('hyperate-get-history-config'),
+  hyperateSetHistoryConfig: (config: { retentionDays: number }) => ipcRenderer.invoke('hyperate-set-history-config', config),
+  hyperateGetCaptureRate: () => ipcRenderer.invoke('hyperate-get-capture-rate'),
+  hyperateSetCaptureRate: (config: { rateMs: number }) => ipcRenderer.invoke('hyperate-set-capture-rate', config),
   // OSCLeash API
   oscleashGetStatus: () => ipcRenderer.invoke('oscleash-get-status'),
   oscleashStart: () => ipcRenderer.invoke('oscleash-start'),

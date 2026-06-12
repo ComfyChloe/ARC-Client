@@ -18,6 +18,7 @@ import OpenShock from './containers/openshock/openshock'
 import ARCLink from './containers/arclink/arclink'
 import WebSocketManager from './services/websocketManager'
 import configManager from './services/configManager'
+import { initDb, closeDb } from './services/sqlDbService'
 let mainWindow: BrowserWindow | null
 let splashWindow: BrowserWindow | null
 let oscServer: any
@@ -39,6 +40,7 @@ let arcLinkContainer: any
 // Custom WebSocket URLs are now persisted across restarts
 let isShuttingDown = false
 let hasShownCriticalError = false
+initDb()
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 
 function loadRendererWindow(window: BrowserWindow, htmlFileName: string) {
@@ -1386,6 +1388,64 @@ ipcMain.handle('hyperate-set-autostart', (_event, enabled: boolean) => {
     return { success: false, error: error.message }
   }
 })
+// HypeRate history IPC handlers
+ipcMain.handle('hyperate-get-history', (_event, trackerId: string, fromMs: number, toMs: number, maxPoints?: number) => {
+  try {
+    if (!hyperateAddon) return { readings: [] }
+    return { readings: hyperateAddon.getHistory(trackerId, fromMs, toMs, maxPoints) }
+  } catch (error: any) {
+    debug.error(`Failed to get HypeRate history: ${error.message}`)
+    return { readings: [] }
+  }
+})
+ipcMain.handle('hyperate-get-stats', (_event, trackerId: string, fromMs: number, toMs: number) => {
+  try {
+    if (!hyperateAddon) return { min: null, max: null, avg: null, count: 0, firstAt: null, lastAt: null }
+    return hyperateAddon.getHistoryStats(trackerId, fromMs, toMs)
+  } catch (error: any) {
+    debug.error(`Failed to get HypeRate stats: ${error.message}`)
+    return { min: null, max: null, avg: null, count: 0, firstAt: null, lastAt: null }
+  }
+})
+ipcMain.handle('hyperate-get-history-config', () => {
+  try {
+    if (!hyperateAddon) return { retentionDays: 7 }
+    return { retentionDays: hyperateAddon.getHistoryRetention() }
+  } catch (error: any) {
+    debug.error(`Failed to get HypeRate history config: ${error.message}`)
+    return { retentionDays: 7 }
+  }
+})
+ipcMain.handle('hyperate-set-history-config', (_event, config: { retentionDays: number }) => {
+  try {
+    if (!hyperateAddon) return { success: false }
+    hyperateAddon.setHistoryRetention(config.retentionDays)
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to set HypeRate history config: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+// HypeRate capture rate IPC handlers
+ipcMain.handle('hyperate-get-capture-rate', () => {
+  try {
+    if (!hyperateAddon) return { rateMs: 2000 }
+    return { rateMs: hyperateAddon.getCaptureRate() }
+  } catch (error: any) {
+    debug.error(`Failed to get HypeRate capture rate: ${error.message}`)
+    return { rateMs: 2000 }
+  }
+})
+ipcMain.handle('hyperate-set-capture-rate', (_event, config: { rateMs: number }) => {
+  try {
+    if (!hyperateAddon) return { success: false }
+    hyperateAddon.setCaptureRate(config.rateMs)
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to set HypeRate capture rate: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
 // OSCLeash addon IPC handlers
 ipcMain.handle('oscleash-get-status', () => {
   if (oscLeashAddon) {
@@ -2238,6 +2298,11 @@ function cleanup(source = 'unknown') {
   if ((global as any).oscIpcBatchInterval) {
     clearInterval((global as any).oscIpcBatchInterval)
     ;(global as any).oscIpcBatchInterval = null
+  }
+  try {
+    closeDb()
+  } catch (error: any) {
+    debug.error(`Error closing database: ${error.message}`)
   }
   if ((global as any).gc) {
     ;(global as any).gc()

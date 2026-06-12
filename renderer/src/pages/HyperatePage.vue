@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useHyperate, type HyperateTracker } from '../composables/useHyperate'
-
+import { useHeartRateChart } from '../composables/useHeartRateChart'
+import HeartRateChart from '../components/HeartRateChart.vue'
 const {
   status,
   trackers,
@@ -14,15 +15,42 @@ const {
   setPrimary,
   updateTrackerName
 } = useHyperate()
-
+const {
+  chartData,
+  stats,
+  isLive,
+  selectedRange,
+  selectedStep,
+  isCustomRange,
+  customFromInput,
+  customToInput,
+  trackerId,
+  loading,
+  retentionDays,
+  setRange,
+  goLive,
+  setStep,
+  activateCustomRange,
+  applyCustomRange,
+  setNow,
+  onPanOffset,
+  onZoom,
+  setRetention,
+  captureRate,
+  setCaptureRate,
+  STEP_OPTIONS,
+  toDatetimeLocal
+} = useHeartRateChart()
 const newDeviceId = ref('')
 const newDeviceName = ref('')
 const editingTrackerId = ref<string | null>(null)
 const editName = ref('')
 const isDarkTheme = ref(false)
 let themeObserver: MutationObserver | null = null
-
 const primaryTracker = computed(() => trackers.value.find((tracker) => tracker.isPrimary) ?? null)
+watch(primaryTracker, (pt) => {
+  if (pt) trackerId.value = pt.deviceId
+}, { immediate: true })
 
 const statusClass = computed(() => {
   const currentStatus = status.value
@@ -164,11 +192,69 @@ onUnmounted(() => {
 
     <div class="card">
       <h3>Heart Rate Graph</h3>
-      <div style="padding: 20px;">
-        <div style="text-align: center; color: #666; padding: 40px 20px;">
-          <p style="font-size: 16px; margin-bottom: 10px;">&#128202; Graph Visualization</p>
-          <p style="font-size: 12px; opacity: 0.7;">Heart rate graph will be displayed here</p>
+      <div class="chart-controls">
+        <div class="hr-range-group">
+          <button v-for="preset in ['60s','5m','15m','1h','6h','24h','7d','30d']" :key="preset"
+            class="hr-range-btn" :class="{ active: selectedRange === preset && isLive === false && !isCustomRange }"
+            @click="setRange(preset)">{{ preset }}</button>
+          <button class="hr-range-btn" :class="{ active: isCustomRange }" @click="activateCustomRange">Custom</button>
         </div>
+        <div v-if="isCustomRange" class="hr-custom-range">
+          <input type="datetime-local" class="hr-datetime-input" :value="customFromInput"
+            @input="customFromInput = ($event.target as HTMLInputElement).value" />
+          <span class="hr-custom-arrow">→</span>
+          <input type="datetime-local" class="hr-datetime-input" :value="customToInput"
+            @input="customToInput = ($event.target as HTMLInputElement).value" />
+          <button class="btn btn-primary btn-small" @click="applyCustomRange">Apply</button>
+          <button class="btn btn-secondary btn-small" @click="setNow">Now</button>
+        </div>
+        <div class="hr-step-group">
+          <button v-for="step in STEP_OPTIONS" :key="step"
+            class="hr-range-btn" :class="{ active: selectedStep === step }"
+            @click="setStep(step)">{{ step }}</button>
+        </div>
+        <button class="btn btn-small hr-live-btn" :class="isLive ? 'hr-live-btn-active' : 'hr-live-btn-idle'" @click="isLive ? null : goLive()">
+          <span class="hr-live-dot" :class="{ 'hr-live-dot-active': isLive }"></span>
+          {{ isLive ? 'Live' : 'Paused' }}
+        </button>
+        <div class="hr-retention-group">
+          <label style="font-size: 12px; color: #666;">Retention:</label>
+          <select class="hr-retention-select" :value="retentionDays" @change="setRetention(Number(($event.target as HTMLSelectElement).value))">
+            <option :value="1">1 day</option>
+            <option :value="3">3 days</option>
+            <option :value="7">7 days</option>
+            <option :value="30">30 days</option>
+            <option :value="-1">Unlimited</option>
+          </select>
+        </div>
+        <div class="hr-retention-group">
+          <label style="font-size: 12px; color: #666;">Capture:</label>
+          <select class="hr-retention-select" :value="captureRate" @change="setCaptureRate(Number(($event.target as HTMLSelectElement).value))">
+            <option :value="500">500ms</option>
+            <option :value="1000">1s</option>
+            <option :value="2000">2s</option>
+            <option :value="5000">5s</option>
+            <option :value="10000">10s</option>
+            <option :value="30000">30s</option>
+          </select>
+        </div>
+      </div>
+      <div class="chart-wrapper">
+        <HeartRateChart
+          :data="chartData"
+          :is-live="isLive"
+          :min-bpm="stats.min"
+          :max-bpm="stats.max"
+          :avg-bpm="stats.avg"
+          @pan="onPanOffset"
+          @zoom="onZoom"
+        />
+      </div>
+      <div v-if="stats.count > 0" class="chart-stats-row">
+        <span class="hr-stat"><span class="hr-stat-label">Min</span> <span class="hr-stat-val" style="color: #2ecc71;">{{ stats.min }}</span></span>
+        <span class="hr-stat"><span class="hr-stat-label">Avg</span> <span class="hr-stat-val" style="color: #f39c12;">{{ stats.avg }}</span></span>
+        <span class="hr-stat"><span class="hr-stat-label">Max</span> <span class="hr-stat-val" style="color: #3498db;">{{ stats.max }}</span></span>
+        <span class="hr-stat"><span class="hr-stat-label">Points</span> <span class="hr-stat-val">{{ stats.count.toLocaleString() }}</span></span>
       </div>
     </div>
 
@@ -251,6 +337,135 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+}
+.hr-range-group {
+  display: flex;
+}
+.hr-step-group {
+  display: flex;
+}
+.hr-custom-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hr-datetime-input {
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  background: #fff;
+  color: #333;
+}
+.hr-custom-arrow {
+  color: #666;
+  font-size: 12px;
+}
+.hr-live-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid #ddd;
+}
+.hr-live-btn-active {
+  background: #27ae60;
+  color: #fff;
+  border-color: #27ae60;
+}
+.hr-live-btn-idle {
+  background: #f0f0f0;
+  color: #999;
+  border-color: #ddd;
+}
+.hr-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ccc;
+}
+.hr-live-dot-active {
+  background: #fff;
+  animation: hr-dot-pulse 1.5s ease-in-out infinite;
+}
+@keyframes hr-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.hr-range-btn {
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #666;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.hr-range-btn:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.hr-range-btn:last-child {
+  border-radius: 0 4px 4px 0;
+}
+.hr-range-btn:not(:first-child) {
+  border-left: none;
+}
+.hr-range-btn:hover {
+  color: #333;
+  background: #f8f8f8;
+}
+.hr-range-btn.active {
+  background: #3498db;
+  color: #fff;
+  border-color: #3498db;
+  font-weight: 600;
+}
+.hr-retention-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+.hr-retention-select {
+  padding: 3px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  background: #fff;
+}
+.chart-wrapper {
+  height: 280px;
+  margin: 4px 0;
+}
+.chart-stats-row {
+  display: flex;
+  gap: 16px;
+  padding: 8px 0 2px;
+  flex-wrap: wrap;
+}
+.hr-stat {
+  font-size: 12px;
+}
+.hr-stat-label {
+  color: #999;
+  margin-right: 4px;
+}
+.hr-stat-val {
+  font-weight: 600;
+  color: #333;
+}
 .tracker-item {
   display: flex;
   justify-content: space-between;
@@ -436,5 +651,43 @@ onUnmounted(() => {
 :global(body.dark-theme) pre {
   background: #2c3e50 !important;
   color: #ecf0f1 !important;
+}
+:global(body.dark-theme) .hr-range-btn {
+  border-color: #454545;
+  background: #2c3e50;
+  color: #95a5a6;
+}
+:global(body.dark-theme) .hr-range-btn:hover {
+  color: #ecf0f1;
+  background: #34495e;
+}
+:global(body.dark-theme) .hr-range-btn.active {
+  background: #3498db;
+  color: #fff;
+  border-color: #3498db;
+}
+:global(body.dark-theme) .hr-retention-select {
+  border-color: #454545;
+  background: #2c3e50;
+  color: #ecf0f1;
+}
+:global(body.dark-theme) .hr-stat-val {
+  color: #ecf0f1;
+}
+:global(body.dark-theme) .hr-datetime-input {
+  border-color: #454545;
+  background: #2c3e50;
+  color: #ecf0f1;
+}
+:global(body.dark-theme) .hr-custom-arrow {
+  color: #95a5a6;
+}
+:global(body.dark-theme) .hr-live-btn-idle {
+  background: #2c3e50;
+  color: #95a5a6;
+  border-color: #454545;
+}
+:global(body.dark-theme) .hr-live-dot {
+  background: #555;
 }
 </style>
