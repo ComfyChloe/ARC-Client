@@ -15,6 +15,10 @@ interface AppSettings {
   lastUsername: string
   savedPassword: string
   snowEnabled: boolean
+  savedOpenShockToken: string
+  savedOpenShockSessionCookie: string
+  savedOpenShockPassword: string
+  openShockSessionUsername: string
   [key: string]: unknown
 }
 
@@ -104,6 +108,9 @@ interface XSOverlayConfig {
   notificationAudioPath: string
   [key: string]: unknown
 }
+interface OpenShockConfig {
+  [key: string]: unknown
+}
 interface AppConfig {
   legacyOscPort: number
   targetOscPort: number
@@ -121,6 +128,7 @@ interface AppConfig {
   oscgoesbrrr: OscGoesbrrrConfig
   autostatus: AutoStatusConfig
   xsOverlay: XSOverlayConfig
+  openshock: OpenShockConfig
   configVersion: number
   [key: string]: unknown
 }
@@ -149,7 +157,11 @@ class ConfigManager {
         theme: 'light',
         lastUsername: '',
         savedPassword: '',
-        snowEnabled: false
+        snowEnabled: false,
+        savedOpenShockToken: '',
+        savedOpenShockSessionCookie: '',
+        savedOpenShockPassword: '',
+        openShockSessionUsername: ''
       },
       oscQueryUnsubscriptions: [],
       windowState: {
@@ -231,6 +243,8 @@ class ConfigManager {
         notificationVolume: 0.7,
         notificationAudioPath: 'default'
       },
+      // OpenShock configuration
+      openshock: {},
       // Version for future migration support
       configVersion: 1
     }
@@ -312,7 +326,11 @@ class ConfigManager {
       theme: this.config.appSettings?.theme || 'light',
       lastUsername: this.config.appSettings?.lastUsername || '',
       savedPassword: this.config.appSettings?.savedPassword || '',
-      snowEnabled: this.config.appSettings?.snowEnabled ?? false
+      snowEnabled: this.config.appSettings?.snowEnabled ?? false,
+      savedOpenShockToken: this.config.appSettings?.savedOpenShockToken || '',
+      savedOpenShockSessionCookie: this.config.appSettings?.savedOpenShockSessionCookie || '',
+      savedOpenShockPassword: this.config.appSettings?.savedOpenShockPassword || '',
+      openShockSessionUsername: this.config.appSettings?.openShockSessionUsername || ''
     }
   }
   updateAppSettings(settings: Partial<AppSettings> & { logLevel?: string }): boolean {
@@ -407,6 +425,91 @@ class ConfigManager {
     
     this.config.appSettings.savedPassword = encrypted
     debug.info('Saved password updated (encrypted) in configuration')
+    return this.saveConfig()
+  }
+  getSavedOpenShockToken(): string {
+    const encrypted = this.config.appSettings?.savedOpenShockToken || ''
+    if (!encrypted) return ''
+    const decrypted = decryptData(encrypted)
+    if (!decrypted) {
+      debug.warn('Failed to decrypt saved OpenShock token, clearing stored value')
+      this.setSavedOpenShockToken('')
+      return ''
+    }
+    return decrypted
+  }
+  setSavedOpenShockToken(token: string): boolean {
+    if (!this.config.appSettings) {
+      this.config.appSettings = {} as AppSettings
+    }
+    if (!token) {
+      this.config.appSettings.savedOpenShockToken = ''
+      debug.info('Saved OpenShock token cleared')
+      return this.saveConfig()
+    }
+    const encrypted = encryptData(token)
+    if (!encrypted) {
+      debug.error('Failed to encrypt OpenShock token')
+      return false
+    }
+    this.config.appSettings.savedOpenShockToken = encrypted
+    debug.info('Saved OpenShock token (encrypted)')
+    return this.saveConfig()
+  }
+  getSavedOpenShockSessionCookie(): string {
+    const encrypted = this.config.appSettings?.savedOpenShockSessionCookie || ''
+    if (!encrypted) return ''
+    const decrypted = decryptData(encrypted)
+    if (!decrypted) {
+      debug.warn('Failed to decrypt saved OpenShock session cookie, clearing stored value')
+      this.setSavedOpenShockSessionCookie('')
+      return ''
+    }
+    return decrypted
+  }
+  setSavedOpenShockSessionCookie(cookie: string): boolean {
+    if (!this.config.appSettings) { this.config.appSettings = {} as AppSettings }
+    if (!cookie) {
+      this.config.appSettings.savedOpenShockSessionCookie = ''
+      debug.info('Saved OpenShock session cookie cleared')
+      return this.saveConfig()
+    }
+    const encrypted = encryptData(cookie)
+    if (!encrypted) { debug.error('Failed to encrypt OpenShock session cookie'); return false }
+    this.config.appSettings.savedOpenShockSessionCookie = encrypted
+    debug.info('Saved OpenShock session cookie (encrypted)')
+    return this.saveConfig()
+  }
+  getSavedOpenShockPassword(): string {
+    const encrypted = this.config.appSettings?.savedOpenShockPassword || ''
+    if (!encrypted) return ''
+    const decrypted = decryptData(encrypted)
+    if (!decrypted) {
+      debug.warn('Failed to decrypt saved OpenShock password, clearing stored value')
+      this.setSavedOpenShockPassword('')
+      return ''
+    }
+    return decrypted
+  }
+  setSavedOpenShockPassword(password: string): boolean {
+    if (!this.config.appSettings) { this.config.appSettings = {} as AppSettings }
+    if (!password) {
+      this.config.appSettings.savedOpenShockPassword = ''
+      debug.info('Saved OpenShock password cleared')
+      return this.saveConfig()
+    }
+    const encrypted = encryptData(password)
+    if (!encrypted) { debug.error('Failed to encrypt OpenShock password'); return false }
+    this.config.appSettings.savedOpenShockPassword = encrypted
+    debug.info('Saved OpenShock password (encrypted)')
+    return this.saveConfig()
+  }
+  getOpenShockSessionUsername(): string {
+    return this.config.appSettings?.openShockSessionUsername || ''
+  }
+  setOpenShockSessionUsername(username: string): boolean {
+    if (!this.config.appSettings) { this.config.appSettings = {} as AppSettings }
+    this.config.appSettings.openShockSessionUsername = username
     return this.saveConfig()
   }
   getHyperateConfig(): HyperateConfig {

@@ -4,6 +4,7 @@ import { useXSOverlay } from '../composables/useXSOverlay'
 const {
   status,
   autostart,
+  dbLogs,
   toggle,
   toggleAutostart,
   updateConfig
@@ -62,6 +63,7 @@ function notificationTypeClass(type: string): string {
     <div class="header">
       <h1>XS Overlay Notifications</h1>
       <p>VR overlay notifications for panel connections and avatar changes</p>
+      <p><b>Note: Please note this feature is experimental in client, It might break.</b></p>
     </div>
     <div class="card">
       <h3>Connection Status</h3>
@@ -82,13 +84,13 @@ function notificationTypeClass(type: string): string {
     </div>
     <div class="card">
       <h3>Notification Log</h3>
-      <div v-if="status.notificationLog.length === 0" style="text-align: center; padding: 30px; color: #666; opacity: 0.6;">
+      <div v-if="dbLogs.length === 0" style="text-align: center; padding: 30px; color: #666; opacity: 0.6;">
         <p>No notifications yet</p>
         <p style="font-size: 12px; margin-top: 5px;">Notifications will appear here when panels connect or avatars change</p>
       </div>
       <div v-else class="notification-log">
         <div
-          v-for="entry in status.notificationLog"
+          v-for="entry in dbLogs"
           :key="entry.id"
           class="notification-entry"
           :class="notificationTypeClass(entry.type)"

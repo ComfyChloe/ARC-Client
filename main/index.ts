@@ -18,7 +18,7 @@ import OpenShock from './containers/openshock/openshock'
 import ARCLink from './containers/arclink/arclink'
 import WebSocketManager from './services/websocketManager'
 import configManager from './services/configManager'
-import { initDb, closeDb } from './services/sqlDbService'
+import { initDb, closeDb, getDb } from './services/sqlDbService'
 let mainWindow: BrowserWindow | null
 let splashWindow: BrowserWindow | null
 let oscServer: any
@@ -1801,17 +1801,154 @@ ipcMain.handle('calendar-get-status', async () => {
   return calendarContainer.getEvents()
 })
 // OpenShock IPC handlers
-ipcMain.handle('openshock-start', async (_event, apiKey: string) => {
+ipcMain.handle('openshock-get-status', async () => {
+  if (!openShockContainer) return { enabled: false, connected: false, hasApiToken: false, deviceCount: 0, baseUrl: '' }
+  return openShockContainer.getStatus()
+})
+ipcMain.handle('openshock-start', async (_event, apiToken: string) => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
-  return openShockContainer.start(apiKey)
+  return openShockContainer.start(apiToken)
 })
 ipcMain.handle('openshock-stop', async () => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
   return openShockContainer.stop()
 })
-ipcMain.handle('openshock-get-status', async () => {
+ipcMain.handle('openshock-clear-saved-token', async () => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
-  return openShockContainer.getStatus()
+  return { success: openShockContainer.clearSavedToken() }
+})
+ipcMain.handle('openshock-list-shockers', async () => {
+  if (!openShockContainer) return []
+  try {
+    return await openShockContainer.listOwnShockers()
+  } catch (error: any) {
+    debug.error(`OpenShock: Failed to list shockers: ${error.message}`)
+    return []
+  }
+})
+ipcMain.handle('openshock-list-shockers-shared', async () => {
+  if (!openShockContainer) return []
+  try {
+    return await openShockContainer.listSharedShockers()
+  } catch (error: any) {
+    debug.error(`OpenShock: Failed to list shared shockers: ${error.message}`)
+    return []
+  }
+})
+ipcMain.handle('openshock-create-share-link', async (_event, shockerId: string, permissions: any, limits: any) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  try {
+    return await openShockContainer.createShareCode(shockerId, permissions, limits)
+  } catch (error: any) {
+    debug.error(`OpenShock: Failed to create share link: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('openshock-login', async (_event, email: string, password: string) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.loginWithCredentials(email, password)
+})
+ipcMain.handle('openshock-logout', async () => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.logout()
+})
+ipcMain.handle('openshock-get-login-status', async () => {
+  if (!openShockContainer) return { loggedIn: false, username: null }
+  return openShockContainer.getLoginStatus()
+})
+ipcMain.handle('openshock-clear-saved-credentials', async () => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  openShockContainer.logout()
+  return { success: true }
+})
+ipcMain.handle('openshock-send-control', async (_event, shocks: any[]) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  try {
+    await openShockContainer.sendControl(shocks)
+    // Log each shock to the database
+    try {
+      const db = getDb()
+      const insert = db.prepare(
+        'INSERT INTO openshock_control_log (shocker_id, shocker_name, control_type, intensity, duration, success, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      const devices = openShockContainer.devices || []
+      for (const shock of shocks) {
+        let shockerName = shock.id
+        for (const dev of devices) {
+          const s = (dev.shockers || []).find((sh: any) => sh.id === shock.id)
+          if (s) { shockerName = s.name; break }
+        }
+        insert.run(shock.id, shockerName, shock.type, shock.intensity ?? null, shock.duration ?? null, 1, Date.now())
+      }
+    } catch (dbErr: any) {
+      debug.error(`OpenShock: Failed to log control to DB: ${dbErr.message}`)
+    }
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`OpenShock: Failed to send control: ${error.message}`)
+    // Log failed attempts too
+    try {
+      const db = getDb()
+      const insert = db.prepare(
+        'INSERT INTO openshock_control_log (shocker_id, shocker_name, control_type, intensity, duration, success, error_message, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      )
+      for (const shock of shocks) {
+        insert.run(shock.id, shock.id, shock.type, shock.intensity ?? null, shock.duration ?? null, 0, error.message, Date.now())
+      }
+    } catch (_dbErr) { /* ignore */ }
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('openshock-pause-shocker', async (_event, shockerId: string, pause: boolean) => {
+  if (!openShockContainer) return false
+  return openShockContainer.pauseShocker(shockerId, pause)
+})
+ipcMain.handle('openshock-list-shares', async (_event, shockerId: string) => {
+  if (!openShockContainer) return []
+  return openShockContainer.listShockerShares(shockerId)
+})
+ipcMain.handle('openshock-delete-share', async (_event, shockerId: string, sharedWithUserId: string) => {
+  if (!openShockContainer) return
+  return openShockContainer.deleteShareCode(shockerId, sharedWithUserId)
+})
+ipcMain.handle('openshock-pause-share', async (_event, shockerId: string, sharedWithUserId: string, pause: boolean) => {
+  if (!openShockContainer) return false
+  return openShockContainer.pauseShare(shockerId, sharedWithUserId, pause)
+})
+ipcMain.handle('openshock-list-tokens', async () => {
+  if (!openShockContainer) return []
+  return openShockContainer.listTokens()
+})
+ipcMain.handle('openshock-create-token', async (_event, name: string, permissions: any) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.createToken(name, permissions)
+})
+ipcMain.handle('openshock-delete-token', async (_event, tokenId: string) => {
+  if (!openShockContainer) return
+  return openShockContainer.deleteToken(tokenId)
+})
+ipcMain.handle('openshock-get-logs', async (_event, shockerId: string, page?: number, size?: number) => {
+  if (!openShockContainer) return []
+  return openShockContainer.getShockerLogs(shockerId, page ?? 1, size ?? 20)
+})
+// Control log query handlers
+ipcMain.handle('openshock-get-control-logs', async (_event, limit: number = 50, offset: number = 0) => {
+  try {
+    const db = getDb()
+    return db.prepare('SELECT * FROM openshock_control_log ORDER BY recorded_at DESC LIMIT ? OFFSET ?').all(limit, offset)
+  } catch (error: any) {
+    debug.error(`Failed to get control logs: ${error.message}`)
+    return []
+  }
+})
+ipcMain.handle('xsoverlay-get-notification-logs', async (_event, limit: number = 50, offset: number = 0) => {
+  try {
+    const db = getDb()
+    return db.prepare('SELECT * FROM xs_overlay_notification_log ORDER BY recorded_at DESC LIMIT ? OFFSET ?').all(limit, offset)
+  } catch (error: any) {
+    debug.error(`Failed to get notification logs: ${error.message}`)
+    return []
+  }
 })
 // ARCLink IPC handlers
 ipcMain.handle('arclink-start', async () => {

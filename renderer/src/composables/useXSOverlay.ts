@@ -38,10 +38,16 @@ export function useXSOverlay() {
   const api = useElectronAPI()
   const status = ref<XSOverlayAddonStatus>({ ...defaultStatus })
   const autostart = ref(false)
+  const dbLogs = ref<XSOverlayNotificationLogEntry[]>([])
   let pollTimer: ReturnType<typeof setInterval> | null = null
   async function refreshStatus() {
     const s = await api.xsOverlayGetStatus()
     status.value = { ...defaultStatus, ...s }
+  }
+  async function refreshDbLogs() {
+    try {
+      dbLogs.value = await api.xsOverlayGetNotificationLogs(50) || []
+    } catch (e: unknown) { console.error('Failed to load XS Overlay logs from DB:', e) }
   }
   async function refreshAutostart() {
     const result = await api.xsOverlayGetAutostart()
@@ -80,6 +86,7 @@ export function useXSOverlay() {
   onMounted(() => {
     refreshStatus()
     refreshAutostart()
+    refreshDbLogs()
     startPolling()
     api.onXsOverlayStatus((data: any) => {
       status.value = { ...defaultStatus, ...data }
@@ -90,6 +97,7 @@ export function useXSOverlay() {
         ...status.value,
         notificationLog: [entry, ...existing].slice(0, 50)
       }
+      refreshDbLogs()
     })
   })
   onUnmounted(() => {
@@ -100,6 +108,7 @@ export function useXSOverlay() {
   return {
     status,
     autostart,
+    dbLogs,
     toggle,
     toggleAutostart,
     refreshStatus,

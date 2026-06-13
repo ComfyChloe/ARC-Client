@@ -66,6 +66,28 @@ export function initDb(): void {
         heart_rate INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_hr_tracker_time ON heartrate_log(tracker_id, recorded_at);
+
+      CREATE TABLE IF NOT EXISTS openshock_control_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shocker_id TEXT NOT NULL,
+        shocker_name TEXT NOT NULL,
+        control_type TEXT NOT NULL,
+        intensity INTEGER,
+        duration INTEGER,
+        success INTEGER NOT NULL DEFAULT 1,
+        error_message TEXT,
+        recorded_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_os_ctrl_time ON openshock_control_log(recorded_at);
+
+      CREATE TABLE IF NOT EXISTS xs_overlay_notification_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        type TEXT NOT NULL,
+        recorded_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_xso_time ON xs_overlay_notification_log(recorded_at);
     `)
     debug.info('[SqlDbService] Opened database at ' + dbPath + ' (tables ready)')
   } catch (error) {
