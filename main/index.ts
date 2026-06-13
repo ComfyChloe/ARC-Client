@@ -12,11 +12,13 @@ import OSCLeashAddon from './containers/oscleash/oscleash'
 import VRChatAPIContainer from './containers/vrchat-api/vrchat-api'
 import OscGoesBrrrAddon from './containers/oscgoesbrrr/oscgoesbrrr'
 import AutoStatusContainer from './containers/autostatus/autostatus'
+import XSOverlayAddon from './containers/xsoverlay/xsoverlay'
 import Calendar from './containers/calendar/calendar'
 import OpenShock from './containers/openshock/openshock'
 import ARCLink from './containers/arclink/arclink'
 import WebSocketManager from './services/websocketManager'
 import configManager from './services/configManager'
+import { initDb, closeDb, getDb } from './services/sqlDbService'
 let mainWindow: BrowserWindow | null
 let splashWindow: BrowserWindow | null
 let oscServer: any
@@ -31,12 +33,14 @@ let oscLeashAddon: any
 let vrchatApiContainer: any
 let oscGoesBrrrAddon: any
 let autoStatusContainer: any
+let xsOverlayAddon: any
 let calendarContainer: any
 let openShockContainer: any
 let arcLinkContainer: any
 // Custom WebSocket URLs are now persisted across restarts
 let isShuttingDown = false
 let hasShownCriticalError = false
+initDb()
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 
 function loadRendererWindow(window: BrowserWindow, htmlFileName: string) {
@@ -317,6 +321,9 @@ function initWebSocket() {
       sendToRenderer('websocket-avatar-change', data)
       const displayName = data.name ? `${data.name} (${data.id})` : data.id
       debug.logWebSocketConnection(`Avatar changed: ${displayName} for user ${data.username || 'Unknown'}`)
+      if (xsOverlayAddon && xsOverlayAddon.isEnabled()) {
+        xsOverlayAddon.handleAvatarChange(data)
+      }
     })
     wsManager.on('parameter-update', (data: any) => {
       sendToRenderer('websocket-parameter-update', data)
@@ -326,6 +333,9 @@ function initWebSocket() {
     })
     wsManager.on('panel-connections-update', (data: any) => {
       sendToRenderer('websocket-panel-connections-update', data)
+      if (xsOverlayAddon && xsOverlayAddon.isEnabled()) {
+        xsOverlayAddon.handlePanelConnectionsUpdate(data)
+      }
     })
     wsManager.on('feedback-update', (data: any) => {
       sendToRenderer('feedback-update', data)
@@ -550,6 +560,9 @@ async function initOscQueryService() {
         // Forward to WebSocket if connected
         if (wsManager && wsManager.isConnected) {
           try {
+            if (oscQueryService.isLocalOnly(oscData.address)) {
+              return
+            }
             wsManager.sendOscData({
               address: oscData.address,
               value: oscData.value,
@@ -578,7 +591,7 @@ async function initOscQueryService() {
     await oscQueryService.initialize(
       serverConfig.legacyOscPort,
       null, // httpPort (auto-assigned)
-      serverConfig.oscQueryBindAddress || '0.0.0.0'
+      serverConfig.oscQueryBindAddress || '127.0.0.1'
     )
     // Load and set unsubscriptions from config
     const unsubscriptions = serverConfig.oscQueryUnsubscriptions || []
@@ -961,9 +974,9 @@ ipcMain.handle('check-vrchat-link', async () => {
     if (!wsManager || !wsManager.isConnected) {
       throw new Error('Not connected to ARC WebSocket server')
     }
-    debug.info(`Checking VRChat account link status`)
+    //debug.info(`Checking VRChat account link status`)
     const response = await wsManager.checkVRChatLink()
-    debug.info(`VRChat link status: ${response.linked ? 'linked' : 'not linked'}`)
+    //debug.info(`VRChat link status: ${response.linked ? 'linked' : 'not linked'}`)
     return response
   } catch (error: any) {
     debug.error(`Failed to check VRChat link status: ${error.message}`)
@@ -1221,6 +1234,14 @@ ipcMain.handle('request-unsuppress', (_event, address: string) => {
     return { success: false, error: error.message }
   }
 })
+ipcMain.handle('clear-all-suppressions', async () => {
+  if (!wsManager) return { success: false, error: 'Not connected to server' }
+  try {
+    return await wsManager.requestClearAllSuppressions()
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
 ipcMain.handle('get-hardcoded-unsubscriptions', () => {
   if (!oscQueryService) return { patterns: [] }
   return { patterns: oscQueryService.getHardcodedUnsubscriptions() }
@@ -1364,6 +1385,64 @@ ipcMain.handle('hyperate-set-autostart', (_event, enabled: boolean) => {
     }
   } catch (error: any) {
     debug.error(`Failed to set HypeRate autostart: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+// HypeRate history IPC handlers
+ipcMain.handle('hyperate-get-history', (_event, trackerId: string, fromMs: number, toMs: number, maxPoints?: number) => {
+  try {
+    if (!hyperateAddon) return { readings: [] }
+    return { readings: hyperateAddon.getHistory(trackerId, fromMs, toMs, maxPoints) }
+  } catch (error: any) {
+    debug.error(`Failed to get HypeRate history: ${error.message}`)
+    return { readings: [] }
+  }
+})
+ipcMain.handle('hyperate-get-stats', (_event, trackerId: string, fromMs: number, toMs: number) => {
+  try {
+    if (!hyperateAddon) return { min: null, max: null, avg: null, count: 0, firstAt: null, lastAt: null }
+    return hyperateAddon.getHistoryStats(trackerId, fromMs, toMs)
+  } catch (error: any) {
+    debug.error(`Failed to get HypeRate stats: ${error.message}`)
+    return { min: null, max: null, avg: null, count: 0, firstAt: null, lastAt: null }
+  }
+})
+ipcMain.handle('hyperate-get-history-config', () => {
+  try {
+    if (!hyperateAddon) return { retentionDays: 7 }
+    return { retentionDays: hyperateAddon.getHistoryRetention() }
+  } catch (error: any) {
+    debug.error(`Failed to get HypeRate history config: ${error.message}`)
+    return { retentionDays: 7 }
+  }
+})
+ipcMain.handle('hyperate-set-history-config', (_event, config: { retentionDays: number }) => {
+  try {
+    if (!hyperateAddon) return { success: false }
+    hyperateAddon.setHistoryRetention(config.retentionDays)
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to set HypeRate history config: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+// HypeRate capture rate IPC handlers
+ipcMain.handle('hyperate-get-capture-rate', () => {
+  try {
+    if (!hyperateAddon) return { rateMs: 2000 }
+    return { rateMs: hyperateAddon.getCaptureRate() }
+  } catch (error: any) {
+    debug.error(`Failed to get HypeRate capture rate: ${error.message}`)
+    return { rateMs: 2000 }
+  }
+})
+ipcMain.handle('hyperate-set-capture-rate', (_event, config: { rateMs: number }) => {
+  try {
+    if (!hyperateAddon) return { success: false }
+    hyperateAddon.setCaptureRate(config.rateMs)
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to set HypeRate capture rate: ${error.message}`)
     return { success: false, error: error.message }
   }
 })
@@ -1655,10 +1734,11 @@ ipcMain.handle('vrchatapi-get-stats', async () => {
 })
 // --- AutoStatus IPC Handlers ---
 ipcMain.handle('autostatus-get-config', () => {
-  if (!autoStatusContainer) return { presets: [], schedule: [], settings: {} }
+  if (!autoStatusContainer) return { presets: [], schedule: [], locationRules: [], settings: {} }
   return {
     presets: autoStatusContainer.getPresets(),
     schedule: autoStatusContainer.getSchedule(),
+    locationRules: autoStatusContainer.getLocationRules(),
     settings: autoStatusContainer.getSettings()
   }
 })
@@ -1694,6 +1774,23 @@ ipcMain.handle('autostatus-update-settings', async (_event, settings: any) => {
   if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
   return autoStatusContainer.updateSettings(settings)
 })
+// Location Rule IPC handlers
+ipcMain.handle('autostatus-get-location-rules', () => {
+  if (!autoStatusContainer) return []
+  return autoStatusContainer.getLocationRules()
+})
+ipcMain.handle('autostatus-add-location-rule', async (_event, rule: any) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
+  return autoStatusContainer.addLocationRule(rule)
+})
+ipcMain.handle('autostatus-update-location-rule', async (_event, ruleId: string, updates: any) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
+  return autoStatusContainer.updateLocationRule(ruleId, updates)
+})
+ipcMain.handle('autostatus-delete-location-rule', async (_event, ruleId: string) => {
+  if (!autoStatusContainer) return { success: false, error: 'Not initialized' }
+  return autoStatusContainer.deleteLocationRule(ruleId)
+})
 // Calendar IPC handlers
 ipcMain.handle('calendar-fetch', async () => {
   if (!calendarContainer) return { success: false, error: 'Not initialized' }
@@ -1704,17 +1801,154 @@ ipcMain.handle('calendar-get-status', async () => {
   return calendarContainer.getEvents()
 })
 // OpenShock IPC handlers
-ipcMain.handle('openshock-start', async (_event, apiKey: string) => {
+ipcMain.handle('openshock-get-status', async () => {
+  if (!openShockContainer) return { enabled: false, connected: false, hasApiToken: false, deviceCount: 0, baseUrl: '' }
+  return openShockContainer.getStatus()
+})
+ipcMain.handle('openshock-start', async (_event, apiToken: string) => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
-  return openShockContainer.start(apiKey)
+  return openShockContainer.start(apiToken)
 })
 ipcMain.handle('openshock-stop', async () => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
   return openShockContainer.stop()
 })
-ipcMain.handle('openshock-get-status', async () => {
+ipcMain.handle('openshock-clear-saved-token', async () => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
-  return openShockContainer.getStatus()
+  return { success: openShockContainer.clearSavedToken() }
+})
+ipcMain.handle('openshock-list-shockers', async () => {
+  if (!openShockContainer) return []
+  try {
+    return await openShockContainer.listOwnShockers()
+  } catch (error: any) {
+    debug.error(`OpenShock: Failed to list shockers: ${error.message}`)
+    return []
+  }
+})
+ipcMain.handle('openshock-list-shockers-shared', async () => {
+  if (!openShockContainer) return []
+  try {
+    return await openShockContainer.listSharedShockers()
+  } catch (error: any) {
+    debug.error(`OpenShock: Failed to list shared shockers: ${error.message}`)
+    return []
+  }
+})
+ipcMain.handle('openshock-create-share-link', async (_event, shockerId: string, permissions: any, limits: any) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  try {
+    return await openShockContainer.createShareCode(shockerId, permissions, limits)
+  } catch (error: any) {
+    debug.error(`OpenShock: Failed to create share link: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('openshock-login', async (_event, email: string, password: string) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.loginWithCredentials(email, password)
+})
+ipcMain.handle('openshock-logout', async () => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.logout()
+})
+ipcMain.handle('openshock-get-login-status', async () => {
+  if (!openShockContainer) return { loggedIn: false, username: null }
+  return openShockContainer.getLoginStatus()
+})
+ipcMain.handle('openshock-clear-saved-credentials', async () => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  openShockContainer.logout()
+  return { success: true }
+})
+ipcMain.handle('openshock-send-control', async (_event, shocks: any[]) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  try {
+    await openShockContainer.sendControl(shocks)
+    // Log each shock to the database
+    try {
+      const db = getDb()
+      const insert = db.prepare(
+        'INSERT INTO openshock_control_log (shocker_id, shocker_name, control_type, intensity, duration, success, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      const devices = openShockContainer.devices || []
+      for (const shock of shocks) {
+        let shockerName = shock.id
+        for (const dev of devices) {
+          const s = (dev.shockers || []).find((sh: any) => sh.id === shock.id)
+          if (s) { shockerName = s.name; break }
+        }
+        insert.run(shock.id, shockerName, shock.type, shock.intensity ?? null, shock.duration ?? null, 1, Date.now())
+      }
+    } catch (dbErr: any) {
+      debug.error(`OpenShock: Failed to log control to DB: ${dbErr.message}`)
+    }
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`OpenShock: Failed to send control: ${error.message}`)
+    // Log failed attempts too
+    try {
+      const db = getDb()
+      const insert = db.prepare(
+        'INSERT INTO openshock_control_log (shocker_id, shocker_name, control_type, intensity, duration, success, error_message, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      )
+      for (const shock of shocks) {
+        insert.run(shock.id, shock.id, shock.type, shock.intensity ?? null, shock.duration ?? null, 0, error.message, Date.now())
+      }
+    } catch (_dbErr) { /* ignore */ }
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('openshock-pause-shocker', async (_event, shockerId: string, pause: boolean) => {
+  if (!openShockContainer) return false
+  return openShockContainer.pauseShocker(shockerId, pause)
+})
+ipcMain.handle('openshock-list-shares', async (_event, shockerId: string) => {
+  if (!openShockContainer) return []
+  return openShockContainer.listShockerShares(shockerId)
+})
+ipcMain.handle('openshock-delete-share', async (_event, shockerId: string, sharedWithUserId: string) => {
+  if (!openShockContainer) return
+  return openShockContainer.deleteShareCode(shockerId, sharedWithUserId)
+})
+ipcMain.handle('openshock-pause-share', async (_event, shockerId: string, sharedWithUserId: string, pause: boolean) => {
+  if (!openShockContainer) return false
+  return openShockContainer.pauseShare(shockerId, sharedWithUserId, pause)
+})
+ipcMain.handle('openshock-list-tokens', async () => {
+  if (!openShockContainer) return []
+  return openShockContainer.listTokens()
+})
+ipcMain.handle('openshock-create-token', async (_event, name: string, permissions: any) => {
+  if (!openShockContainer) return { success: false, error: 'Not initialized' }
+  return openShockContainer.createToken(name, permissions)
+})
+ipcMain.handle('openshock-delete-token', async (_event, tokenId: string) => {
+  if (!openShockContainer) return
+  return openShockContainer.deleteToken(tokenId)
+})
+ipcMain.handle('openshock-get-logs', async (_event, shockerId: string, page?: number, size?: number) => {
+  if (!openShockContainer) return []
+  return openShockContainer.getShockerLogs(shockerId, page ?? 1, size ?? 20)
+})
+// Control log query handlers
+ipcMain.handle('openshock-get-control-logs', async (_event, limit: number = 50, offset: number = 0) => {
+  try {
+    const db = getDb()
+    return db.prepare('SELECT * FROM openshock_control_log ORDER BY recorded_at DESC LIMIT ? OFFSET ?').all(limit, offset)
+  } catch (error: any) {
+    debug.error(`Failed to get control logs: ${error.message}`)
+    return []
+  }
+})
+ipcMain.handle('xsoverlay-get-notification-logs', async (_event, limit: number = 50, offset: number = 0) => {
+  try {
+    const db = getDb()
+    return db.prepare('SELECT * FROM xs_overlay_notification_log ORDER BY recorded_at DESC LIMIT ? OFFSET ?').all(limit, offset)
+  } catch (error: any) {
+    debug.error(`Failed to get notification logs: ${error.message}`)
+    return []
+  }
 })
 // ARCLink IPC handlers
 ipcMain.handle('arclink-start', async () => {
@@ -1728,6 +1962,82 @@ ipcMain.handle('arclink-stop', async () => {
 ipcMain.handle('arclink-get-status', async () => {
   if (!arcLinkContainer) return { success: false, error: 'Not initialized' }
   return arcLinkContainer.getStatus()
+})
+// XS Overlay IPC handlers
+ipcMain.handle('xsoverlay-get-status', () => {
+  if (xsOverlayAddon) {
+    return xsOverlayAddon.getStatus()
+  }
+  return { enabled: false, connected: false, xsOverlayRunning: false, config: null, notificationLog: [] }
+})
+ipcMain.handle('xsoverlay-start', () => {
+  try {
+    if (!xsOverlayAddon) {
+      return { success: false, error: 'XS Overlay addon not initialized' }
+    }
+    const result = xsOverlayAddon.start()
+    return { success: result }
+  } catch (error: any) {
+    debug.error(`Failed to start XS Overlay addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('xsoverlay-stop', () => {
+  try {
+    if (xsOverlayAddon) {
+      xsOverlayAddon.stop()
+    }
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to stop XS Overlay addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('xsoverlay-get-config', () => {
+  try {
+    if (xsOverlayAddon) {
+      return xsOverlayAddon.getConfig()
+    }
+    return null
+  } catch (error: any) {
+    debug.error(`Failed to get XS Overlay config: ${error.message}`)
+    return null
+  }
+})
+ipcMain.handle('xsoverlay-update-config', (_event, newConfig: any) => {
+  try {
+    if (!xsOverlayAddon) {
+      return { success: false, error: 'XS Overlay addon not initialized' }
+    }
+    const result = xsOverlayAddon.updateConfig(newConfig)
+    return { success: result }
+  } catch (error: any) {
+    debug.error(`Failed to update XS Overlay config: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('xsoverlay-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings()
+    return { enabled: appSettings.xsOverlayAutostart || false }
+  } catch (error: any) {
+    debug.error(`Failed to get XS Overlay autostart setting: ${error.message}`)
+    return { enabled: false }
+  }
+})
+ipcMain.handle('xsoverlay-set-autostart', (_event, enabled: boolean) => {
+  try {
+    const result = configManager.updateAppSettings({ xsOverlayAutostart: enabled })
+    if (result) {
+      debug.info(`XS Overlay autostart ${enabled ? 'enabled' : 'disabled'}`)
+      return { success: true, enabled }
+    } else {
+      throw new Error('Failed to save autostart setting')
+    }
+  } catch (error: any) {
+    debug.error(`Failed to set XS Overlay autostart: ${error.message}`)
+    return { success: false, error: error.message }
+  }
 })
 // ────────── App Lifecycle ──────────
 app.whenReady().then(async () => {
@@ -1743,6 +2053,7 @@ app.whenReady().then(async () => {
   vrchatApiContainer = new VRChatAPIContainer()
   oscGoesBrrrAddon = new OscGoesBrrrAddon()
   autoStatusContainer = new AutoStatusContainer()
+  xsOverlayAddon = new XSOverlayAddon()
   calendarContainer = new Calendar()
   openShockContainer = new OpenShock()
   arcLinkContainer = new ARCLink()
@@ -1784,6 +2095,17 @@ app.whenReady().then(async () => {
     }
   })
   autoStatusContainer.start(vrchatApiContainer)
+  // Set up XS Overlay status and notification callbacks
+  xsOverlayAddon.setStatusChangeCallback((status: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('xsoverlay-status', status)
+    }
+  })
+  xsOverlayAddon.setNotificationLogCallback((entry: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('xsoverlay-notification', entry)
+    }
+  })
   // Set up pipeline event forwarding
   vrchatApiContainer.setPipelineEventCallback((event: string, data: any) => {
     if (event === 'user-update' && autoStatusContainer && data?.user) {
@@ -1809,6 +2131,11 @@ app.whenReady().then(async () => {
   if (appSettings.oscAutostart) {
     oscEnabled = true
     debug.info('OSC autostart enabled from saved config')
+  }
+  // Start XS Overlay if autostart is enabled
+  if (appSettings.xsOverlayAutostart && !xsOverlayAddon.isEnabled()) {
+    debug.info('Starting XS Overlay addon based on autostart setting...')
+    xsOverlayAddon.start()
   }
   const needsOscForAutostart = appSettings.hyperateAutostart || appSettings.oscleashAutostart
   // Wait for main window to finish loading
@@ -2038,6 +2365,17 @@ function cleanup(source = 'unknown') {
     hyperateAddon = null
   }
   try {
+    if (xsOverlayAddon) {
+      debug.info('Stopping XS Overlay addon during cleanup...')
+      xsOverlayAddon.destroy()
+      xsOverlayAddon = null
+      debug.info('XS Overlay addon cleanup completed')
+    }
+  } catch (error: any) {
+    debug.error(`Error stopping XS Overlay addon: ${error.message}`)
+    xsOverlayAddon = null
+  }
+  try {
     if (vrchatApiContainer) {
       vrchatApiContainer.stop()
       vrchatApiContainer = null
@@ -2097,6 +2435,11 @@ function cleanup(source = 'unknown') {
   if ((global as any).oscIpcBatchInterval) {
     clearInterval((global as any).oscIpcBatchInterval)
     ;(global as any).oscIpcBatchInterval = null
+  }
+  try {
+    closeDb()
+  } catch (error: any) {
+    debug.error(`Error closing database: ${error.message}`)
   }
   if ((global as any).gc) {
     ;(global as any).gc()

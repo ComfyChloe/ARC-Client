@@ -14,6 +14,7 @@ const {
   addConnection, removeConnection, toggleConnection,
   toggleConnectionForwarding, updateConnection,
   addUnsubscription, removeUnsubscription, requestUnsuppress,
+  clearAllSuppressions, isClearOnCooldown, clearCooldownRemaining,
   MAX_ADDITIONAL_CONNECTIONS
 } = useOscStatus()
 
@@ -32,6 +33,14 @@ const queryStatusText = computed(() => {
 })
 const blockedEmpty = computed(() => blockedParams.value.length === 0)
 const blockedCountLabel = computed(() => `${blockedParams.value.length} blocked path(s)`)
+const hasSuppressedParams = computed(() => blockedParams.value.some(p => p.source === 'suppressed'))
+const cooldownLabel = computed(() => {
+  const s = clearCooldownRemaining.value
+  if (s <= 0) return ''
+  const m = Math.floor(s / 60)
+  const sec = String(s % 60).padStart(2, '0')
+  return `Available in ${m}:${sec}`
+})
 
 async function handleAddUnsub() {
   const path = newUnsubPath.value.trim()
@@ -270,13 +279,22 @@ async function handleSendOsc() {
 
     <div class="card">
       <h3>Blocked Parameters</h3>
-      <p class="blocked-params-description">These paths are blocked and will not be forwarded to VRChat. Hardcoded blocks are always active. Server blocks are managed automatically.</p>
       <div class="blocked-params-toolbar">
         <span class="blocked-count-label"><strong>{{ blockedCountLabel }}</strong></span>
         <button class="btn btn-secondary blocked-toggle-button" type="button" @click="blockedExpanded = !blockedExpanded">
           {{ blockedExpanded ? '▼ Collapse' : '▶ Expand' }}
         </button>
-      </div>
+        <div v-if="hasSuppressedParams" class="clear-suppressed-area">
+          <button
+            class="btn btn-danger btn-small clear-suppressed-btn"
+            type="button"
+            :disabled="isClearOnCooldown"
+            @click="clearAllSuppressions()"
+          >Clear All Suppressed</button>
+          <span class="clear-suppressed-description">Use this if your panel isn&rsquo;t working &mdash; controls not responding visually, or not functioning at all.</span>
+          <span class="clear-suppressed-warning">&#9888; Cannot be undone &mdash; system will auto re-block spam if needed</span>
+          <span v-if="isClearOnCooldown" class="clear-suppressed-cooldown">{{ cooldownLabel }}</span>
+        </div>      </div>
       <div id="blocked-parameters-list">
         <p v-if="blockedEmpty" class="blocked-empty-state">No blocked parameters. All data is being forwarded normally.</p>
         <div
@@ -423,8 +441,35 @@ async function handleSendOsc() {
 .blocked-params-toolbar {
   margin-bottom: 8px;
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
+}
+.clear-suppressed-description {
+  font-size: 0.78em;
+  font-weight: 400;
+  color: var(--text-muted, #6b7280);
+}
+.clear-suppressed-area {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.clear-suppressed-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.clear-suppressed-warning {
+  font-size: 0.72em;
+  color: #b45309;
+  font-style: italic;
+}
+.clear-suppressed-cooldown {
+  font-size: 0.72em;
+  color: #6b7280;
+  font-weight: 600;
 }
 
 .legacy-blocked-item.clickable {

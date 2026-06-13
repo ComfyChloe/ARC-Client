@@ -35,7 +35,7 @@ class WebSocketManager {
         this.isAuthenticated = false
         this.currentUser = null
         this.connectionConfig = {
-            serverUrl: 'wss://avatar.comfychloe.uk:48255',
+            serverUrl: 'wss://arcosc.app:48255',
             autoReconnect: true,
             reconnectDelay: 3000,
             maxReconnectAttempts: 5
@@ -223,6 +223,15 @@ class WebSocketManager {
             throw new Error('Not connected to server')
         }
         this.socket.emit('request-unsuppress', { address })
+    }
+    requestClearAllSuppressions(): Promise<{ success: boolean; count?: number; cooldown?: boolean; remainingMs?: number; error?: string }> {
+        if (!this.isConnected || !this.socket) {
+            return Promise.reject(new Error('Not connected to server'))
+        }
+        return new Promise((resolve) => {
+            this.socket!.once('clear-all-suppressed-ack', resolve)
+            this.socket!.emit('request-clear-all-suppressed')
+        })
     }
     sendMessage(event: string, data: unknown): Promise<unknown> {
         return new Promise((resolve, reject) => {

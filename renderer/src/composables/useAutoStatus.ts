@@ -18,6 +18,17 @@ export const STATUS_TYPES: StatusType[] = [
 
 export const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+export const INSTANCE_TYPES = [
+  { value: 'public', label: 'Public' },
+  { value: 'invite', label: 'Invite Only' },
+  { value: 'invite+', label: 'Invite+' },
+  { value: 'friends', label: 'Friends' },
+  { value: 'friends+', label: 'Friends+' },
+  { value: 'group', label: 'Group' },
+  { value: 'groupPublic', label: 'Group Public' },
+  { value: 'group+', label: 'Group+' }
+]
+
 export interface Preset {
   id: number
   name: string
@@ -36,10 +47,25 @@ export interface ScheduleEntry {
   fallbackStatusType: string | null
 }
 
+export interface LocationRule {
+  id: string
+  name: string
+  enabled: boolean
+  presetId: number
+  matchWorld: string
+  matchWorldMode: 'contains' | 'exact'
+  matchGroup: string
+  matchGroupMode: 'contains' | 'exact'
+  matchAccessTypes: string[]
+  fallbackStatusType: string | null
+}
+
 export interface AutoStatusSettings {
   cooldownSeconds: number
   timeFormat: string
   alwaysAllowOverride: boolean
+  returnToInitial: boolean
+  prioritySource: 'schedule' | 'location'
   [key: string]: any
 }
 
@@ -58,7 +84,8 @@ export function useAutoStatus() {
   const api = useElectronAPI()
   const presets = ref<Preset[]>([])
   const schedule = ref<ScheduleEntry[]>([])
-  const settings = ref<AutoStatusSettings>({ cooldownSeconds: 10, timeFormat: '24h', alwaysAllowOverride: false })
+  const locationRules = ref<LocationRule[]>([])
+  const settings = ref<AutoStatusSettings>({ cooldownSeconds: 10, timeFormat: '24h', alwaysAllowOverride: false, returnToInitial: false, prioritySource: 'schedule' })
   const status = ref<AutoStatusStatus>({ lastAppliedPresetId: null, externallySet: false, avatarGuardActive: false, vrchatApiAvailable: false, lastOscValue: 0, currentStatus: null, currentStatusDescription: null })
 
   async function refresh() {
@@ -68,7 +95,8 @@ export function useAutoStatus() {
     ])
     presets.value = config.presets ?? []
     schedule.value = config.schedule ?? []
-    settings.value = { cooldownSeconds: 10, timeFormat: '24h', alwaysAllowOverride: false, ...config.settings }
+    locationRules.value = config.locationRules ?? []
+    settings.value = { cooldownSeconds: 10, timeFormat: '24h', alwaysAllowOverride: false, returnToInitial: false, prioritySource: 'schedule', ...config.settings }
     status.value = { lastAppliedPresetId: null, externallySet: false, avatarGuardActive: false, vrchatApiAvailable: false, lastOscValue: 0, currentStatus: null, currentStatusDescription: null, ...s }
   }
   async function createPreset() {
@@ -106,6 +134,37 @@ export function useAutoStatus() {
     await api.autoStatusDeleteSchedule(entryId)
     await refresh()
   }
+  async function addLocationRule(rule: Omit<LocationRule, 'id'>) {
+    try {
+      const result = await api.autoStatusAddLocationRule(rule)
+      await refresh()
+      return result
+    } catch (err) {
+      console.error('[AutoStatus] Failed to add location rule:', err)
+      return { success: false, error: String(err) }
+    }
+  }
+  async function createLocationRule() {
+    await addLocationRule({
+      name: 'New Rule',
+      enabled: true,
+      presetId: presets.value[0]?.id ?? 1,
+      matchWorld: '',
+      matchWorldMode: 'contains',
+      matchGroup: '',
+      matchGroupMode: 'contains',
+      matchAccessTypes: [],
+      fallbackStatusType: null
+    })
+  }
+  async function updateLocationRule(ruleId: string, updates: Partial<LocationRule>) {
+    await api.autoStatusUpdateLocationRule(ruleId, updates)
+    await refresh()
+  }
+  async function deleteLocationRule(ruleId: string) {
+    await api.autoStatusDeleteLocationRule(ruleId)
+    await refresh()
+  }
   async function updateSettings(updates: Partial<AutoStatusSettings>) {
     await api.autoStatusUpdateSettings(updates)
     settings.value = { ...settings.value, ...updates }
@@ -124,6 +183,7 @@ export function useAutoStatus() {
   return {
     presets,
     schedule,
+    locationRules,
     settings,
     status,
     refresh,
@@ -134,6 +194,10 @@ export function useAutoStatus() {
     addSchedule,
     updateSchedule,
     deleteSchedule,
+    addLocationRule,
+    createLocationRule,
+    updateLocationRule,
+    deleteLocationRule,
     updateSettings
   }
 }

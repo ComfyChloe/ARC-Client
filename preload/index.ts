@@ -37,6 +37,7 @@ const api = {
   getServerSuppressions: () => ipcRenderer.invoke('get-server-suppressions'),
   getHardcodedUnsubscriptions: () => ipcRenderer.invoke('get-hardcoded-unsubscriptions'),
   requestUnsuppress: (address: string) => ipcRenderer.invoke('request-unsuppress', address),
+  clearAllSuppressions: () => ipcRenderer.invoke('clear-all-suppressions'),
   // OSC Query status and control
   getOscQueryStatus: () => ipcRenderer.invoke('get-oscquery-status'),
   oscQueryForceReconnect: () => ipcRenderer.invoke('oscquery-force-reconnect'),
@@ -53,6 +54,13 @@ const api = {
   hyperateUpdateTrackerState: (deviceId: string, enabled: boolean) => ipcRenderer.invoke('hyperate-update-tracker-state', deviceId, enabled),
   hyperateGetAutostart: () => ipcRenderer.invoke('hyperate-get-autostart'),
   hyperateSetAutostart: (enabled: boolean) => ipcRenderer.invoke('hyperate-set-autostart', enabled),
+  // HypeRate History API
+  hyperateGetHistory: (trackerId: string, fromMs: number, toMs: number, maxPoints?: number) => ipcRenderer.invoke('hyperate-get-history', trackerId, fromMs, toMs, maxPoints),
+  hyperateGetStats: (trackerId: string, fromMs: number, toMs: number) => ipcRenderer.invoke('hyperate-get-stats', trackerId, fromMs, toMs),
+  hyperateGetHistoryConfig: () => ipcRenderer.invoke('hyperate-get-history-config'),
+  hyperateSetHistoryConfig: (config: { retentionDays: number }) => ipcRenderer.invoke('hyperate-set-history-config', config),
+  hyperateGetCaptureRate: () => ipcRenderer.invoke('hyperate-get-capture-rate'),
+  hyperateSetCaptureRate: (config: { rateMs: number }) => ipcRenderer.invoke('hyperate-set-capture-rate', config),
   // OSCLeash API
   oscleashGetStatus: () => ipcRenderer.invoke('oscleash-get-status'),
   oscleashStart: () => ipcRenderer.invoke('oscleash-start'),
@@ -92,17 +100,48 @@ const api = {
   autoStatusUpdateSchedule: (entryId: string, updates: any) => ipcRenderer.invoke('autostatus-update-schedule', entryId, updates),
   autoStatusDeleteSchedule: (entryId: string) => ipcRenderer.invoke('autostatus-delete-schedule', entryId),
   autoStatusUpdateSettings: (settings: any) => ipcRenderer.invoke('autostatus-update-settings', settings),
+  autoStatusGetLocationRules: () => ipcRenderer.invoke('autostatus-get-location-rules'),
+  autoStatusAddLocationRule: (rule: any) => ipcRenderer.invoke('autostatus-add-location-rule', rule),
+  autoStatusUpdateLocationRule: (ruleId: string, updates: any) => ipcRenderer.invoke('autostatus-update-location-rule', ruleId, updates),
+  autoStatusDeleteLocationRule: (ruleId: string) => ipcRenderer.invoke('autostatus-delete-location-rule', ruleId),
   // Calendar API
   calendarFetch: () => ipcRenderer.invoke('calendar-fetch'),
   calendarGetStatus: () => ipcRenderer.invoke('calendar-get-status'),
   // OpenShock API
-  openShockStart: (apiKey: string) => ipcRenderer.invoke('openshock-start', apiKey),
-  openShockStop: () => ipcRenderer.invoke('openshock-stop'),
   openShockGetStatus: () => ipcRenderer.invoke('openshock-get-status'),
-  // ARCLink API
+  openShockStart: (apiToken: string) => ipcRenderer.invoke('openshock-start', apiToken),
+  openShockStop: () => ipcRenderer.invoke('openshock-stop'),
+  openShockClearSavedToken: () => ipcRenderer.invoke('openshock-clear-saved-token'),
+  openShockListShockers: () => ipcRenderer.invoke('openshock-list-shockers'),
+  openShockListSharedShockers: () => ipcRenderer.invoke('openshock-list-shockers-shared'),
+  openShockCreateShareLink: (shockerId: string, permissions: { shock: boolean; vibrate: boolean; sound: boolean; live: boolean }, limits: { intensity: number; duration: number }) => ipcRenderer.invoke('openshock-create-share-link', shockerId, permissions, limits),
+  openShockSendControl: (shocks: Array<{ id: string; type: string; intensity?: number; duration?: number }>) => ipcRenderer.invoke('openshock-send-control', shocks),
+  openShockPauseShocker: (shockerId: string, pause: boolean) => ipcRenderer.invoke('openshock-pause-shocker', shockerId, pause),
+  openShockListShares: (shockerId: string) => ipcRenderer.invoke('openshock-list-shares', shockerId),
+  openShockDeleteShare: (shockerId: string, sharedWithUserId: string) => ipcRenderer.invoke('openshock-delete-share', shockerId, sharedWithUserId),
+  openShockPauseShare: (shockerId: string, sharedWithUserId: string, pause: boolean) => ipcRenderer.invoke('openshock-pause-share', shockerId, sharedWithUserId, pause),
+  openShockListTokens: () => ipcRenderer.invoke('openshock-list-tokens'),
+  openShockCreateToken: (name: string, permissions: Record<string, boolean>) => ipcRenderer.invoke('openshock-create-token', name, permissions),
+  openShockDeleteToken: (tokenId: string) => ipcRenderer.invoke('openshock-delete-token', tokenId),
+  openShockGetLogs: (shockerId: string, page?: number, size?: number) => ipcRenderer.invoke('openshock-get-logs', shockerId, page, size),
+  openShockGetControlLogs: (limit?: number, offset?: number) => ipcRenderer.invoke('openshock-get-control-logs', limit, offset),
+  openShockLogin: (email: string, password: string) => ipcRenderer.invoke('openshock-login', email, password),
+  openShockLogout: () => ipcRenderer.invoke('openshock-logout'),
+  openShockGetLoginStatus: () => ipcRenderer.invoke('openshock-get-login-status'),
+  openShockClearSavedCredentials: () => ipcRenderer.invoke('openshock-clear-saved-credentials'),
+  // XS Overlay API
   arcLinkStart: () => ipcRenderer.invoke('arclink-start'),
   arcLinkStop: () => ipcRenderer.invoke('arclink-stop'),
   arcLinkGetStatus: () => ipcRenderer.invoke('arclink-get-status'),
+  // XS Overlay API
+  xsOverlayGetStatus: () => ipcRenderer.invoke('xsoverlay-get-status'),
+  xsOverlayStart: () => ipcRenderer.invoke('xsoverlay-start'),
+  xsOverlayStop: () => ipcRenderer.invoke('xsoverlay-stop'),
+  xsOverlayGetConfig: () => ipcRenderer.invoke('xsoverlay-get-config'),
+  xsOverlayUpdateConfig: (config: any) => ipcRenderer.invoke('xsoverlay-update-config', config),
+  xsOverlayGetAutostart: () => ipcRenderer.invoke('xsoverlay-get-autostart'),
+  xsOverlaySetAutostart: (enabled: boolean) => ipcRenderer.invoke('xsoverlay-set-autostart', enabled),
+  xsOverlayGetNotificationLogs: (limit?: number, offset?: number) => ipcRenderer.invoke('xsoverlay-get-notification-logs', limit, offset),
   // VRChat account linking
   sendVRChatLink: (vrchatUserId: string, vrchatUsername: string) => ipcRenderer.invoke('send-vrchat-link', vrchatUserId, vrchatUsername),
   checkVRChatLink: () => ipcRenderer.invoke('check-vrchat-link'),
@@ -201,6 +240,12 @@ const api = {
   },
   onAutoStatusUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('autostatus-update', (_event, data) => callback(data))
+  },
+  onXsOverlayStatus: (callback: (data: any) => void) => {
+    ipcRenderer.on('xsoverlay-status', (_event, data) => callback(data))
+  },
+  onXsOverlayNotification: (callback: (data: any) => void) => {
+    ipcRenderer.on('xsoverlay-notification', (_event, data) => callback(data))
   },
   onFeedbackUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('feedback-update', (_event, data) => callback(data))

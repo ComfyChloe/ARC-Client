@@ -177,7 +177,7 @@ export function useVRChatAPI() {
   async function initialize() {
     if (vrchatApiInitialized) return
     if (vrchatApiInitPromise) return vrchatApiInitPromise
-    vrchatApiInitPromise = Promise.resolve().then(async () => {
+    vrchatApiInitPromise = (async () => {
       await loadWebSocketStatus()
       await loadStatus()
       if (!status.value.authenticated) {

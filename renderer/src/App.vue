@@ -130,7 +130,8 @@ const routeViewId = computed(() => {
     '/lovense': 'lovense-view',
     '/vosk': 'vosk-view',
     '/vrc-timeline': 'vrc-timeline-view',
-    '/auto-inviter': 'auto-inviter-view'
+    '/auto-inviter': 'auto-inviter-view',
+    '/xsoverlay': 'xsoverlay-view'
   }
   return ids[route.path] ?? 'main-view'
 })
@@ -237,6 +238,7 @@ function linksBreakdown(panel: PanelInfo): string {
               <router-link to="/oscleash" class="tree-child" :class="{ active: isActive('/oscleash') }">OSC Leash</router-link>
               <router-link to="/oscgoesbrrr" class="tree-child" :class="{ active: isActive('/oscgoesbrrr') }">OscGoesBrrr</router-link>
               <router-link to="/vosk" class="tree-child" :class="{ active: isActive('/vosk') }">VOSK</router-link>
+              <router-link to="/xsoverlay" class="tree-child" :class="{ active: isActive('/xsoverlay') }">XS Notifications</router-link>
               <router-link to="/vrc-timeline" class="tree-child" :class="{ active: isActive('/vrc-timeline') }">VRC Timeline</router-link>
               <div class="tree-item nested-tree-item">
                 <button class="tree-toggle nested-toggle" :class="{ expanded: vrchatOpen }" type="button" @click="vrchatOpen = !vrchatOpen">

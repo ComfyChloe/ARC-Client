@@ -1,16 +1,19 @@
 /**
  * Auto-Status Container
- * Automatic VRChat status management via OSC parameters and time-based scheduling.
+ * Automatic VRChat status management via OSC parameters, time-based scheduling,
+ * and location-based rules (via VRChat log-watcher or VRCX fallback).
  *
  * Always active — listens for two OSC parameters:
  *   /avatar/parameters/ARCOSC/vrc-status/statuspreset (int 0-8) — triggers saved presets
  *   /avatar/parameters/ARCOSC/vrc-status (int 0-4) — sets status color directly
  * Supports a timetable schedule for time-of-day automation.
+ * Supports location rules matched against world/group/instance type.
  *
  * Guards against avatar-change parameter resets with a 30-second cooldown.
  */
 import debug from '../../services/debugger'
 import configManager from '../../services/configManager'
+import LocationTracker, { type LocationState } from './locationTracker'
 
 interface AutoStatusPreset {
     id: number
@@ -33,11 +36,27 @@ interface AutoStatusScheduleEntry {
 interface AutoStatusSettings {
     cooldownSeconds?: number
     alwaysAllowOverride?: boolean
+    returnToInitial?: boolean
+    prioritySource?: 'schedule' | 'location'
+}
+
+interface LocationRule {
+    id: string
+    name: string
+    enabled: boolean
+    presetId: number
+    matchWorld: string
+    matchWorldMode: 'contains' | 'exact'
+    matchGroup: string
+    matchGroupMode: 'contains' | 'exact'
+    matchAccessTypes: string[]
+    fallbackStatusType: string | null
 }
 
 interface AutoStatusConfig {
     presets: AutoStatusPreset[]
     schedule: AutoStatusScheduleEntry[]
+    locationRules: LocationRule[]
     settings: AutoStatusSettings
 }
 
@@ -80,6 +99,10 @@ class AutoStatus {
     currentStatus: string | null
     currentStatusDescription: string | null
     lastActiveScheduleEntryId: string | null
+    initialStatus: string | null
+    initialStatusDescription: string | null
+    locationTracker: LocationTracker
+    lastLocationMatchedRuleId: string | null
 
     constructor() {
         this.config = this.loadConfig()
@@ -101,6 +124,12 @@ class AutoStatus {
         this.currentStatus = null
         this.currentStatusDescription = null
         this.lastActiveScheduleEntryId = null
+        // Initial status tracking
+        this.initialStatus = null
+        this.initialStatusDescription = null
+        // Location tracking
+        this.locationTracker = new LocationTracker()
+        this.lastLocationMatchedRuleId = null
         debug.info('[AutoStatus] Container initialized')
     }
 
@@ -149,6 +178,14 @@ class AutoStatus {
                         : []
                 }))
                 : [],
+            locationRules: Array.isArray(config.locationRules)
+                ? config.locationRules.map((rule) => ({
+                    ...rule,
+                    presetId: Number(rule.presetId),
+                    matchWorldMode: rule.matchWorldMode || 'contains',
+                    matchGroupMode: rule.matchGroupMode || 'contains'
+                }))
+                : [],
             settings: config.settings || {}
         }
     }
@@ -171,8 +208,14 @@ class AutoStatus {
         if (vrchatApiContainer.isAuthenticated()) {
             const currentStatus = vrchatApiContainer.getCurrentUserStatus()
             this.syncCurrentStatus(currentStatus.status, currentStatus.statusDescription)
+            // Capture the initial status before ARC makes any changes
+            if (this.initialStatus === null) {
+                this.initialStatus = currentStatus.status
+                this.initialStatusDescription = currentStatus.statusDescription
+            }
         }
         this.startScheduleEngine()
+        this.startLocationTracker()
         debug.info('[AutoStatus] Service started')
         return { success: true }
     }
@@ -182,6 +225,7 @@ class AutoStatus {
      */
     stop(): { success: boolean } {
         this.stopScheduleEngine()
+        this.stopLocationTracker()
         this.stopGuardExpiryTimeout()
         this.vrchatApi = null
         debug.info('[AutoStatus] Service stopped')
@@ -445,6 +489,8 @@ class AutoStatus {
         this.config.presets.splice(idx, 1)
         // Remove schedule entries referencing this preset
         this.config.schedule = this.config.schedule.filter(s => s.presetId !== normalizedPresetId)
+        // Remove location rules referencing this preset
+        this.config.locationRules = this.config.locationRules.filter(r => r.presetId !== normalizedPresetId)
         this.saveConfig()
         return { success: true }
     }
@@ -526,6 +572,10 @@ class AutoStatus {
         // Don't override externally set status
         if (this.externallySet && !this.config.settings?.alwaysAllowOverride) return
 
+        const prioritySource = this.config.settings?.prioritySource || 'schedule'
+        // If location has priority and a location rule is active, schedule defers
+        if (prioritySource === 'location' && this.lastLocationMatchedRuleId !== null) return
+
         const now = new Date()
         const currentDay = now.getDay() // 0=Sun
         const currentMinutes = now.getHours() * 60 + now.getMinutes()
@@ -558,13 +608,15 @@ class AutoStatus {
                 return
             }
         }
-        // No schedule matched — apply fallback if a timed entry just ended
+        // No schedule matched — a timed entry just ended
         if (this.lastActiveScheduleEntryId !== null) {
             const prevEntry = this.config.schedule.find(s => s.id === this.lastActiveScheduleEntryId)
             const fallback = prevEntry?.fallbackStatusType || null
             this.lastActiveScheduleEntryId = null
             this.lastSchedulePresetId = null
-            if (fallback) {
+            if (this.config.settings?.returnToInitial) {
+                this._returnToInitialStatus('schedule')
+            } else if (fallback) {
                 this._applyFallbackStatus(fallback)
             }
             return
@@ -588,10 +640,174 @@ class AutoStatus {
             this.lastStatusChangeTime = now
             this.lastAppliedPresetId = null
             this.recordArcStatusSet(applied.status, applied.statusDescription, now)
-            debug.info(`[AutoStatus] Applied schedule fallback status: ${statusType}`)
+            debug.info(`[AutoStatus] Applied fallback status: ${statusType}`)
             this.notifyStatusChange()
         } else {
             debug.error(`[AutoStatus] Failed to apply fallback status: ${result.error}`)
+        }
+    }
+
+    async _returnToInitialStatus(source: string): Promise<void> {
+        if (!this.vrchatApi || !this.vrchatApi.isAuthenticated()) return
+        if (this.externallySet && !this.config.settings?.alwaysAllowOverride) return
+        if (this.initialStatus === null && this.initialStatusDescription === null) return
+        const cooldown = (this.config.settings?.cooldownSeconds || 10) * 1000
+        const now = Date.now()
+        if (now - this.lastStatusChangeTime < cooldown) {
+            debug.info(`[AutoStatus] Cooldown active, skipping return-to-initial from ${source}`)
+            return
+        }
+        const result = await this.vrchatApi.setStatus(this.initialStatus, this.initialStatusDescription)
+        if (result.success) {
+            const applied = this.getResultStatusValues(result, this.initialStatus, this.initialStatusDescription)
+            this.lastStatusChangeTime = now
+            this.lastAppliedPresetId = null
+            this.recordArcStatusSet(applied.status, applied.statusDescription, now)
+            debug.info(`[AutoStatus] Returned to initial status from ${source}: ${this.initialStatus} — "${this.initialStatusDescription || ''}"`)
+            this.notifyStatusChange()
+        } else {
+            debug.error(`[AutoStatus] Failed to return to initial status: ${result.error}`)
+        }
+    }
+
+    // --- Location Rule Management ---
+
+    getLocationRules(): LocationRule[] {
+        this.config = this.normalizeConfig(this.config)
+        return JSON.parse(JSON.stringify(this.config.locationRules))
+    }
+
+    addLocationRule(rule: Omit<LocationRule, 'id'>): { success: boolean, error?: string, rule?: LocationRule } {
+        const normalizedPresetId = Number(rule.presetId) || 0
+        const newRule: LocationRule = {
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            name: rule.name || '',
+            enabled: rule.enabled !== false,
+            presetId: normalizedPresetId,
+            matchWorld: rule.matchWorld || '',
+            matchWorldMode: rule.matchWorldMode || 'contains',
+            matchGroup: rule.matchGroup || '',
+            matchGroupMode: rule.matchGroupMode || 'contains',
+            matchAccessTypes: Array.isArray(rule.matchAccessTypes) ? rule.matchAccessTypes : [],
+            fallbackStatusType: rule.fallbackStatusType || null
+        }
+        this.config.locationRules.push(newRule)
+        this.saveConfig()
+        this.syncLocationTracker()
+        return { success: true, rule: newRule }
+    }
+
+    updateLocationRule(ruleId: string, updates: Partial<LocationRule>): { success: boolean, error?: string, rule?: LocationRule } {
+        const idx = this.config.locationRules.findIndex(r => r.id === ruleId)
+        if (idx < 0) return { success: false, error: 'Location rule not found' }
+        const normalizedUpdates: Record<string, unknown> = { ...updates }
+        if (updates.presetId !== undefined) {
+            normalizedUpdates.presetId = Number(updates.presetId)
+        }
+        this.config.locationRules[idx] = { ...this.config.locationRules[idx], ...normalizedUpdates } as LocationRule
+        this.saveConfig()
+        this.syncLocationTracker()
+        return { success: true, rule: this.config.locationRules[idx] }
+    }
+
+    deleteLocationRule(ruleId: string): { success: boolean, error?: string } {
+        const idx = this.config.locationRules.findIndex(r => r.id === ruleId)
+        if (idx < 0) return { success: false, error: 'Location rule not found' }
+        this.config.locationRules.splice(idx, 1)
+        this.saveConfig()
+        this.syncLocationTracker()
+        return { success: true }
+    }
+
+    // --- Location Tracker ---
+
+    startLocationTracker(): void {
+        this.locationTracker.setVrcxDbPath((this.config.settings as Record<string, unknown>).vrcxDbPath as string | null || null)
+        this.locationTracker.setCallbacks({
+            onLocationChange: (location: LocationState) => this.evaluateLocationRules(location),
+            onLocationLeave: () => this.handleLocationLeave()
+        })
+        this.syncLocationTracker()
+        debug.info('[AutoStatus] Location tracker initialized')
+    }
+
+    syncLocationTracker(): void {
+        if (this.config.locationRules.length > 0) {
+            this.locationTracker.start()
+        } else {
+            this.locationTracker.stop()
+        }
+    }
+
+    stopLocationTracker(): void {
+        this.locationTracker.stop()
+        this.lastLocationMatchedRuleId = null
+    }
+
+    evaluateLocationRules(location: LocationState): void {
+        if (!this.vrchatApi || !this.vrchatApi.isAuthenticated()) return
+        if (this.lastOscValue > 0) return
+        if (this.externallySet && !this.config.settings?.alwaysAllowOverride) return
+
+        const prioritySource = this.config.settings?.prioritySource || 'schedule'
+        // If schedule has priority and a schedule entry is active, location defers
+        if (prioritySource === 'schedule' && this.lastActiveScheduleEntryId !== null) return
+
+        for (const rule of this.config.locationRules) {
+            if (!rule.enabled) continue
+            if (!this.locationRuleMatches(rule, location)) continue
+
+            const alreadyActive = this.lastLocationMatchedRuleId === rule.id
+            if (!alreadyActive) {
+                this.lastLocationMatchedRuleId = rule.id
+                this.applyPreset(rule.presetId, 'location')
+            }
+            this.notifyStatusChange()
+            return
+        }
+        // No rule matched — clear match state
+        this.lastLocationMatchedRuleId = null
+        this.notifyStatusChange()
+    }
+
+    locationRuleMatches(rule: LocationRule, location: LocationState): boolean {
+        // Match access type
+        if (rule.matchAccessTypes && rule.matchAccessTypes.length > 0 && !rule.matchAccessTypes.includes(location.instanceType || '')) return false
+        // Match world name
+        if (rule.matchWorld && location.worldName) {
+            const worldName = location.worldName
+            if (rule.matchWorldMode === 'exact') {
+                if (worldName !== rule.matchWorld) return false
+            } else {
+                if (!worldName.toLowerCase().includes(rule.matchWorld.toLowerCase())) return false
+            }
+        } else if (rule.matchWorld && !location.worldName) {
+            return false
+        }
+        // Match group name
+        if (rule.matchGroup && location.groupName) {
+            const groupName = location.groupName
+            if (rule.matchGroupMode === 'exact') {
+                if (groupName !== rule.matchGroup) return false
+            } else {
+                if (!groupName.toLowerCase().includes(rule.matchGroup.toLowerCase())) return false
+            }
+        } else if (rule.matchGroup && !location.groupName) {
+            return false
+        }
+        return true
+    }
+
+    handleLocationLeave(): void {
+        if (this.lastLocationMatchedRuleId === null) return
+        const prevRule = this.config.locationRules.find(r => r.id === this.lastLocationMatchedRuleId)
+        const fallback = prevRule?.fallbackStatusType || null
+        this.lastLocationMatchedRuleId = null
+        this.notifyStatusChange()
+        if (this.config.settings?.returnToInitial) {
+            this._returnToInitialStatus('location')
+        } else if (fallback) {
+            this._applyFallbackStatus(fallback)
         }
     }
 
@@ -621,7 +837,19 @@ class AutoStatus {
         externallySet: boolean
         currentStatus: string | null
         currentStatusDescription: string | null
+        locationRunning: boolean
+        locationSource: 'log-watcher' | 'vrcx' | null
+        locationRuleCount: number
+        currentWorldName: string | null
+        currentAccessType: string | null
+        currentGroupName: string | null
+        lastLocationMatchedRuleId: string | null
+        initialStatus: string | null
+        initialStatusDescription: string | null
+        returnToInitial: boolean
+        prioritySource: 'schedule' | 'location'
     } {
+        const loc = this.locationTracker.current
         return {
             lastAppliedPresetId: this.lastAppliedPresetId,
             lastStatusChangeTime: this.lastStatusChangeTime,
@@ -633,7 +861,18 @@ class AutoStatus {
             vrchatApiAvailable: !!(this.vrchatApi && this.vrchatApi.isAuthenticated()),
             externallySet: this.externallySet,
             currentStatus: this.currentStatus,
-            currentStatusDescription: this.currentStatusDescription
+            currentStatusDescription: this.currentStatusDescription,
+            locationRunning: this.locationTracker.isRunning(),
+            locationSource: this.locationTracker.getSource(),
+            locationRuleCount: this.config.locationRules.length,
+            currentWorldName: loc?.worldName || null,
+            currentAccessType: loc?.instanceType || null,
+            currentGroupName: loc?.groupName || null,
+            lastLocationMatchedRuleId: this.lastLocationMatchedRuleId,
+            initialStatus: this.initialStatus,
+            initialStatusDescription: this.initialStatusDescription,
+            returnToInitial: !!this.config.settings?.returnToInitial,
+            prioritySource: this.config.settings?.prioritySource || 'schedule'
         }
     }
 
@@ -642,6 +881,7 @@ class AutoStatus {
      */
     close(): void {
         this.stop()
+        this.locationTracker.stop()
         debug.info('[AutoStatus] Container closed')
     }
 }
