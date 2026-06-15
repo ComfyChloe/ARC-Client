@@ -151,7 +151,7 @@ export function useServerConnection() {
         }
       })
       api.onWebSocketError((data: any) => {
-        debugLog(`WebSocket connection error: ${data.error ?? 'Unknown error'}${data.attempts ? ` (Attempt ${data.attempts}/${data.maxAttempts})` : ''}`, 'error')
+        debugLog(`WebSocket connection error: ${data.error ?? 'Unknown error'}${data.attempts ? ` (Attempt ${data.attempts})` : ''}`, 'error')
       })
       api.onWebSocketAuthenticated((data: any) => {
         isAuthenticated.value = true
@@ -204,6 +204,17 @@ export function useServerConnection() {
     await initialize()
   })
 
+  const pendingPanelToggles = ref<Set<string>>(new Set())
+  async function setPanelState(kind: string, value: boolean) {
+    if (pendingPanelToggles.value.has(kind)) return
+    pendingPanelToggles.value.add(kind)
+    try {
+      const result = await api.setPanelState(kind, value)
+      return result
+    } finally {
+      pendingPanelToggles.value.delete(kind)
+    }
+  }
   return {
     connectionStatus,
     isConnected,
@@ -212,6 +223,8 @@ export function useServerConnection() {
     currentAvatar,
     parameters,
     panelConnectionsData,
+    pendingPanelToggles,
+    setPanelState,
     wsForwardingEnabled,
     loading,
     error,

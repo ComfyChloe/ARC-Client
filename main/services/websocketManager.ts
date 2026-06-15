@@ -4,7 +4,6 @@ interface ConnectionConfig {
     serverUrl: string
     autoReconnect: boolean
     reconnectDelay: number
-    maxReconnectAttempts: number
 }
 
 interface Credentials {
@@ -37,8 +36,7 @@ class WebSocketManager {
         this.connectionConfig = {
             serverUrl: 'wss://arcosc.app:48255',
             autoReconnect: true,
-            reconnectDelay: 3000,
-            maxReconnectAttempts: 5
+            reconnectDelay: 5000,
         }
         this.reconnectAttempts = 0
         this.eventHandlers = new Map()
@@ -77,7 +75,7 @@ class WebSocketManager {
                 autoConnect: false,
                 reconnection: this.connectionConfig.autoReconnect,
                 reconnectionDelay: this.connectionConfig.reconnectDelay,
-                reconnectionAttempts: this.connectionConfig.maxReconnectAttempts,
+                reconnectionDelayMax: this.connectionConfig.reconnectDelay,
                 secure: socketUrl.startsWith('wss://'),
                 rejectUnauthorized: !allowInsecure,
                 forceNew: true
@@ -146,13 +144,11 @@ class WebSocketManager {
             console.error('WebSocket connection error:', {
                 message: error.message,
                 attempts: this.reconnectAttempts,
-                maxAttempts: this.connectionConfig.maxReconnectAttempts,
                 serverUrl: this.connectionConfig.serverUrl
             })
             this.emit('connection-error', { 
                 error: error.message,
-                attempts: this.reconnectAttempts,
-                maxAttempts: this.connectionConfig.maxReconnectAttempts
+                attempts: this.reconnectAttempts
             })
         })
         this.socket.on('connection-status', (data: { status: string }) => {
@@ -231,6 +227,19 @@ class WebSocketManager {
         return new Promise((resolve) => {
             this.socket!.once('clear-all-suppressed-ack', resolve)
             this.socket!.emit('request-clear-all-suppressed')
+        })
+    }
+    setPanelState(kind: string, value: boolean): Promise<{ success: boolean; kind?: string; value?: boolean; changed?: boolean; error?: string }> {
+        if (!this.isConnected || !this.socket) {
+            return Promise.reject(new Error('Not connected to server'))
+        }
+        return new Promise((resolve) => {
+            this.socket!.once('set-panel-state-ack', resolve)
+            this.socket!.emit('set-panel-state', { kind, value })
+            setTimeout(() => {
+                this.socket?.off('set-panel-state-ack', resolve as any)
+                resolve({ success: false, error: 'Request timed out' })
+            }, 10000)
         })
     }
     sendMessage(event: string, data: unknown): Promise<unknown> {

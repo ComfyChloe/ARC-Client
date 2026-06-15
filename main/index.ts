@@ -280,7 +280,7 @@ function initWebSocket() {
     })
     wsManager.on('connection-error', (data: any) => {
       sendToRenderer('websocket-error', data)
-      debug.logWebSocketConnection(`Connection error: ${data.error} (Attempt ${data.attempts}/${data.maxAttempts})`)
+      debug.logWebSocketConnection(`Connection error: ${data.error} (Attempt ${data.attempts})`)
     })
     wsManager.on('authenticated', (data: any) => {
       sendToRenderer('websocket-authenticated', data)
@@ -1238,6 +1238,14 @@ ipcMain.handle('clear-all-suppressions', async () => {
   if (!wsManager) return { success: false, error: 'Not connected to server' }
   try {
     return await wsManager.requestClearAllSuppressions()
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('panel-state-set', async (_event, kind: string, value: boolean) => {
+  if (!wsManager) return { success: false, error: 'Not connected to server' }
+  try {
+    return await wsManager.setPanelState(kind, value)
   } catch (error: any) {
     return { success: false, error: error.message }
   }

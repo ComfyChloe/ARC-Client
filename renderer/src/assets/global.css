@@ -1858,6 +1858,9 @@ body.dark-theme .panels-loading {
     text-transform: uppercase;
     letter-spacing: 0.3px;
     margin-left: 8px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
 }
 
 .panel-lock-badge.unlocked {
@@ -1916,6 +1919,9 @@ body.dark-theme .panel-lock-badge.locked {
     font-size: 11px;
     font-weight: 700;
     transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
 }
 
 .safety-bubble.enabled {

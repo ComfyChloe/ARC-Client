@@ -4,11 +4,23 @@ import { useServerConnection, type PanelInfo } from '../composables/useServerCon
 const {
   isConnected,
   isAuthenticated,
-  panelConnectionsData
+  panelConnectionsData,
+  pendingPanelToggles,
+  setPanelState
 } = useServerConnection()
 
 function safetyStatuses(panel: PanelInfo): boolean[] {
   return [panel.safetyEnabled, panel.safety2Enabled, panel.safety3Enabled, panel.safety4Enabled, panel.safety5Enabled]
+}
+
+function togglePanelLock(panel: PanelInfo) {
+  setPanelState('panel', !panel.panelEnabled)
+}
+
+function toggleSafety(panel: PanelInfo, index: number) {
+  const kind = `safety${index + 1}` as const
+  const currentValue = safetyStatuses(panel)[index]
+  setPanelState(kind, !currentValue)
 }
 function linksBreakdown(panel: PanelInfo): string {
   const parts: string[] = []
@@ -41,9 +53,9 @@ function linksBreakdown(panel: PanelInfo): string {
             <div class="panel-card-header">
               <h4 class="panel-name">{{ panel.panelName }}</h4>
               <div class="panel-card-badges">
-                <span class="panel-lock-badge" :class="panel.panelEnabled ? 'unlocked' : 'locked'">
+                <button type="button" class="panel-lock-badge" :class="[panel.panelEnabled ? 'unlocked' : 'locked', { pending: pendingPanelToggles.has('panel') }]" :disabled="!isConnected || !isAuthenticated || pendingPanelToggles.has('panel')" :aria-pressed="panel.panelEnabled" :title="panel.panelEnabled ? 'Click to lock panel' : 'Click to unlock panel'" @click="togglePanelLock(panel)">
                   {{ panel.panelEnabled ? 'Unlocked' : 'Locked' }}
-                </span>
+                </button>
                 <span class="panel-status-badge" :class="panel.isActive ? 'active' : 'inactive'">
                   {{ panel.isActive ? 'Active' : 'Inactive' }}
                 </span>
@@ -58,9 +70,9 @@ function linksBreakdown(panel: PanelInfo): string {
             <div class="safety-bubbles-row">
               <span class="safety-label">Safety</span>
               <div class="safety-bubbles">
-                <span v-for="(enabled, i) in safetyStatuses(panel)" :key="i" class="safety-bubble" :class="enabled ? 'enabled' : 'disabled'">
+                <button v-for="(enabled, i) in safetyStatuses(panel)" :key="i" type="button" class="safety-bubble" :class="[enabled ? 'enabled' : 'disabled', { pending: pendingPanelToggles.has(`safety${i + 1}`) }]" :disabled="!isConnected || !isAuthenticated || pendingPanelToggles.has(`safety${i + 1}`)" :aria-pressed="enabled" :title="enabled ? `Click to disengage safety ${i + 1}` : `Click to engage safety ${i + 1}`" @click="toggleSafety(panel, i)">
                   {{ i + 1 }}
-                </span>
+                </button>
               </div>
             </div>
             <div class="access-indicators-row">
