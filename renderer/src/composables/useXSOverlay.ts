@@ -4,7 +4,8 @@ export interface XSOverlayNotificationLogEntry {
   id: number
   title: string
   content: string
-  timestamp: number
+  timestamp?: number
+  recordedAt?: string
   type: 'panel-connection' | 'panel-disconnection' | 'avatar-change' | 'info' | 'error'
 }
 export interface XSOverlayAddonStatus {
@@ -46,7 +47,15 @@ export function useXSOverlay() {
   }
   async function refreshDbLogs() {
     try {
-      dbLogs.value = await api.xsOverlayGetNotificationLogs(50) || []
+      const rows = await api.xsOverlayGetNotificationLogs(50) || []
+      // DB rows have recorded_at (SQL datetime string) — pass through directly
+      dbLogs.value = rows.map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        type: row.type,
+        recordedAt: row.recorded_at
+      }))
     } catch (e: unknown) { console.error('Failed to load XS Overlay logs from DB:', e) }
   }
   async function refreshAutostart() {

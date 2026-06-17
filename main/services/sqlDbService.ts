@@ -85,7 +85,7 @@ export function initDb(): void {
         title TEXT NOT NULL,
         content TEXT NOT NULL,
         type TEXT NOT NULL,
-        recorded_at INTEGER NOT NULL
+        recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
       );
       CREATE INDEX IF NOT EXISTS idx_xso_time ON xs_overlay_notification_log(recorded_at);
     `)

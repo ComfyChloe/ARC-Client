@@ -1,6 +1,7 @@
 import WebSocket from 'ws'
 import debug from '../../services/debugger'
 import configManager from '../../services/configManager'
+import { getDb } from '../../services/sqlDbService'
 interface XSOverlayConfig {
   enabled: boolean
   autoStart: boolean
@@ -386,6 +387,16 @@ class XSOverlayAddon {
       this.notificationLog.length = MAX_LOG_ENTRIES
     }
     this.logDirty = true
+    // Persist to database so the UI notification log works for all users
+    try {
+      const db = getDb()
+      const now = new Date()
+      const pad = (n: number) => n.toString().padStart(2, '0')
+      const recordedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+      db.prepare('INSERT INTO xs_overlay_notification_log (title, content, type, recorded_at) VALUES (?, ?, ?, ?)').run(entry.title, entry.content, entry.type, recordedAt)
+    } catch (_e) {
+      // DB may not be initialized yet — in-memory log still works
+    }
     if (typeof this.onNotificationLog === 'function') {
       this.onNotificationLog(entry)
     }
