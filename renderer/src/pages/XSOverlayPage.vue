@@ -36,8 +36,9 @@ function toggleNotificationType(key: 'panelConnections' | 'avatarChanges') {
   const current = status.value.config?.notifications?.[key] ?? true
   updateConfig({ notifications: { ...status.value.config?.notifications, [key]: !current } })
 }
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString()
+function formatTime(value: string | number): string {
+  if (typeof value === 'string') return value
+  return new Date(value).toLocaleString()
 }
 function notificationTypeIcon(type: string): string {
   switch (type) {
@@ -100,7 +101,7 @@ function notificationTypeClass(type: string): string {
             <div class="notif-title">{{ entry.title }}</div>
             <div class="notif-text">{{ entry.content }}</div>
           </div>
-          <span class="notif-time">{{ formatTime(entry.timestamp) }}</span>
+          <span class="notif-time">{{ formatTime(entry.recordedAt || entry.timestamp) }}</span>
         </div>
       </div>
     </div>
