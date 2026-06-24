@@ -78,7 +78,7 @@ export function useOscStatus() {
 
   async function loadConfig() {
     const config = await api.getServerConfig()
-    localPort.value = config.localOscPort ?? 9001
+    localPort.value = config.legacyOscPort ?? 9001
     targetPort.value = config.targetOscPort ?? 9000
     targetAddress.value = config.targetOscAddress ?? '127.0.0.1'
     oscQueryBindAddress.value = config.oscQueryBindAddress ?? '0.0.0.0'
@@ -104,7 +104,7 @@ export function useOscStatus() {
   }
   async function updateOscPorts() {
     await api.setConfig({
-      localOscPort: localPort.value,
+      legacyOscPort: localPort.value,
       targetOscPort: targetPort.value,
       targetOscAddress: targetAddress.value,
       oscQueryBindAddress: oscQueryBindAddress.value
