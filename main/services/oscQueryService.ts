@@ -45,7 +45,7 @@ const EXTENSIONS = {
     CLIPMODE: true,
 } as const
 
-const DEFAULT_BIND_ADDRESS = '127.0.0.1'
+const DEFAULT_BIND_ADDRESS = '0.0.0.0'
 const DEFAULT_FALLBACK_ADDRESS = '0.0.0.0'
 const DEFAULT_FALLBACK_IP = '127.0.0.1'
 
