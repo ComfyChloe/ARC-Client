@@ -146,7 +146,7 @@ class OSCQueryService extends EventEmitter {
         this._localIpAddresses = [] // Cache of local IP addresses
         this.bindAddress = DEFAULT_BIND_ADDRESS
         // Configuration constants
-        this.LIVENESS_FAILURE_THRESHOLD = 2 // Failures before clearing connection
+        this.LIVENESS_FAILURE_THRESHOLD = 4 // Failures before clearing connection
         this.OSC_FLOW_TIMEOUT_WARNING = 30000 // 30s without data = warning
         this.OSC_FLOW_TIMEOUT_RECONNECT = 60000 // 60s without data = reconnect
         this.READVERTISE_INTERVAL = 30000 // Re-advertise every 30 seconds
@@ -187,18 +187,24 @@ class OSCQueryService extends EventEmitter {
     async initialize(legacyPort: number | null = null, httpPort: number | null = null, bindAddress = DEFAULT_BIND_ADDRESS): Promise<void> {
         // Reuse previously assigned ports if they exist (for persistent VRChat connection)
         // Otherwise, assign new random ports on first initialization
-        if (this.assignedOscPort === null) {
+        if (this.assignedOscPort === null || !(await this._isPortAvailable(this.assignedOscPort))) {
+            if (this.assignedOscPort !== null) {
+                console.log(`[OSCQuery] Previously assigned OSC Port ${this.assignedOscPort} is no longer available, reassigning`)
+            }
             this.assignedOscPort = await this._findAvailablePort(22000, 50000)
-            console.log(`[OSCQuery] First initialization - assigned new OSC Port: ${this.assignedOscPort}`)
+            console.log(`[OSCQuery] Assigned OSC Port: ${this.assignedOscPort}`)
         } else {
             console.log(`[OSCQuery] Reusing previously assigned OSC Port: ${this.assignedOscPort}`)
         }
         this.oscPort = this.assignedOscPort
         // Find available HTTP port if not specified
         if (!httpPort) {
-            if (this.assignedHttpPort === null) {
+            if (this.assignedHttpPort === null || !(await this._isPortAvailable(this.assignedHttpPort))) {
+                if (this.assignedHttpPort !== null) {
+                    console.log(`[OSCQuery] Previously assigned HTTP Port ${this.assignedHttpPort} is no longer available, reassigning`)
+                }
                 this.assignedHttpPort = await this._findAvailablePort(22000, 50000)
-                console.log(`[OSCQuery] First initialization - assigned new HTTP Port: ${this.assignedHttpPort}`)
+                console.log(`[OSCQuery] Assigned HTTP Port: ${this.assignedHttpPort}`)
             } else {
                 console.log(`[OSCQuery] Reusing previously assigned HTTP Port: ${this.assignedHttpPort}`)
             }
@@ -454,6 +460,15 @@ class OSCQueryService extends EventEmitter {
      * Find an available port
      * @private
      */
+    _isPortAvailable(port: number): Promise<boolean> {
+        const net = require('net')
+        return new Promise((resolve) => {
+            const server = net.createServer()
+            server.once('error', () => resolve(false))
+            server.once('listening', () => server.close(() => resolve(true)))
+            server.listen(port, '0.0.0.0')
+        })
+    }
     async _findAvailablePort(min: number, max: number): Promise<number> {
         const net = require('net')
         return new Promise((resolve, reject) => {
@@ -489,12 +504,20 @@ class OSCQueryService extends EventEmitter {
      */
     _getLocalIpAddress(): string | null {
         const interfaces = os.networkInterfaces()
+        // Skip known virtual/tunnel adapter name patterns; prefer physical NICs
+        const VIRTUAL_PATTERNS = /vEthernet|docker|Loopback|Pseudo|isatap|6to4|Teredo|tun\d|tap\d|vpn/i
         for (const name of Object.keys(interfaces)) {
+            if (VIRTUAL_PATTERNS.test(name)) continue
             for (const iface of interfaces[name]!) {
-                // Skip loopback and non-IPv4
                 if (iface.family === 'IPv4' && !iface.internal) {
                     return iface.address
                 }
+            }
+        }
+        // Fallback: return any non-loopback IPv4 if all adapters matched the filter
+        for (const ifaces of Object.values(interfaces)) {
+            for (const iface of ifaces ?? []) {
+                if (iface.family === 'IPv4' && !iface.internal) return iface.address
             }
         }
         return null
@@ -506,8 +529,10 @@ class OSCQueryService extends EventEmitter {
      */
     _getLocalIpAddresses(): string[] {
         const interfaces = os.networkInterfaces()
+        const VIRTUAL_PATTERNS = /vEthernet|docker|Loopback|Pseudo|isatap|6to4|Teredo|tun\d|tap\d|vpn/i
         const addresses = []
         for (const name of Object.keys(interfaces)) {
+            if (VIRTUAL_PATTERNS.test(name)) continue
             for (const iface of interfaces[name]!) {
                 if (iface.family === 'IPv4' && !iface.internal) {
                     addresses.push(iface.address)
