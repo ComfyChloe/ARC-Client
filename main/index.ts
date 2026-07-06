@@ -8,6 +8,7 @@ import debug from './services/debugger'
 import OscService from './services/oscService'
 import { OSCQueryService } from './services/oscQueryService'
 import HyperateAddon from './containers/hyperate/hyperate'
+import VoskAddon from './containers/vosk/vosk'
 import OSCLeashAddon from './containers/oscleash/oscleash'
 import VRChatAPIContainer from './containers/vrchat-api/vrchat-api'
 import OscGoesBrrrAddon from './containers/oscgoesbrrr/oscgoesbrrr'
@@ -29,6 +30,7 @@ let oscEnabled = false
 let wsManager: any
 let serverConfig: any = configManager.getServerConfig()
 let hyperateAddon: any
+let voskAddon: any
 let oscLeashAddon: any
 let vrchatApiContainer: any
 let oscGoesBrrrAddon: any
@@ -417,11 +419,20 @@ function initOscServer() {
       oscLeashAddon.oscService = oscService
       debug.info('Updated OSCLeash addon with OSC service')
     }
+    // Update Vosk addon with OSC service if it's running
+    if (voskAddon && voskAddon.isEnabled()) {
+      voskAddon.oscService = oscService
+      debug.info('Updated Vosk addon with OSC service')
+    }
     // Start autostart addons now that OSC service is ready
     const appSettings = configManager.getAppSettings()
     if (appSettings.hyperateAutostart && hyperateAddon && !hyperateAddon.isEnabled()) {
       debug.info('Starting HypeRate addon based on autostart setting (OSC service ready)...')
       hyperateAddon.start(oscService)
+    }
+    if (appSettings.voskAutostart && voskAddon && !voskAddon.isEnabled()) {
+      debug.info('Starting Vosk addon based on autostart setting (OSC service ready)...')
+      voskAddon.start(oscService)
     }
     if (appSettings.oscleashAutostart && oscLeashAddon && !oscLeashAddon.isEnabled()) {
       debug.info('Starting OSCLeash addon based on autostart setting (OSC-Query ready)...')
@@ -1454,6 +1465,109 @@ ipcMain.handle('hyperate-set-capture-rate', (_event, config: { rateMs: number })
     return { success: false, error: error.message }
   }
 })
+// Vosk addon IPC handlers
+ipcMain.handle('vosk-get-status', () => {
+  if (voskAddon) {
+    return voskAddon.getStatus()
+  }
+  return null
+})
+ipcMain.handle('vosk-start', () => {
+  try {
+    if (!voskAddon) {
+      return { success: false, error: 'Vosk addon not initialized' }
+    }
+    const result = voskAddon.start(oscService)
+    return { success: result, error: result ? undefined : voskAddon.getStatus().lastError }
+  } catch (error: any) {
+    debug.error(`Failed to start Vosk addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('vosk-stop', () => {
+  try {
+    if (voskAddon) {
+      voskAddon.stop()
+    }
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to stop Vosk addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('vosk-get-config', () => {
+  if (voskAddon) {
+    return voskAddon.getConfig()
+  }
+  return null
+})
+ipcMain.handle('vosk-update-config', (_event, config: any) => {
+  try {
+    if (!voskAddon) {
+      return { success: false, error: 'Vosk addon not initialized' }
+    }
+    const result = voskAddon.updateConfig(config)
+    return { success: result, error: result ? undefined : voskAddon.getStatus().lastError }
+  } catch (error: any) {
+    debug.error(`Failed to update Vosk config: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('vosk-download-model', async () => {
+  try {
+    if (!voskAddon) {
+      return { success: false, error: 'Vosk addon not initialized' }
+    }
+    return await voskAddon.downloadModel()
+  } catch (error: any) {
+    debug.error(`Failed to download Vosk model: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('vosk-set-input-device', (_event, deviceId: string | null) => {
+  try {
+    if (!voskAddon) {
+      return { success: false, error: 'Vosk addon not initialized' }
+    }
+    const result = voskAddon.setInputDevice(deviceId)
+    return { success: result }
+  } catch (error: any) {
+    debug.error(`Failed to set Vosk input device: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('vosk-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings()
+    return { enabled: appSettings.voskAutostart || false }
+  } catch (error: any) {
+    debug.error(`Failed to get Vosk autostart: ${error.message}`)
+    return { enabled: false }
+  }
+})
+ipcMain.handle('vosk-set-autostart', (_event, enabled: boolean) => {
+  try {
+    const result = configManager.updateAppSettings({ voskAutostart: enabled })
+    if (result) {
+      debug.info(`Vosk autostart ${enabled ? 'enabled' : 'disabled'}`)
+      return { success: true, enabled }
+    } else {
+      throw new Error('Failed to save autostart setting')
+    }
+  } catch (error: any) {
+    debug.error(`Failed to set Vosk autostart: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.on('vosk-audio-chunk', (_event, chunk: ArrayBuffer, sampleRate: number, level: number) => {
+  try {
+    if (voskAddon) {
+      voskAddon.acceptAudio(Buffer.from(chunk), sampleRate, level)
+    }
+  } catch (error: any) {
+    debug.error(`Failed to process Vosk audio chunk: ${error.message}`)
+  }
+})
 // OSCLeash addon IPC handlers
 ipcMain.handle('oscleash-get-status', () => {
   if (oscLeashAddon) {
@@ -2057,6 +2171,7 @@ app.whenReady().then(async () => {
   // Initialize addons
   updateSplashProgress(20, 'Initializing addons')
   hyperateAddon = new HyperateAddon()
+  voskAddon = new VoskAddon()
   oscLeashAddon = new OSCLeashAddon()
   vrchatApiContainer = new VRChatAPIContainer()
   oscGoesBrrrAddon = new OscGoesBrrrAddon()
@@ -2077,6 +2192,27 @@ app.whenReady().then(async () => {
   hyperateAddon.setHeartRateCallback((data: any) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('hyperate-update', data)
+    }
+  })
+  // Set up Vosk callbacks
+  voskAddon.setStatusChangeCallback((status: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vosk-update', { type: 'status', ...status })
+    }
+  })
+  voskAddon.setResultCallback((result: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vosk-update', { type: 'result', ...result })
+    }
+  })
+  voskAddon.setDownloadProgressCallback((progress: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vosk-update', { type: 'download-progress', ...progress })
+    }
+  })
+  voskAddon.setCaptureControlCallback((control: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('vosk-capture-control', control)
     }
   })
   // Set up OSCLeash status and movement callbacks
@@ -2371,6 +2507,17 @@ function cleanup(source = 'unknown') {
     debug.error(`Error stopping HypeRate addon: ${error.message}`)
     debug.error(`HypeRate cleanup stack trace: ${error.stack}`)
     hyperateAddon = null
+  }
+  try {
+    if (voskAddon) {
+      debug.info('Stopping Vosk addon during cleanup...')
+      voskAddon.stop()
+      voskAddon = null
+      debug.info('Vosk addon cleanup completed')
+    }
+  } catch (error: any) {
+    debug.error(`Error stopping Vosk addon: ${error.message}`)
+    voskAddon = null
   }
   try {
     if (xsOverlayAddon) {

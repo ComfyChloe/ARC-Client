@@ -62,6 +62,17 @@ const api = {
   hyperateSetHistoryConfig: (config: { retentionDays: number }) => ipcRenderer.invoke('hyperate-set-history-config', config),
   hyperateGetCaptureRate: () => ipcRenderer.invoke('hyperate-get-capture-rate'),
   hyperateSetCaptureRate: (config: { rateMs: number }) => ipcRenderer.invoke('hyperate-set-capture-rate', config),
+  // Vosk API
+  voskGetStatus: () => ipcRenderer.invoke('vosk-get-status'),
+  voskStart: () => ipcRenderer.invoke('vosk-start'),
+  voskStop: () => ipcRenderer.invoke('vosk-stop'),
+  voskGetConfig: () => ipcRenderer.invoke('vosk-get-config'),
+  voskUpdateConfig: (config: any) => ipcRenderer.invoke('vosk-update-config', config),
+  voskDownloadModel: () => ipcRenderer.invoke('vosk-download-model'),
+  voskSetInputDevice: (deviceId: string | null) => ipcRenderer.invoke('vosk-set-input-device', deviceId),
+  voskGetAutostart: () => ipcRenderer.invoke('vosk-get-autostart'),
+  voskSetAutostart: (enabled: boolean) => ipcRenderer.invoke('vosk-set-autostart', enabled),
+  voskSendAudio: (chunk: ArrayBuffer, sampleRate: number, level: number) => ipcRenderer.send('vosk-audio-chunk', chunk, sampleRate, level),
   // OSCLeash API
   oscleashGetStatus: () => ipcRenderer.invoke('oscleash-get-status'),
   oscleashStart: () => ipcRenderer.invoke('oscleash-start'),
@@ -235,6 +246,12 @@ const api = {
   },
   onHyperateUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('hyperate-update', (_event, data) => callback(data))
+  },
+  onVoskUpdate: (callback: (data: any) => void) => {
+    ipcRenderer.on('vosk-update', (_event, data) => callback(data))
+  },
+  onVoskCaptureControl: (callback: (data: any) => void) => {
+    ipcRenderer.on('vosk-capture-control', (_event, data) => callback(data))
   },
   onOgbStatusUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('ogb-status-update', (_event, data) => callback(data))
