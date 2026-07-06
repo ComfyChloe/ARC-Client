@@ -64,6 +64,7 @@ const api = {
   hyperateSetCaptureRate: (config: { rateMs: number }) => ipcRenderer.invoke('hyperate-set-capture-rate', config),
   // Vosk API
   voskGetStatus: () => ipcRenderer.invoke('vosk-get-status'),
+  voskPreflight: () => ipcRenderer.invoke('vosk-preflight'),
   voskStart: () => ipcRenderer.invoke('vosk-start'),
   voskStop: () => ipcRenderer.invoke('vosk-stop'),
   voskGetConfig: () => ipcRenderer.invoke('vosk-get-config'),

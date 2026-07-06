@@ -21,6 +21,13 @@ export interface VoskCommand {
   parameters: VoskCommandParam[]
 }
 
+export interface VoskPreflightResult {
+  ok: boolean
+  bundledLibsOk: boolean
+  dllPath: string | null
+  lastError: string | null
+}
+
 export interface VoskStatus {
   enabled: boolean
   engineState: 'stopped' | 'loading-model' | 'running' | 'error'
@@ -33,6 +40,8 @@ export interface VoskStatus {
   minInputLevel: number
   inputGain: number
   minConfidence: number
+  bundledLibsOk?: boolean
+  nativeLibraryLoaded?: boolean
   lastError: string | null
 }
 
@@ -74,6 +83,8 @@ const defaultStatus: VoskStatus = {
   minInputLevel: 0,
   inputGain: 1,
   minConfidence: 0,
+  bundledLibsOk: true,
+  nativeLibraryLoaded: true,
   lastError: null
 }
 
@@ -283,6 +294,19 @@ export function useVosk() {
     await Promise.all([refreshStatus(), refreshConfig(), refreshAutostart(), refreshDevices()])
   }
 
+  async function preflight(): Promise<VoskPreflightResult> {
+    const api = useElectronAPI()
+    try {
+      const result = await api.voskPreflight()
+      if (!result) {
+        return { ok: false, bundledLibsOk: false, dllPath: null, lastError: 'Preflight IPC returned no result' }
+      }
+      return result as VoskPreflightResult
+    } catch (err) {
+      return { ok: false, bundledLibsOk: false, dllPath: null, lastError: (err as Error).message }
+    }
+  }
+
   async function toggle(): Promise<{ success: boolean; error?: string }> {
     if (status.value.enabled) {
       const result = await api.voskStop()
@@ -477,6 +501,7 @@ export function useVosk() {
     refreshStatus,
     refreshConfig,
     refreshDevices,
+    preflight,
     toggle,
     setAutostart,
     downloadModel,

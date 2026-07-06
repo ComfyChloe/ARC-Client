@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useVosk, type VoskCommand, type VoskCommandParam } from '../composables/useVosk'
+import { useVosk, type VoskCommand, type VoskCommandParam, type VoskPreflightResult } from '../composables/useVosk'
 import { useElectronAPI } from '../composables/useElectronAPI'
 
 const api = useElectronAPI()
@@ -20,6 +20,7 @@ const {
   lastSavedAt,
   refresh,
   refreshStatus,
+  preflight,
   toggle,
   setAutostart,
   downloadModel,
@@ -40,6 +41,7 @@ const {
 } = useVosk()
 
 const busy = ref(false)
+const preflightResult = ref<VoskPreflightResult | null>(null)
 const layoutEditMode = ref(true)
 const showDiscardConfirm = ref(false)
 const minLevelDraft = ref(0)
@@ -424,8 +426,15 @@ async function saveAllDirtyBlocks() {
   await saveAllDirty()
 }
 
-onMounted(() => {
-  void refresh()
+onMounted(async () => {
+  // Native-library preflight - surfaces a clear warning BEFORE the user clicks Start
+  // so they don't hit "Failed to load model" if libvosk.dll is missing.
+  try {
+    preflightResult.value = await preflight()
+  } catch {
+    preflightResult.value = { ok: false, bundledLibsOk: false, dllPath: null, lastError: 'Preflight IPC failed' }
+  }
+  await refresh()
   void refreshStatus()
 })
 </script>
@@ -456,6 +465,12 @@ onMounted(() => {
       <p v-if="!status.enabled && status.modelState !== 'ready'" class="vosk-hint-block">
         A speech model is required before starting - download one below.
       </p>
+      <div v-if="preflightResult && preflightResult.bundledLibsOk === false" class="vosk-preflight-warning">
+        <strong>Native library missing</strong>
+        <p>{{ preflightResult.lastError || 'libvosk.dll could not be located.' }}</p>
+        <p v-if="preflightResult.dllPath" class="vosk-preflight-path">Expected at: <code>{{ preflightResult.dllPath }}</code></p>
+        <p class="vosk-preflight-hint">Reinstall the application to restore the speech recognition libraries. If the issue persists, open the application log for the underlying DLL error.</p>
+      </div>
     </div>
 
     <div class="card">
@@ -785,6 +800,41 @@ onMounted(() => {
   font-size: 12px;
   color: #999;
   margin-top: 8px;
+}
+.vosk-preflight-warning {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(243, 156, 18, 0.14);
+  border: 1px solid rgba(243, 156, 18, 0.45);
+  color: inherit;
+}
+.vosk-preflight-warning strong {
+  color: #f39c12;
+  font-size: 13px;
+  display: block;
+  margin-bottom: 4px;
+}
+.vosk-preflight-warning p {
+  margin: 4px 0;
+  font-size: 12px;
+  color: inherit;
+}
+.vosk-preflight-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  opacity: 0.85;
+  word-break: break-all;
+}
+.vosk-preflight-path code {
+  background: rgba(127, 127, 127, 0.15);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.vosk-preflight-hint {
+  font-size: 11px;
+  opacity: 0.8;
+  font-style: italic;
 }
 .vosk-meter-wrap {
   margin: 12px 0;

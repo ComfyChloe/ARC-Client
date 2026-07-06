@@ -15,6 +15,86 @@ const MODEL_URL = `https://alphacephei.com/vosk/models/${MODEL_NAME}.zip`
 const MODEL_LIST_URL = 'https://alphacephei.com/vosk/models'
 const GATE_HOLD_MS = 500
 const MAX_QUEUED_CHUNKS = 50
+const VOSK_BIN_DIR = `bin-${process.platform}-${process.arch}`
+const VOSK_BIN_FILENAMES = ['libvosk.dll', 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll']
+
+// Resolve the directory that contains libvosk.dll + its dependencies. In dev that's
+// `node_modules/vosk-koffi/bin-<platform>-<arch>`. In the packaged build the same
+// files live at `process.resourcesPath/bundledLibs` (copied there via electron-builder
+// extraResources — they MUST live next to the app .exe so the Windows DLL loader
+// resolves the dependency chain without relying on the runtime-modified Path).
+function resolveVoskBinDir(): string | null {
+  if (app.isPackaged) {
+    const bundled = path.join(process.resourcesPath, 'bundledLibs')
+    if (fs.existsSync(path.join(bundled, 'libvosk.dll'))) {
+      return bundled
+    }
+  }
+  // dev / unpacked layout: module-relative path through require.resolve
+  try {
+    const entry = require.resolve('vosk-koffi')
+    const dir = path.resolve(path.dirname(entry), '..', VOSK_BIN_DIR)
+    if (fs.existsSync(path.join(dir, 'libvosk.dll'))) return dir
+  } catch {
+    /* fall through */
+  }
+  return null
+}
+
+function ensurePathIncludes(dir: string): void {
+  // The koffi loader mutates process.env.Path itself, but we extend it here too as
+  // belt-and-braces for the dependency DLLs on Windows. Set both casings because the
+  // Win32 loader is case-sensitive about which env var it reads in some configurations.
+  const sep = path.delimiter
+  if (!process.env.Path || !process.env.Path.split(sep).includes(dir)) {
+    process.env.Path = dir + sep + (process.env.Path ?? '')
+  }
+  if (!process.env.PATH || !process.env.PATH.split(sep).includes(dir)) {
+    process.env.PATH = dir + sep + (process.env.PATH ?? '')
+  }
+}
+
+// `vosk-koffi` declares opaque koffi types on libvosk.dll at module-require time.
+// Re-requiring on every engine start would trigger "Duplicate type name 'VoskModel'".
+// Hoist the require to module-load time so it happens exactly once per process.
+const voskModule: VoskModule | null = (() => {
+  const binDir = resolveVoskBinDir()
+  if (!binDir) {
+    debug.logError(`Vosk: no bundled libvosk.dll found (looked in process.resourcesPath/bundledLibs and the dev node_modules layout)`)
+    return null
+  }
+  if (process.platform === 'win32') ensurePathIncludes(binDir)
+  try {
+    const mod = require('vosk-koffi') as VoskModule
+    try { mod.setLogLevel(-1) } catch { /* not fatal */ }
+    debug.info(`Vosk: vosk-koffi loaded from ${binDir}`)
+    return mod
+  } catch (err) {
+    debug.logError(`Vosk: failed to load vosk-koffi: ${(err as Error).message}`)
+    return null
+  }
+})()
+
+export function preflightVosk(): { ok: boolean; bundledLibsOk: boolean; dllPath: string | null; lastError: string | null } {
+  const binDir = resolveVoskBinDir()
+  if (!binDir) {
+    return {
+      ok: false,
+      bundledLibsOk: false,
+      dllPath: null,
+      lastError: 'No bundled libvosk.dll was found. Reinstall the application to restore the speech recognition libraries.'
+    }
+  }
+  if (!voskModule) {
+    return {
+      ok: false,
+      bundledLibsOk: true,
+      dllPath: path.join(binDir, 'libvosk.dll'),
+      lastError: 'vosk-koffi could not be loaded. Check the application logs for the underlying DLL error.'
+    }
+  }
+  return { ok: true, bundledLibsOk: true, dllPath: path.join(binDir, 'libvosk.dll'), lastError: null }
+}
 
 interface OscService {
   isListening: boolean
@@ -75,7 +155,6 @@ class VoskAddon {
   onCaptureControl: ((control: VoskCaptureControl) => void) | null
   onDownloadProgress: ((progress: VoskDownloadProgress) => void) | null
 
-  private vosk: VoskModule | null
   private model: InstanceType<VoskModule['Model']> | null
   private recognizer: { free(): void; setWords(w: boolean): unknown; acceptWaveform(b: Buffer): boolean; result(): unknown; partialResult(): unknown; finalResult(): unknown; reset(): unknown } | null
   private recognizerSampleRate: number | null
@@ -95,7 +174,6 @@ class VoskAddon {
     this.onResult = null
     this.onCaptureControl = null
     this.onDownloadProgress = null
-    this.vosk = null
     this.model = null
     this.recognizer = null
     this.recognizerSampleRate = null
@@ -298,6 +376,15 @@ class VoskAddon {
       debug.warn('Vosk addon already running')
       return true
     }
+    if (!voskModule) {
+      // vosk-koffi failed to load at process start — surface a precise lastError
+      const pf = preflightVosk()
+      this.lastError = pf.lastError ?? 'Native Vosk library is not available'
+      this.engineState = 'error'
+      this.notifyStatusChange()
+      debug.logError(`Cannot start Vosk: native library unavailable (${pf.lastError ?? 'no detail'})`)
+      return false
+    }
     const modelDir = this.effectiveModelDir()
     if (!this.isModelDirValid(modelDir)) {
       this.lastError = 'No valid model found. Download the default model or set a model directory.'
@@ -318,21 +405,20 @@ class VoskAddon {
     setImmediate(() => {
       try {
         if (!this.enabled) return
-        this.vosk ??= require('vosk-koffi') as VoskModule
-        this.vosk.setLogLevel(-1)
-        this.model = new this.vosk.Model(modelDir)
+        this.model = new voskModule.Model(modelDir)
         this.engineState = 'running'
         this.notifyStatusChange()
         this.onCaptureControl?.({ action: 'start', deviceId: this.config.inputDeviceId, gain: this.config.inputGain })
         debug.info(`Vosk addon started with model ${modelDir}`)
       } catch (error) {
         const message = (error as Error).message
-        this.lastError = `Failed to load model: ${message}`
+        const binDir = resolveVoskBinDir()
+        this.lastError = `Failed to load model: ${message}` + (binDir ? ` (libvosk.dll expected at ${path.join(binDir, 'libvosk.dll')})` : '')
         this.engineState = 'error'
         this.enabled = false
         this.model = null
         this.notifyStatusChange()
-        debug.logError(`Vosk model load failed: ${message}`)
+        debug.logError(`Vosk model load failed: ${message} (binDir=${binDir ?? 'unknown'}, resourcesPath=${process.resourcesPath})`)
       }
     })
     return true
@@ -412,10 +498,10 @@ class VoskAddon {
   }
 
   private ensureRecognizer(sampleRate: number): boolean {
-    if (!this.vosk || !this.model) return false
+    if (!voskModule || !this.model) return false
     if (this.recognizer && this.recognizerSampleRate === sampleRate) return true
     this.freeRecognizer()
-    const recognizer = new this.vosk.Recognizer({ model: this.model, sampleRate })
+    const recognizer = new voskModule.Recognizer({ model: this.model, sampleRate })
     recognizer.setWords(true)
     this.recognizer = recognizer as unknown as NonNullable<VoskAddon['recognizer']>
     this.recognizerSampleRate = sampleRate
@@ -594,6 +680,7 @@ class VoskAddon {
   }
 
   getStatus() {
+    const pf = preflightVosk()
     return {
       enabled: this.enabled,
       engineState: this.engineState,
@@ -606,8 +693,19 @@ class VoskAddon {
       minInputLevel: this.config.minInputLevel,
       inputGain: this.config.inputGain,
       minConfidence: this.config.minConfidence ?? 0,
+      // Native-library availability — surfaced on every status push so the UI can
+      // render a "missing library" banner without needing a separate IPC round-trip.
+      bundledLibsOk: pf.bundledLibsOk,
+      nativeLibraryLoaded: pf.ok,
       lastError: this.lastError
     }
+  }
+
+  // Public preflight — runs synchronously and tells the renderer whether the native
+  // library can be loaded right now. Used by the Status card to render a yellow
+  // warning banner BEFORE the user clicks Start.
+  preflight(): { ok: boolean; bundledLibsOk: boolean; dllPath: string | null; lastError: string | null } {
+    return preflightVosk()
   }
 }
 

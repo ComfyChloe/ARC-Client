@@ -23,6 +23,7 @@
   "scripts": {
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
+    "prebuild": "node scripts/prepare-bundled-libs.mjs",
     "build": "electron-vite build && electron-builder --dir",
     "pack": "electron-builder --dir",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
@@ -72,6 +73,7 @@
       "**/node_modules/koffi/**/*"
     ],
     "extraResources": [
+      { "from": "build/bundledLibs", "to": "bundledLibs" },
       "userdata"
     ],
     "win": {

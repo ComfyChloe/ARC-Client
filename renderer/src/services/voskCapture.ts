@@ -2,6 +2,8 @@
 // state) so capture survives route navigation; the main process drives it via
 // 'vosk-capture-control' messages and receives Int16 PCM chunks back over IPC.
 
+import voskWorkletSource from '../assets/vosk/worklet.js?raw'
+
 type LevelListener = (level: number) => void
 
 let audioContext: AudioContext | null = null
@@ -12,6 +14,21 @@ let starting = false
 let currentGain = 1
 const levelListeners = new Set<LevelListener>()
 let registered = false
+// Cached blob URL for the AudioWorklet source. The worklet is bundled into the
+// renderer JS at build time via Vite's `?raw` import — no runtime fetch, no
+// dependency on Assets/ publicDir copying. Wrapped in a Blob URL because the
+// AudioWorklet addModule call only accepts URLs/importable module specifiers.
+let workletBlobUrl: string | null = null
+
+async function ensureWorkletUrl(): Promise<string> {
+  if (workletBlobUrl) return workletBlobUrl
+  if (!voskWorkletSource) {
+    throw new Error('Vosk worklet source is empty (build-time ?raw import failed)')
+  }
+  const blob = new Blob([voskWorkletSource], { type: 'application/javascript' })
+  workletBlobUrl = URL.createObjectURL(blob)
+  return workletBlobUrl
+}
 
 function api() {
   return window.electronAPI
@@ -27,17 +44,18 @@ export function isCapturing(): boolean {
 }
 
 export async function listInputDevices(): Promise<{ deviceId: string; label: string }[]> {
-  // Device labels are only populated once mic permission has been granted
+  // Electron auto-grants media permissions via session.setPermissionRequestHandler in
+  // main/index.ts, so device labels populate on first enumerateDevices call. We
+  // don't need to probe getUserMedia just to trigger a permission prompt.
   try {
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
-    probe.getTracks().forEach(track => track.stop())
-  } catch {
-    // Permission denied — enumerate anyway so we at least return device ids
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    return devices
+      .filter(device => device.kind === 'audioinput')
+      .map(device => ({ deviceId: device.deviceId, label: device.label || `Microphone (${device.deviceId.slice(0, 8)})` }))
+  } catch (error) {
+    console.error('Vosk device enumeration failed:', error)
+    return []
   }
-  const devices = await navigator.mediaDevices.enumerateDevices()
-  return devices
-    .filter(device => device.kind === 'audioinput')
-    .map(device => ({ deviceId: device.deviceId, label: device.label || `Microphone (${device.deviceId.slice(0, 8)})` }))
 }
 
 export async function startCapture(deviceId?: string | null, gain = 1): Promise<void> {
@@ -55,7 +73,8 @@ export async function startCapture(deviceId?: string | null, gain = 1): Promise<
       }
     })
     audioContext = new AudioContext()
-    await audioContext.audioWorklet.addModule('./vosk-worklet.js')
+    const workletUrl = await ensureWorkletUrl()
+    await audioContext.audioWorklet.addModule(workletUrl)
     sourceNode = audioContext.createMediaStreamSource(mediaStream)
     workletNode = new AudioWorkletNode(audioContext, 'vosk-capture-processor', {
       numberOfInputs: 1,

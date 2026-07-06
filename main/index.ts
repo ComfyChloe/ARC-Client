@@ -1472,6 +1472,30 @@ ipcMain.handle('vosk-get-status', () => {
   }
   return null
 })
+ipcMain.handle('vosk-preflight', () => {
+  // The addon is already imported at the top of this file (electron-vite bundles
+  // everything into out/main/index.js — there is no separate containers/vosk/vosk
+  // file at runtime, so don't try to require('./containers/vosk/vosk')).
+  // Call the preflight method on the live addon instance; fall back to a manual
+  // preflight if the addon hasn't been constructed yet (e.g. very early init).
+  try {
+    if (voskAddon && typeof voskAddon.preflight === 'function') {
+      return voskAddon.preflight()
+    }
+  } catch (error: any) {
+    debug.error(`Vosk preflight (instance) failed: ${error.message}`)
+    return { ok: false, bundledLibsOk: false, dllPath: null, lastError: error.message }
+  }
+  // Addon not constructed yet — assume the bundled DLLs are missing; the user
+  // gets a clear warning banner via the Status card and the next status push
+  // will refine the message.
+  return {
+    ok: false,
+    bundledLibsOk: false,
+    dllPath: null,
+    lastError: 'Vosk addon not yet initialised; status will be available on the next refresh.'
+  }
+})
 ipcMain.handle('vosk-start', () => {
   try {
     if (!voskAddon) {
@@ -2166,6 +2190,27 @@ app.whenReady().then(async () => {
   debug.logAppStartup()
   // Create splash window immediately after log cleanup
   createWindow()
+
+  // Auto-grant microphone (and related media) permissions so the Vosk addon can
+  // start capture without showing the OS permission prompt. This applies to every
+  // renderer session the app creates — the user can still revoke mic access from
+  // the OS settings if they want.
+  const grantMediaPermissions = (permission: string) => {
+    const allowed = permission === 'media' || permission === 'audioCapture' || permission === 'mediaKeySystem'
+    debug.info(`[permissions] ${permission} -> ${allowed ? 'granted' : 'denied'}`)
+    return allowed
+  }
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    try { callback(grantMediaPermissions(permission)) } catch (err) { debug.error(`[permissions] handler error: ${(err as Error).message}`); callback(false) }
+  })
+  // Some Chromium versions use the device-permission handler for media-device
+  // enumeration. Auto-grant on our own origin so navigator.mediaDevices.enumerateDevices
+  // returns full labels without prompting the user.
+  session.defaultSession.setDevicePermissionHandler?.((details) => {
+    debug.info(`[permissions] device-permission requested for ${details.deviceType} on ${details.origin}`)
+    return true
+  })
+
   // Start OSC IPC batching and memory management
   setupOscIpcBatching()
   // Initialize addons
