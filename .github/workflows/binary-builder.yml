@@ -1,8 +1,8 @@
 name: Build/release
 
 on:
-  push:
-    tags: ['v*']
+  release:
+    types: [created]
   workflow_dispatch:
 
 jobs:
@@ -28,22 +28,20 @@ jobs:
          npm run build
 
       - name: NPM Build Binaries
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --publish=always
+        run: npx electron-builder --publish=never
 
-      #- name: Upload binary to artifact
-      #  uses: actions/upload-artifact@v6
-      #  with:
-      #    name: binaries-${{ matrix.os }}
-      #    path: |
-      #      dist/*.AppImage
-      #      dist/*.exe
-      #    retention-days: 30
+      - name: Upload binary to artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: binaries-${{ matrix.os }}
+          path: |
+            dist/*.AppImage
+            dist/*.exe
+          retention-days: 30
 
-      #- name: Upload to Release
-      #  uses: softprops/action-gh-release@v2
-      #  with:
-      #    files: |
-      #      dist/*.AppImage
-      #      dist/*.exe
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.AppImage
+            dist/*.exe
