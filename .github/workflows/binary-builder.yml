@@ -1,0 +1,52 @@
+name: Build/release
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact-name: ARC-OSC
+            output-ext: "AppImage"
+          - os: windows-latest
+            artifact-name: ARC-OSC
+            output-ext: "exe"
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v7
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: NPM Package install
+        run: |
+         npm install
+         npm run build
+
+      - name: NPM Build Binaries
+        run: npx electron-builder --publish=never
+
+      - name: Upload binary to artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: binaries-${{ matrix.os }}
+          path: dist/${{ matrix.artifact-name }}*${{ matrix.output-ext }}
+          retention-days: 30
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.artifact-name }}*${{ matrix.output-ext }}

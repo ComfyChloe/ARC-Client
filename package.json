@@ -1,6 +1,6 @@
 {
   "name": "arc-osc-client",
-  "version": "0.93.2",
+  "version": "0.93.3",
   "author": "ComfyChloe",
   "description": "Standalone OSC Client for ARC-OSC",
   "main": "./out/main/index.js",
@@ -21,7 +21,7 @@
   "scripts": {
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "electron-vite build && electron-builder --dir",
+    "build": "electron-vite build",
     "pack": "electron-builder --dir",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
@@ -31,11 +31,17 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.19.15",
     "@vitejs/plugin-vue": "^5.2.4",
-    "electron": "33.0.0",
-    "electron-builder": "25.1.0",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.7",
     "electron-vite": "^5.0.0",
     "typescript": "^5.9.3",
     "vite": "^6.4.1"
+  },
+  "toolsets": {
+    "appimage": "1.0.3"
+  },
+  "appimage": {
+   "compression": "zstd"
   },
   "build": {
     "appId": "com.arcrosc.oscclient",
@@ -71,9 +77,15 @@
       "userdata"
     ],
     "win": {
-      "target": "dir",
-      "icon": "Assets/ARC.ico"
+      "target": "nsis",
+      "icon": "Assets/ARC.ico",
+      "compression": "maximum"
     },
-    "compression": "maximum"
+    "linux": {
+      "target": "appimage",
+      "icon": "Assets/ARC.png",
+      "category": "Utility",
+      "compression": "store"
+    }
   }
 }
