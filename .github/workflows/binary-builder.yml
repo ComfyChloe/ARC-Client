@@ -28,6 +28,8 @@ jobs:
          npm run build
 
       - name: NPM Build Binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder
 
       - name: Upload binary to artifact
@@ -39,9 +41,9 @@ jobs:
             dist/*.exe
           retention-days: 30
 
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.AppImage
-            dist/*.exe
+      #- name: Upload to Release
+      #  uses: softprops/action-gh-release@v2
+      #  with:
+      #    files: |
+      #      dist/*.AppImage
+      #      dist/*.exe
