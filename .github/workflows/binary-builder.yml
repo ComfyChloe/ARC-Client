@@ -25,7 +25,7 @@ jobs:
       - name: NPM Package install
         run: |
          npm install
-         npm build
+         npm run build
 
       - name: NPM Build Binaries
         run: npx electron-builder
