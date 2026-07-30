@@ -23,7 +23,9 @@ jobs:
           node-version: 26
 
       - name: NPM Package install
-        run: npm install
+        run: |
+         npm install
+         npm build
 
       - name: NPM Build Binaries
         run: npx electron-builder
