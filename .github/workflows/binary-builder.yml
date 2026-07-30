@@ -11,7 +11,13 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact-name: ARC-OSC
+            output-ext: "AppImage"
+          - os: windows-latest
+            artifact-name: ARC-OSC
+            output-ext: "exe"
 
     steps:
       - name: Check out Git repository
@@ -34,14 +40,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: binaries-${{ matrix.os }}
-          path: |
-            dist/*.AppImage
-            dist/*.exe
+          path: dist/${{ matrix.artifact-name }}*${{ matrix.output-ext }}
           retention-days: 30
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.AppImage
-            dist/*.exe
+          files: dist/${{ matrix.artifact-name }}*${{ matrix.output-ext }}
