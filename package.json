@@ -77,7 +77,7 @@
       "userdata"
     ],
     "win": {
-      "target": "exe",
+      "target": "nsis",
       "icon": "Assets/ARC.ico",
       "compression": "maximum"
     },
