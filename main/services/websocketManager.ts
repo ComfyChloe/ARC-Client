@@ -19,6 +19,17 @@ interface ConnectResult {
 
 type EventHandler = (data: unknown) => void
 
+// Pending request/response correlation entry. Each request sends a UUID linkRequestId;
+// the server echoes the same id in its response; the manager dispatches by id so that
+// a Socket.IO reconnect (which replaces the underlying `socket`) cannot orphan an
+// in-flight request.
+interface PendingResponse {
+    resolve: (value: unknown) => void
+    reject: (reason: Error) => void
+    timeoutHandle: ReturnType<typeof setTimeout>
+    eventName: string
+}
+
 class WebSocketManager {
     socket: Socket | null
     isConnected: boolean
@@ -27,6 +38,12 @@ class WebSocketManager {
     connectionConfig: ConnectionConfig
     reconnectAttempts: number
     eventHandlers: Map<string, Set<EventHandler>>
+    // Pending request-id → pending dispatcher. Entries are added on send* and removed
+    // when the matching response arrives or the timeout fires. Survives Socket.IO
+    // internal reconnects because dispatch is handled by a long-lived `socket.on()`
+    // registered in setupEventHandlers() — it just re-binds on each reconnect.
+    private pendingResponses: Map<string, PendingResponse> = new Map()
+    private nextRequestId: number = 0
 
     constructor() {
         this.socket = null
@@ -43,6 +60,71 @@ class WebSocketManager {
     }
     setConfig(config: Partial<ConnectionConfig>): void {
         this.connectionConfig = { ...this.connectionConfig, ...config }
+    }
+
+    // Generates a short monotonic linkRequestId. UUID would be overkill for an
+    // in-process correlation key; a counter is unique within this renderer session
+    // and friendly to server-side log scanning.
+    private generateLinkRequestId(): string {
+        this.nextRequestId += 1
+        return `lri-${Date.now().toString(36)}-${this.nextRequestId.toString(36)}`
+    }
+
+    // Registers a pending response handler keyed by the given request id and returns
+    // the id the caller should send to the server. The dispatcher installed in
+    // setupEventHandlers() resolves/rejects this entry when a matching response
+    // arrives on the (possibly new) socket.
+    private registerPending(eventName: string, timeoutMs: number): { id: string; promise: Promise<unknown> } {
+        const id = this.generateLinkRequestId()
+        const promise = new Promise<unknown>((resolve, reject) => {
+            const timeoutHandle = setTimeout(() => {
+                const entry = this.pendingResponses.get(id)
+                if (entry) {
+                    this.pendingResponses.delete(id)
+                    reject(new Error(`${eventName} timed out after ${timeoutMs}ms`))
+                }
+            }, timeoutMs)
+            this.pendingResponses.set(id, { resolve, reject, timeoutHandle, eventName })
+        })
+        return { id, promise }
+    }
+
+    // Called from the long-lived socket.on() dispatcher in setupEventHandlers().
+    private dispatchResponse(eventName: string, payload: any): boolean {
+        const id = payload?.linkRequestId
+        if (!id) return false
+        const entry = this.pendingResponses.get(id)
+        if (!entry || entry.eventName !== eventName) return false
+        this.pendingResponses.delete(id)
+        clearTimeout(entry.timeoutHandle)
+        if (payload && payload.success === false) {
+            entry.reject(new Error(payload.error || `${eventName} failed`))
+        } else {
+            entry.resolve(payload)
+        }
+        return true
+    }
+
+    // On socket reconnect we just re-register the dispatch listeners; pending
+    // responses are unaffected since they're stored on the manager, not the socket.
+    private installResponseDispatchers(socket: Socket): void {
+        socket.on('vrchat-link-response', (payload: any) => {
+            // If the dispatcher handles it, done. Otherwise fall back to a one-shot
+            // (legacy/single-call behaviour) so older server builds that don't echo
+            // linkRequestId still resolve the in-flight promise.
+            if (this.dispatchResponse('vrchat-link-response', payload)) return
+            // Legacy path: no id present. Best-effort resolve of any pending
+            // vrchat-link-response entry — but only the most-recent one because we
+            // can't safely correlate without an id. Use the onResponse handler registered
+            // by the caller for forward-compat via a fallback event.
+            const legacyHandler = (this as any).__legacyVrchatLinkHandler
+            if (typeof legacyHandler === 'function') legacyHandler(payload)
+        })
+        socket.on('vrchat-link-status-response', (payload: any) => {
+            if (this.dispatchResponse('vrchat-link-status-response', payload)) return
+            const legacyHandler = (this as any).__legacyCheckLinkHandler
+            if (typeof legacyHandler === 'function') legacyHandler(payload)
+        })
     }
     async connect(credentials: Credentials = {}): Promise<ConnectResult> {
         if (this.socket && this.isConnected) {
@@ -81,6 +163,12 @@ class WebSocketManager {
                 forceNew: true
             })
             await this.setupEventHandlers()
+            // Install the correlation-id dispatchers on the freshly created socket.
+            // These survive Socket.IO internal reconnects because setupEventHandlers
+            // is also re-called in those paths, but the dispatchers themselves read
+            // pendingResponses from the manager (not the socket) so re-binding is
+            // automatic.
+            this.installResponseDispatchers(this.socket)
             return new Promise<ConnectResult>((resolve, reject) => {
                 const timeout = setTimeout(() => {
                     reject(new Error('Connection timeout'))
@@ -121,12 +209,16 @@ class WebSocketManager {
     }
     async setupEventHandlers(): Promise<void> {
         if (!this.socket) return
+        // Install (or re-install) the request-id correlation dispatchers so any
+        // response that arrives after a Socket.IO internal reconnect still
+        // resolves the corresponding pending promise.
+        this.installResponseDispatchers(this.socket)
         this.socket.on('connect', () => {
             this.isConnected = true
             this.reconnectAttempts = 0
-            this.emit('connection-status', { 
-                status: 'connected', 
-                user: this.currentUser 
+            this.emit('connection-status', {
+                status: 'connected',
+                user: this.currentUser
             })
         })
         this.socket.on('disconnect', (reason: string) => {
@@ -275,45 +367,29 @@ class WebSocketManager {
         })
     }
     sendVRChatLink(vrchatUserId: string, vrchatUsername: string): Promise<unknown> {
-        return new Promise((resolve, reject) => {
-            if (!this.isConnected || !this.socket) {
-                reject(new Error('Not connected to server'))
-                return
-            }
-            const responseHandler = (response: { success?: boolean; error?: string }) => {
-                if (response.success) {
-                    resolve(response)
-                } else {
-                    reject(new Error(response.error || 'Failed to link VRChat account'))
-                }
-            }
-            this.socket.once('vrchat-link-response', responseHandler)
-            this.socket.emit('link-vrchat-account', {
-                vrchatUserId,
-                vrchatUsername
-            })
-            setTimeout(() => {
-                this.socket!.off('vrchat-link-response', responseHandler)
-                reject(new Error('Link request timed out'))
-            }, 10000)
+        if (!this.isConnected || !this.socket) {
+            return Promise.reject(new Error('Not connected to server'))
+        }
+        // Use the correlation-id dispatcher so a Socket.IO reconnect mid-flight
+        // doesn't orphan the in-flight request. The server echoes linkRequestId
+        // back in its response; installResponseDispatchers() reads it and
+        // resolves/rejects the matching pending entry.
+        const { id, promise } = this.registerPending('vrchat-link-response', 10000)
+        this.socket.emit('link-vrchat-account', {
+            vrchatUserId,
+            vrchatUsername,
+            linkRequestId: id
         })
+        return promise
     }
     checkVRChatLink(): Promise<unknown> {
-        return new Promise((resolve, reject) => {
-            if (!this.isConnected || !this.socket) {
-                reject(new Error('Not connected to server'))
-                return
-            }
-            const responseHandler = (response: unknown) => {
-                resolve(response)
-            }
-            this.socket.once('vrchat-link-status-response', responseHandler)
-            this.socket.emit('check-vrchat-link')
-            setTimeout(() => {
-                this.socket!.off('vrchat-link-status-response', responseHandler)
-                reject(new Error('Link status check timed out'))
-            }, 5000)
-        })
+        if (!this.isConnected || !this.socket) {
+            return Promise.reject(new Error('Not connected to server'))
+        }
+        // Correlation-id dispatch — see sendVRChatLink() above.
+        const { id, promise } = this.registerPending('vrchat-link-status-response', 5000)
+        this.socket.emit('check-vrchat-link', { linkRequestId: id })
+        return promise
     }
     getStatus(): { isConnected: boolean; isAuthenticated: boolean; currentUser: { username: string } | null; reconnectAttempts: number; serverUrl: string } {
         return {

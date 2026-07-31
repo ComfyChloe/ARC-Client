@@ -156,6 +156,10 @@ export function useVRChatAPI() {
       await loadStatus()
       if (status.value.authenticated) {
         await loadStats()
+        // Mirror login() / initialize() — refresh link status so the UI reflects
+        // any restored session's VRChat-link state immediately rather than
+        // showing the default 'unknown' until something else triggers a refresh.
+        await checkLinkStatus()
       }
     }
   }
@@ -169,9 +173,24 @@ export function useVRChatAPI() {
 
   async function shareWithARC() {
     if (!status.value.currentUser) return
-    const result = await api.sendVRChatLink(status.value.currentUser.id, status.value.currentUser.displayName)
-    await checkLinkStatus()
-    return result
+    loading.value = true
+    try {
+      const result = await api.sendVRChatLink(status.value.currentUser.id, status.value.currentUser.displayName)
+      await checkLinkStatus()
+      return result
+    } catch (err) {
+      // Surface the error to the UI and re-poll the server. The server may have
+      // actually persisted the link even if our socket timed out (e.g. mid-flight
+      // Socket.IO reconnect) — a fresh checkLinkStatus() will reconcile the UI.
+      error.value = err instanceof Error ? err.message : String(err)
+      linkStatus.value = 'unknown'
+      try {
+        await checkLinkStatus()
+      } catch { /* best-effort recovery */ }
+      throw err
+    } finally {
+      loading.value = false
+    }
   }
 
   async function initialize() {
