@@ -84,6 +84,11 @@ const router = createRouter({
       component: () => import('./pages/VoskPage.vue')
     },
     {
+      path: '/whisper',
+      name: 'whisper',
+      component: () => import('./pages/WhisperPage.vue')
+    },
+    {
       path: '/vrc-timeline',
       name: 'vrc-timeline',
       component: () => import('./pages/VRCTimelinePage.vue')

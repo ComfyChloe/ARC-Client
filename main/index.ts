@@ -9,6 +9,7 @@ import { OSCQueryService } from './services/oscQueryService'
 import HyperateAddon from './containers/hyperate/hyperate'
 import VoskAddon from './containers/vosk/vosk'
 import { cleanupLegacyVoskBundledLibs } from './containers/vosk/vosk'
+import WhisperAddon from './containers/whisper/whisper'
 import OSCLeashAddon from './containers/oscleash/oscleash'
 import VRChatAPIContainer from './containers/vrchat-api/vrchat-api'
 import OscGoesBrrrAddon from './containers/oscgoesbrrr/oscgoesbrrr'
@@ -31,6 +32,7 @@ let wsManager: any
 let serverConfig: any = configManager.getServerConfig()
 let hyperateAddon: any
 let voskAddon: any
+let whisperAddon: any
 let oscLeashAddon: any
 let vrchatApiContainer: any
 let oscGoesBrrrAddon: any
@@ -424,6 +426,11 @@ function initOscServer() {
       voskAddon.oscService = oscService
       debug.info('Updated Vosk addon with OSC service')
     }
+    // Update Whisper addon with OSC service if it's running
+    if (whisperAddon && whisperAddon.isEnabled()) {
+      whisperAddon.oscService = oscService
+      debug.info('Updated Whisper addon with OSC service')
+    }
     // Start autostart addons now that OSC service is ready
     const appSettings = configManager.getAppSettings()
     if (appSettings.hyperateAutostart && hyperateAddon && !hyperateAddon.isEnabled()) {
@@ -433,6 +440,10 @@ function initOscServer() {
     if (appSettings.voskAutostart && voskAddon && !voskAddon.isEnabled()) {
       debug.info('Starting Vosk addon based on autostart setting (OSC service ready)...')
       voskAddon.start(oscService)
+    }
+    if (appSettings.whisperAutostart && whisperAddon && !whisperAddon.isEnabled()) {
+      debug.info('Starting Whisper addon based on autostart setting (OSC service ready)...')
+      whisperAddon.start(oscService)
     }
     if (appSettings.oscleashAutostart && oscLeashAddon && !oscLeashAddon.isEnabled()) {
       debug.info('Starting OSCLeash addon based on autostart setting (OSC-Query ready)...')
@@ -1592,6 +1603,128 @@ ipcMain.on('vosk-audio-chunk', (_event, chunk: ArrayBuffer, sampleRate: number, 
     debug.error(`Failed to process Vosk audio chunk: ${error.message}`)
   }
 })
+// Whisper addon IPC handlers (engine-agnostic from the UI's perspective;
+// same shape as Vosk so the renderer page mirrors the Vosk UX 1:1)
+ipcMain.handle('whisper-get-status', () => {
+  if (whisperAddon) {
+    return whisperAddon.getStatus()
+  }
+  return null
+})
+ipcMain.handle('whisper-preflight', () => {
+  // Same shape as vosk-preflight — the addon is constructed by the time the
+  // renderer calls this, but fall back gracefully if not.
+  try {
+    if (whisperAddon && typeof whisperAddon.preflight === 'function') {
+      return whisperAddon.preflight()
+    }
+  } catch (error: any) {
+    debug.error(`Whisper preflight (instance) failed: ${error.message}`)
+    return { ok: false, bundledLibsOk: false, dllPath: null, lastError: error.message }
+  }
+  return {
+    ok: false,
+    bundledLibsOk: false,
+    dllPath: null,
+    lastError: 'Whisper addon not yet initialised; status will be available on the next refresh.'
+  }
+})
+ipcMain.handle('whisper-start', () => {
+  try {
+    if (!whisperAddon) {
+      return { success: false, error: 'Whisper addon not initialized' }
+    }
+    const result = whisperAddon.start(oscService)
+    return { success: result, error: result ? undefined : whisperAddon.getStatus().lastError }
+  } catch (error: any) {
+    debug.error(`Failed to start Whisper addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-stop', () => {
+  try {
+    if (whisperAddon) {
+      whisperAddon.stop()
+    }
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to stop Whisper addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-get-config', () => {
+  if (whisperAddon) {
+    return whisperAddon.getConfig()
+  }
+  return null
+})
+ipcMain.handle('whisper-update-config', (_event, config: any) => {
+  try {
+    if (!whisperAddon) {
+      return { success: false, error: 'Whisper addon not initialized' }
+    }
+    const result = whisperAddon.updateConfig(config)
+    return { success: result, error: result ? undefined : whisperAddon.getStatus().lastError }
+  } catch (error: any) {
+    debug.error(`Failed to update Whisper config: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-download-model', async () => {
+  try {
+    if (!whisperAddon) {
+      return { success: false, error: 'Whisper addon not initialized' }
+    }
+    return await whisperAddon.downloadModel()
+  } catch (error: any) {
+    debug.error(`Failed to download Whisper model: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-set-input-device', (_event, deviceId: string | null) => {
+  try {
+    if (!whisperAddon) {
+      return { success: false, error: 'Whisper addon not initialized' }
+    }
+    const result = whisperAddon.setInputDevice(deviceId)
+    return { success: result }
+  } catch (error: any) {
+    debug.error(`Failed to set Whisper input device: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings()
+    return { enabled: appSettings.whisperAutostart || false }
+  } catch (error: any) {
+    debug.error(`Failed to get Whisper autostart: ${error.message}`)
+    return { enabled: false }
+  }
+})
+ipcMain.handle('whisper-set-autostart', (_event, enabled: boolean) => {
+  try {
+    const result = configManager.updateAppSettings({ whisperAutostart: enabled })
+    if (result) {
+      debug.info(`Whisper autostart ${enabled ? 'enabled' : 'disabled'}`)
+      return { success: true, enabled }
+    } else {
+      throw new Error('Failed to save autostart setting')
+    }
+  } catch (error: any) {
+    debug.error(`Failed to set Whisper autostart: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.on('whisper-audio-chunk', (_event, chunk: ArrayBuffer, sampleRate: number, level: number) => {
+  try {
+    if (whisperAddon) {
+      whisperAddon.acceptAudio(Buffer.from(chunk), sampleRate, level)
+    }
+  } catch (error: any) {
+    debug.error(`Failed to process Whisper audio chunk: ${error.message}`)
+  }
+})
 // OSCLeash addon IPC handlers
 ipcMain.handle('oscleash-get-status', () => {
   if (oscLeashAddon) {
@@ -2224,6 +2357,7 @@ app.whenReady().then(async () => {
   updateSplashProgress(20, 'Initializing addons')
   hyperateAddon = new HyperateAddon()
   voskAddon = new VoskAddon()
+  whisperAddon = new WhisperAddon()
   oscLeashAddon = new OSCLeashAddon()
   vrchatApiContainer = new VRChatAPIContainer()
   oscGoesBrrrAddon = new OscGoesBrrrAddon()
@@ -2265,6 +2399,27 @@ app.whenReady().then(async () => {
   voskAddon.setCaptureControlCallback((control: any) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('vosk-capture-control', control)
+    }
+  })
+  // Set up Whisper callbacks (mirror Vosk shape exactly)
+  whisperAddon.setStatusChangeCallback((status: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'status', ...status })
+    }
+  })
+  whisperAddon.setResultCallback((result: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'result', ...result })
+    }
+  })
+  whisperAddon.setDownloadProgressCallback((progress: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'download-progress', ...progress })
+    }
+  })
+  whisperAddon.setCaptureControlCallback((control: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-capture-control', control)
     }
   })
   // Set up OSCLeash status and movement callbacks
@@ -2570,6 +2725,17 @@ function cleanup(source = 'unknown') {
   } catch (error: any) {
     debug.error(`Error stopping Vosk addon: ${error.message}`)
     voskAddon = null
+  }
+  try {
+    if (whisperAddon) {
+      debug.info('Stopping Whisper addon during cleanup...')
+      whisperAddon.stop()
+      whisperAddon = null
+      debug.info('Whisper addon cleanup completed')
+    }
+  } catch (error: any) {
+    debug.error(`Error stopping Whisper addon: ${error.message}`)
+    whisperAddon = null
   }
   try {
     if (xsOverlayAddon) {

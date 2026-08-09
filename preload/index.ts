@@ -74,6 +74,18 @@ const api = {
   voskGetAutostart: () => ipcRenderer.invoke('vosk-get-autostart'),
   voskSetAutostart: (enabled: boolean) => ipcRenderer.invoke('vosk-set-autostart', enabled),
   voskSendAudio: (chunk: ArrayBuffer, sampleRate: number, level: number) => ipcRenderer.send('vosk-audio-chunk', chunk, sampleRate, level),
+  // Whisper API (mirror of Vosk — separate engine, same UI affordances)
+  whisperGetStatus: () => ipcRenderer.invoke('whisper-get-status'),
+  whisperPreflight: () => ipcRenderer.invoke('whisper-preflight'),
+  whisperStart: () => ipcRenderer.invoke('whisper-start'),
+  whisperStop: () => ipcRenderer.invoke('whisper-stop'),
+  whisperGetConfig: () => ipcRenderer.invoke('whisper-get-config'),
+  whisperUpdateConfig: (config: any) => ipcRenderer.invoke('whisper-update-config', config),
+  whisperDownloadModel: () => ipcRenderer.invoke('whisper-download-model'),
+  whisperSetInputDevice: (deviceId: string | null) => ipcRenderer.invoke('whisper-set-input-device', deviceId),
+  whisperGetAutostart: () => ipcRenderer.invoke('whisper-get-autostart'),
+  whisperSetAutostart: (enabled: boolean) => ipcRenderer.invoke('whisper-set-autostart', enabled),
+  whisperSendAudio: (chunk: ArrayBuffer, sampleRate: number, level: number) => ipcRenderer.send('whisper-audio-chunk', chunk, sampleRate, level),
   // OSCLeash API
   oscleashGetStatus: () => ipcRenderer.invoke('oscleash-get-status'),
   oscleashStart: () => ipcRenderer.invoke('oscleash-start'),
@@ -253,6 +265,12 @@ const api = {
   },
   onVoskCaptureControl: (callback: (data: any) => void) => {
     ipcRenderer.on('vosk-capture-control', (_event, data) => callback(data))
+  },
+  onWhisperUpdate: (callback: (data: any) => void) => {
+    ipcRenderer.on('whisper-update', (_event, data) => callback(data))
+  },
+  onWhisperCaptureControl: (callback: (data: any) => void) => {
+    ipcRenderer.on('whisper-capture-control', (_event, data) => callback(data))
   },
   onOgbStatusUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('ogb-status-update', (_event, data) => callback(data))

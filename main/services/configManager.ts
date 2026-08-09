@@ -8,6 +8,7 @@ interface AppSettings {
   enableWebSocketForwarding: boolean
   hyperateAutostart: boolean
   voskAutostart: boolean
+  whisperAutostart: boolean
   oscleashAutostart: boolean
   ogbAutostart: boolean
   oscAutostart: boolean
@@ -65,6 +66,35 @@ export interface VoskConfig {
   minConfidence: number
   categories: string[]
   commands: VoskCommand[]
+  [key: string]: unknown
+}
+
+export interface WhisperCommandParam {
+  address: string
+  type: 'f' | 'i' | 'bool' | 's'
+  value: string | number | boolean
+  reverseValue?: string | number | boolean | null
+}
+
+export interface WhisperCommand {
+  id: string
+  name: string
+  phrase: string
+  reversePhrase?: string
+  matchType: 'exact' | 'contains'
+  enabled: boolean
+  category?: string
+  parameters: WhisperCommandParam[]
+}
+
+export interface WhisperConfig {
+  modelDir: string | null
+  inputDeviceId: string | null
+  minInputLevel: number
+  inputGain: number
+  minUtteranceMs: number
+  categories: string[]
+  commands: WhisperCommand[]
   [key: string]: unknown
 }
 
@@ -154,6 +184,7 @@ interface AppConfig {
   windowState: WindowState
   hyperate: HyperateConfig
   vosk: VoskConfig
+  whisper: WhisperConfig
   oscleash: OscLeashConfig
   vrchatapi: VRChatAPIConfig
   oscgoesbrrr: OscGoesbrrrConfig
@@ -182,6 +213,7 @@ class ConfigManager {
         enableWebSocketForwarding: false,
         hyperateAutostart: false,
         voskAutostart: false,
+        whisperAutostart: false,
         oscleashAutostart: false,
         ogbAutostart: false,
         oscAutostart: false,
@@ -362,6 +394,7 @@ class ConfigManager {
       enableWebSocketForwarding: this.config.appSettings?.enableWebSocketForwarding || false,
       hyperateAutostart: this.config.appSettings?.hyperateAutostart || false,
       voskAutostart: this.config.appSettings?.voskAutostart || false,
+      whisperAutostart: this.config.appSettings?.whisperAutostart || false,
       oscleashAutostart: this.config.appSettings?.oscleashAutostart || false,
       ogbAutostart: this.config.appSettings?.ogbAutostart || false,
       oscAutostart: this.config.appSettings?.oscAutostart || false,
@@ -389,6 +422,9 @@ class ConfigManager {
     }
     if (settings.voskAutostart !== undefined) {
       this.config.appSettings.voskAutostart = settings.voskAutostart
+    }
+    if (settings.whisperAutostart !== undefined) {
+      this.config.appSettings.whisperAutostart = settings.whisperAutostart
     }
     if (settings.oscleashAutostart !== undefined) {
       this.config.appSettings.oscleashAutostart = settings.oscleashAutostart
@@ -604,6 +640,30 @@ class ConfigManager {
       ...voskConfig
     }
     debug.info('Vosk config updated in configuration manager')
+    return this.saveConfig()
+  }
+  getWhisperConfig(): WhisperConfig {
+    const stored = (this.config.whisper || {}) as Partial<WhisperConfig>
+    this.config.whisper = {
+      modelDir: stored.modelDir ?? null,
+      inputDeviceId: stored.inputDeviceId ?? null,
+      minInputLevel: typeof stored.minInputLevel === 'number' ? stored.minInputLevel : 0,
+      inputGain: typeof stored.inputGain === 'number' ? stored.inputGain : 1,
+      minUtteranceMs: typeof stored.minUtteranceMs === 'number' ? stored.minUtteranceMs : 350,
+      categories: Array.isArray(stored.categories) ? stored.categories : [],
+      commands: Array.isArray(stored.commands) ? stored.commands : []
+    }
+    return { ...this.config.whisper }
+  }
+  updateWhisperConfig(whisperConfig: Partial<WhisperConfig>): boolean {
+    if (!this.config.whisper) {
+      this.config.whisper = {} as WhisperConfig
+    }
+    this.config.whisper = {
+      ...this.config.whisper,
+      ...whisperConfig
+    }
+    debug.info('Whisper config updated in configuration manager')
     return this.saveConfig()
   }
   getOSCLeashConfig(): OscLeashConfig {

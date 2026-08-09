@@ -73,6 +73,9 @@ watch(() => route.path, (path) => {
   if (vrchatPaths.includes(path)) {
     vrchatOpen.value = true
   }
+  if (path === '/vosk' || path === '/whisper') {
+    voiceOpen.value = true
+  }
 }, { immediate: true })
 
 const serverStatusClass = computed(() => {
@@ -131,6 +134,7 @@ const routeViewId = computed(() => {
     '/arclink': 'arclink-view',
     '/lovense': 'lovense-view',
     '/vosk': 'vosk-view',
+    '/whisper': 'whisper-view',
     '/vrc-timeline': 'vrc-timeline-view',
     '/auto-inviter': 'auto-inviter-view',
     '/xsoverlay': 'xsoverlay-view'
@@ -235,9 +239,9 @@ function linksBreakdown(panel: PanelInfo): string {
         <router-link to="/" class="btn btn-primary nav-link" :class="{ active: isActive('/') }">Main View</router-link>
         <router-link to="/osc" class="btn btn-primary nav-link" :class="{ active: isActive('/osc') }">OSC</router-link>
         <div class="tree-item">
-          <button class="tree-toggle extras-toggle" :class="{ expanded: extrasOpen }" type="button" @click="extrasOpen = !extrasOpen">
+          <button class="tree-toggle extras-toggle modules-toggle" :class="{ expanded: extrasOpen }" type="button" @click="extrasOpen = !extrasOpen">
             <span class="arrow">&#9656;</span>
-            <span>Extras</span>
+            <span>Modules</span>
           </button>
           <div class="tree-content" :class="{ expanded: extrasOpen }">
             <div class="tree-items">
@@ -249,9 +253,21 @@ function linksBreakdown(panel: PanelInfo): string {
               <router-link to="/openshock" class="tree-child" :class="{ active: isActive('/openshock') }">OpenShock</router-link>
               <router-link to="/oscleash" class="tree-child" :class="{ active: isActive('/oscleash') }">OSC Leash</router-link>
               <router-link to="/oscgoesbrrr" class="tree-child" :class="{ active: isActive('/oscgoesbrrr') }">OscGoesBrrr</router-link>
-              <router-link to="/vosk" class="tree-child" :class="{ active: isActive('/vosk') }">VOSK</router-link>
               <router-link to="/xsoverlay" class="tree-child" :class="{ active: isActive('/xsoverlay') }">XS Notifications</router-link>
               <router-link to="/vrc-timeline" class="tree-child" :class="{ active: isActive('/vrc-timeline') }">VRC Timeline</router-link>
+              <div class="tree-item nested-tree-item">
+                <button class="tree-toggle nested-toggle" :class="{ expanded: voiceOpen }" type="button" @click="voiceOpen = !voiceOpen">
+                  <span class="arrow">&#9656;</span>
+                  <span>Voice</span>
+                </button>
+                <div class="tree-content" :class="{ expanded: voiceOpen }">
+                  <div class="tree-items">
+                    <router-link to="/vosk" class="tree-child" :class="{ active: isActive('/vosk') }">VOSK</router-link>
+                    <router-link to="/whisper" class="tree-child" :class="{ active: isActive('/whisper') }">Whisper</router-link>
+
+                  </div>
+                </div>
+              </div>
               <div class="tree-item nested-tree-item">
                 <button class="tree-toggle nested-toggle" :class="{ expanded: vrchatOpen }" type="button" @click="vrchatOpen = !vrchatOpen">
                   <span class="arrow">&#9656;</span>
@@ -412,7 +428,8 @@ function linksBreakdown(panel: PanelInfo): string {
   margin-top: 10px;
 }
 
-.extras-toggle {
+.extras-toggle,
+.modules-toggle {
   justify-content: center;
 }
 

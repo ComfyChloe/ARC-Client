@@ -7,6 +7,7 @@
   "license": "ComfyChloe-NCCL-1.2",
   "private": false,
   "dependencies": {
+    "@kutalia/whisper-node-addon": "^1.1.0",
     "better-sqlite3": "^12.10.0",
     "bonjour-service": "^1.3.0",
     "extract-zip": "^2.0.1",
@@ -23,7 +24,7 @@
   "scripts": {
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "prebuild": "node scripts/prepare-bundled-libs.mjs",
+    "prebuild": "node scripts/prepare-bundled-libs.mjs && node scripts/prepare-whisper-libs.mjs",
     "build": "electron-vite build && electron-builder --dir",
     "pack": "electron-builder --dir",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
@@ -70,10 +71,14 @@
       "**/node_modules/@serialport/**/*",
       "**/node_modules/serialport/**/*",
       "**/node_modules/vosk-koffi/**/*",
-      "**/node_modules/koffi/**/*"
+      "**/node_modules/koffi/**/*",
+      "**/node_modules/@kutalia/whisper-node-addon/**/*"
     ],
     "extraResources": [
-      { "from": "build/bundledLibs", "to": "../bundledLibs" },
+      {
+        "from": "build/bundledLibs",
+        "to": "../bundledLibs"
+      },
       "userdata"
     ],
     "win": {
