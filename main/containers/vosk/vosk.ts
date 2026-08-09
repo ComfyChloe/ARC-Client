@@ -1,10 +1,12 @@
 import fs from 'node:fs'
+import fsp from 'node:fs/promises'
 import path from 'node:path'
 import https from 'node:https'
 import { app } from 'electron'
 import debug from '../../services/debugger'
 import configManager from '../../services/configManager'
 import type { VoskConfig, VoskCommand, VoskCommandParam } from '../../services/configManager'
+import { loadLibvosk, type LibvoskModule, type LibvoskModel } from './libvoskLoader'
 
 // Ported from VRCOSC's Vosk-era VoskSpeechEngine (removed upstream in "Replace Vosk with Whisper"):
 // recognizer at capture sample rate, setWords(true), partial {partial} / final {text, result:[{conf}]},
@@ -18,19 +20,25 @@ const MAX_QUEUED_CHUNKS = 50
 const VOSK_BIN_DIR = `bin-${process.platform}-${process.arch}`
 const VOSK_BIN_FILENAMES = ['libvosk.dll', 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll']
 
-// Resolve the directory that contains libvosk.dll + its dependencies. In dev that's
-// `node_modules/vosk-koffi/bin-<platform>-<arch>`. In the packaged build the same
-// files live at `process.resourcesPath/bundledLibs` (copied there via electron-builder
-// extraResources — they MUST live next to the app .exe so the Windows DLL loader
-// resolves the dependency chain without relying on the runtime-modified Path).
+// Resolve the directory that contains libvosk.dll + its dependencies.
+//
+// Lookup order:
+//   1. `<dir of process.execPath>/bundledLibs` — packaged build, next to the .exe.
+//      Win32's LoadLibraryEx search order always covers the directory of the calling
+//      DLL and the directory of the executable, so co-locating the GCC runtime deps
+//      with the exe is the only reliable way for koffi.node to resolve libvosk.dll's
+//      dependency chain without depending on a runtime-mutated process.env.Path.
+//   2. `process.resourcesPath/bundledLibs` — legacy layout (kept as a fallback so
+//      users who installed the buggy build before this fix still load VOSK until
+//      cleanupLegacyVoskBundledLibs() sweeps the stale dir on next boot).
+//   3. dev / unpacked layout: `node_modules/vosk-koffi/bin-<platform>-<arch>`.
 function resolveVoskBinDir(): string | null {
   if (app.isPackaged) {
-    const bundled = path.join(process.resourcesPath, 'bundledLibs')
-    if (fs.existsSync(path.join(bundled, 'libvosk.dll'))) {
-      return bundled
-    }
+    const exeBeside = path.join(path.dirname(process.execPath), 'bundledLibs')
+    if (fs.existsSync(path.join(exeBeside, 'libvosk.dll'))) return exeBeside
+    const legacy = path.join(process.resourcesPath, 'bundledLibs')
+    if (fs.existsSync(path.join(legacy, 'libvosk.dll'))) return legacy
   }
-  // dev / unpacked layout: module-relative path through require.resolve
   try {
     const entry = require.resolve('vosk-koffi')
     const dir = path.resolve(path.dirname(entry), '..', VOSK_BIN_DIR)
@@ -39,6 +47,34 @@ function resolveVoskBinDir(): string | null {
     /* fall through */
   }
   return null
+}
+
+// One-shot cleanup of the legacy `resources/bundledLibs/` tree shipped by older
+// builds, which parked the Vosk DLLs in a directory the Win32 loader does NOT
+// search (causing "vosk-koffi could not be loaded" on packaged installs).
+//
+// Only deletes the legacy dir when:
+//   - running packaged on Windows,
+//   - the new exe-side layout is healthy (so we never wipe the only working copy
+//     on a half-installed or partially-upgraded user state),
+//   - the legacy dir actually exists and contains libvosk.dll.
+//
+// Idempotent (the gating conditions make it safe to call on every boot), cheap
+// (<100ms), and fully wrapped in try/catch — a failure here MUST NOT block app
+// boot, hence the void return + debug-only logging.
+export async function cleanupLegacyVoskBundledLibs(): Promise<void> {
+  if (!app.isPackaged || process.platform !== 'win32') return
+  try {
+    const exeBeside = path.join(path.dirname(process.execPath), 'bundledLibs')
+    const legacy = path.join(process.resourcesPath, 'bundledLibs')
+    const exeBesideOk = fs.existsSync(path.join(exeBeside, 'libvosk.dll'))
+    const legacyOk = fs.existsSync(path.join(legacy, 'libvosk.dll'))
+    if (!exeBesideOk || !legacyOk) return
+    await fsp.rm(legacy, { recursive: true, force: true })
+    debug.info(`[vosk] cleaned up legacy ${legacy} (DLLs moved beside the exe)`)
+  } catch (err) {
+    debug.logError(`[vosk] legacy bundledLibs cleanup failed: ${(err as Error).message}`)
+  }
 }
 
 function ensurePathIncludes(dir: string): void {
@@ -54,23 +90,31 @@ function ensurePathIncludes(dir: string): void {
   }
 }
 
-// `vosk-koffi` declares opaque koffi types on libvosk.dll at module-require time.
-// Re-requiring on every engine start would trigger "Duplicate type name 'VoskModel'".
-// Hoist the require to module-load time so it happens exactly once per process.
-const voskModule: VoskModule | null = (() => {
+// `libvosk.dll` declares opaque koffi types at load time. Loading it twice in
+// the same process would trigger "Duplicate type name 'VoskModel'", so hoist
+// the load to module scope and only do it once. We bypass `vosk-koffi` here
+// because its bundled resolver points at `bin-<plat>-<arch>/libvosk.dll` deep
+// inside the asar.unpacked tree, where Win32's restricted DLL search policy
+// (in packaged Electron builds) can't find libvosk's GCC runtime deps. Our
+// `resolveVoskBinDir()` resolves a path where the deps ARE in a searchable
+// location (the exe's directory or a sibling bundledLibs dir), so loading
+// directly via koffi succeeds there.
+const voskModule: LibvoskModule | null = (() => {
   const binDir = resolveVoskBinDir()
   if (!binDir) {
-    debug.logError(`Vosk: no bundled libvosk.dll found (looked in process.resourcesPath/bundledLibs and the dev node_modules layout)`)
+    debug.logError(`Vosk: no bundled libvosk.dll found`)
     return null
   }
   if (process.platform === 'win32') ensurePathIncludes(binDir)
   try {
-    const mod = require('vosk-koffi') as VoskModule
+    const mod = loadLibvosk(path.join(binDir, 'libvosk.dll'))
     try { mod.setLogLevel(-1) } catch { /* not fatal */ }
-    debug.info(`Vosk: vosk-koffi loaded from ${binDir}`)
+    debug.info(`Vosk: libvosk loaded from ${binDir}`)
     return mod
   } catch (err) {
-    debug.logError(`Vosk: failed to load vosk-koffi: ${(err as Error).message}`)
+    const e = err as Error
+    debug.logError(`Vosk: failed to load libvosk.dll: ${e.message}`)
+    debug.logError(`Vosk: error stack: ${e.stack ?? '<no stack>'}`)
     return null
   }
 })()
@@ -100,8 +144,6 @@ interface OscService {
   isListening: boolean
   sendMessage(address: string, value: unknown, type: string): boolean
 }
-
-type VoskModule = typeof import('vosk-koffi')
 
 interface VoskWordResult {
   conf?: number
@@ -155,7 +197,7 @@ class VoskAddon {
   onCaptureControl: ((control: VoskCaptureControl) => void) | null
   onDownloadProgress: ((progress: VoskDownloadProgress) => void) | null
 
-  private model: InstanceType<VoskModule['Model']> | null
+  private model: LibvoskModel | null
   private recognizer: { free(): void; setWords(w: boolean): unknown; acceptWaveform(b: Buffer): boolean; result(): unknown; partialResult(): unknown; finalResult(): unknown; reset(): unknown } | null
   private recognizerSampleRate: number | null
   private processingChain: Promise<void>

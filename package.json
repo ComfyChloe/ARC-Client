@@ -73,7 +73,7 @@
       "**/node_modules/koffi/**/*"
     ],
     "extraResources": [
-      { "from": "build/bundledLibs", "to": "bundledLibs" },
+      { "from": "build/bundledLibs", "to": "../bundledLibs" },
       "userdata"
     ],
     "win": {

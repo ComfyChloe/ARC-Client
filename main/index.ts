@@ -1,7 +1,6 @@
 import './bootstrap' // MUST be first — sets userData path before service constructors
 import { app, BrowserWindow, ipcMain, dialog, session, shell, clipboard } from 'electron'
 import path from 'node:path'
-import fs from 'node:fs'
 import { encryptData, decryptData } from './services/encryption'
 import osc from 'osc'
 import debug from './services/debugger'
@@ -9,6 +8,7 @@ import OscService from './services/oscService'
 import { OSCQueryService } from './services/oscQueryService'
 import HyperateAddon from './containers/hyperate/hyperate'
 import VoskAddon from './containers/vosk/vosk'
+import { cleanupLegacyVoskBundledLibs } from './containers/vosk/vosk'
 import OSCLeashAddon from './containers/oscleash/oscleash'
 import VRChatAPIContainer from './containers/vrchat-api/vrchat-api'
 import OscGoesBrrrAddon from './containers/oscgoesbrrr/oscgoesbrrr'
@@ -475,7 +475,7 @@ function initOscServer() {
     oscService.start()
     ;(global as any).oscService = oscService
     // Initialize OSC Query service for automatic VRChat discovery
-    initOscQueryService()
+    void initOscQueryService()
   }
 }
 async function initOscQueryService() {
@@ -742,7 +742,7 @@ ipcMain.handle('set-config', (_event, newConfig: any) => {
   if (oscQueryBindAddressChanged) {
     debug.info('OSC-Query bind address changed, restarting OSC-Query service')
     sendToRenderer('oscquery-status', { status: 'restarting' })
-    initOscQueryService()
+    void initOscQueryService()
   }
   if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
     debug.info('Only additional connections changed, updating without restarting OSC service')
@@ -2041,7 +2041,7 @@ ipcMain.handle('openshock-send-control', async (_event, shocks: any[]) => {
       for (const shock of shocks) {
         insert.run(shock.id, shock.id, shock.type, shock.intensity ?? null, shock.duration ?? null, 0, error.message, Date.now())
       }
-    } catch (_dbErr) { /* ignore */ }
+    } catch { /* ignore DB logging failure */ }
     return { success: false, error: error.message }
   }
 })
@@ -2188,6 +2188,13 @@ ipcMain.handle('xsoverlay-set-autostart', (_event, enabled: boolean) => {
 // ────────── App Lifecycle ──────────
 app.whenReady().then(async () => {
   debug.logAppStartup()
+  // One-shot cleanup of the legacy `resources/bundledLibs/` tree from older
+  // builds (where the Vosk DLLs sat in a directory the Win32 loader didn't
+  // search). Fire-and-forget — a failure must never block app boot. Wrapped
+  // in `void` to satisfy the no-floating-promises lint rule.
+  void cleanupLegacyVoskBundledLibs().catch((err) =>
+    debug.logError(`[vosk] legacy bundledLibs cleanup failed: ${(err as Error).message}`)
+  )
   // Create splash window immediately after log cleanup
   createWindow()
 
@@ -2430,7 +2437,7 @@ function setupMemoryManagement() {
               sendToRenderer('memory-pressure', { level: 'high', memoryMB: rendererPrivateMB })
             }
           }).catch(() => {})
-        } catch (_e) {
+        } catch {
           // Renderer may be unavailable during shutdown
         }
       }
@@ -2452,7 +2459,7 @@ function showCrashDialog(title: string, message: string): boolean {
       noLink: true
     })
     return result === 0
-  } catch (_dialogError) {
+  } catch {
     dialog.showErrorBox(title, message)
     return true
   }
@@ -2672,7 +2679,7 @@ process.on('uncaughtException', (error) => {
   } catch (cleanupError: any) {
     try {
       debug.error(`Error during cleanup: ${cleanupError.message}`)
-    } catch (_e) {
+    } catch {
       console.error('Cleanup error:', cleanupError)
     }
   }
@@ -2705,7 +2712,7 @@ process.on('unhandledRejection', (reason: any, _promise) => {
   } catch (cleanupError: any) {
     try {
       debug.error(`Error during cleanup: ${cleanupError.message}`)
-    } catch (_e) {
+    } catch {
       console.error('Cleanup error:', cleanupError)
     }
   }
