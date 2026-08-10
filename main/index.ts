@@ -7,8 +7,6 @@ import debug from './services/debugger'
 import OscService from './services/oscService'
 import { OSCQueryService } from './services/oscQueryService'
 import HyperateAddon from './containers/hyperate/hyperate'
-import VoskAddon from './containers/vosk/vosk'
-import { cleanupLegacyVoskBundledLibs } from './containers/vosk/vosk'
 import WhisperAddon from './containers/whisper/whisper'
 import OSCLeashAddon from './containers/oscleash/oscleash'
 import VRChatAPIContainer from './containers/vrchat-api/vrchat-api'
@@ -31,7 +29,6 @@ let oscEnabled = false
 let wsManager: any
 let serverConfig: any = configManager.getServerConfig()
 let hyperateAddon: any
-let voskAddon: any
 let whisperAddon: any
 let oscLeashAddon: any
 let vrchatApiContainer: any
@@ -403,7 +400,7 @@ function initOscServer() {
   }
   debug.info(`Initializing OSC service with port ${serverConfig.legacyOscPort}`)
   oscService = new OscService()
-  oscService.on('ready', (config: any) => {
+  oscService.on('ready', async (config: any) => {
     updateSplashProgress(80, 'OSC service ready')
     debug.logOscServiceReady(config)
     sendToRenderer('osc-server-status', {
@@ -421,11 +418,6 @@ function initOscServer() {
       oscLeashAddon.oscService = oscService
       debug.info('Updated OSCLeash addon with OSC service')
     }
-    // Update Vosk addon with OSC service if it's running
-    if (voskAddon && voskAddon.isEnabled()) {
-      voskAddon.oscService = oscService
-      debug.info('Updated Vosk addon with OSC service')
-    }
     // Update Whisper addon with OSC service if it's running
     if (whisperAddon && whisperAddon.isEnabled()) {
       whisperAddon.oscService = oscService
@@ -437,13 +429,19 @@ function initOscServer() {
       debug.info('Starting HypeRate addon based on autostart setting (OSC service ready)...')
       hyperateAddon.start(oscService)
     }
-    if (appSettings.voskAutostart && voskAddon && !voskAddon.isEnabled()) {
-      debug.info('Starting Vosk addon based on autostart setting (OSC service ready)...')
-      voskAddon.start(oscService)
-    }
     if (appSettings.whisperAutostart && whisperAddon && !whisperAddon.isEnabled()) {
-      debug.info('Starting Whisper addon based on autostart setting (OSC service ready)...')
-      whisperAddon.start(oscService)
+      // Awaited + logged so prod-startup failures (asar path,
+      // worker spawn hang, init timeout) are visible in the
+      // Electron log. Without the await, the return value was
+      // silently dropped and the renderer would sit at
+      // "Starting..." forever with no diagnostic trail.
+      debug.info('[autostart] whisper: starting (oscService ready)')
+      const ok = await whisperAddon.start(oscService)
+      const status = whisperAddon.getStatus()
+      debug.info(
+        `[autostart] whisper: start returned ${ok}; engineState=${status.engineState}` +
+          (status.lastError ? `; lastError=${status.lastError}` : '')
+      )
     }
     if (appSettings.oscleashAutostart && oscLeashAddon && !oscLeashAddon.isEnabled()) {
       debug.info('Starting OSCLeash addon based on autostart setting (OSC-Query ready)...')
@@ -1476,165 +1474,54 @@ ipcMain.handle('hyperate-set-capture-rate', (_event, config: { rateMs: number })
     return { success: false, error: error.message }
   }
 })
-// Vosk addon IPC handlers
-ipcMain.handle('vosk-get-status', () => {
-  if (voskAddon) {
-    return voskAddon.getStatus()
-  }
-  return null
-})
-ipcMain.handle('vosk-preflight', () => {
-  // The addon is already imported at the top of this file (electron-vite bundles
-  // everything into out/main/index.js — there is no separate containers/vosk/vosk
-  // file at runtime, so don't try to require('./containers/vosk/vosk')).
-  // Call the preflight method on the live addon instance; fall back to a manual
-  // preflight if the addon hasn't been constructed yet (e.g. very early init).
-  try {
-    if (voskAddon && typeof voskAddon.preflight === 'function') {
-      return voskAddon.preflight()
-    }
-  } catch (error: any) {
-    debug.error(`Vosk preflight (instance) failed: ${error.message}`)
-    return { ok: false, bundledLibsOk: false, dllPath: null, lastError: error.message }
-  }
-  // Addon not constructed yet — assume the bundled DLLs are missing; the user
-  // gets a clear warning banner via the Status card and the next status push
-  // will refine the message.
-  return {
-    ok: false,
-    bundledLibsOk: false,
-    dllPath: null,
-    lastError: 'Vosk addon not yet initialised; status will be available on the next refresh.'
-  }
-})
-ipcMain.handle('vosk-start', () => {
-  try {
-    if (!voskAddon) {
-      return { success: false, error: 'Vosk addon not initialized' }
-    }
-    const result = voskAddon.start(oscService)
-    return { success: result, error: result ? undefined : voskAddon.getStatus().lastError }
-  } catch (error: any) {
-    debug.error(`Failed to start Vosk addon: ${error.message}`)
-    return { success: false, error: error.message }
-  }
-})
-ipcMain.handle('vosk-stop', () => {
-  try {
-    if (voskAddon) {
-      voskAddon.stop()
-    }
-    return { success: true }
-  } catch (error: any) {
-    debug.error(`Failed to stop Vosk addon: ${error.message}`)
-    return { success: false, error: error.message }
-  }
-})
-ipcMain.handle('vosk-get-config', () => {
-  if (voskAddon) {
-    return voskAddon.getConfig()
-  }
-  return null
-})
-ipcMain.handle('vosk-update-config', (_event, config: any) => {
-  try {
-    if (!voskAddon) {
-      return { success: false, error: 'Vosk addon not initialized' }
-    }
-    const result = voskAddon.updateConfig(config)
-    return { success: result, error: result ? undefined : voskAddon.getStatus().lastError }
-  } catch (error: any) {
-    debug.error(`Failed to update Vosk config: ${error.message}`)
-    return { success: false, error: error.message }
-  }
-})
-ipcMain.handle('vosk-download-model', async () => {
-  try {
-    if (!voskAddon) {
-      return { success: false, error: 'Vosk addon not initialized' }
-    }
-    return await voskAddon.downloadModel()
-  } catch (error: any) {
-    debug.error(`Failed to download Vosk model: ${error.message}`)
-    return { success: false, error: error.message }
-  }
-})
-ipcMain.handle('vosk-set-input-device', (_event, deviceId: string | null) => {
-  try {
-    if (!voskAddon) {
-      return { success: false, error: 'Vosk addon not initialized' }
-    }
-    const result = voskAddon.setInputDevice(deviceId)
-    return { success: result }
-  } catch (error: any) {
-    debug.error(`Failed to set Vosk input device: ${error.message}`)
-    return { success: false, error: error.message }
-  }
-})
-ipcMain.handle('vosk-get-autostart', () => {
-  try {
-    const appSettings = configManager.getAppSettings()
-    return { enabled: appSettings.voskAutostart || false }
-  } catch (error: any) {
-    debug.error(`Failed to get Vosk autostart: ${error.message}`)
-    return { enabled: false }
-  }
-})
-ipcMain.handle('vosk-set-autostart', (_event, enabled: boolean) => {
-  try {
-    const result = configManager.updateAppSettings({ voskAutostart: enabled })
-    if (result) {
-      debug.info(`Vosk autostart ${enabled ? 'enabled' : 'disabled'}`)
-      return { success: true, enabled }
-    } else {
-      throw new Error('Failed to save autostart setting')
-    }
-  } catch (error: any) {
-    debug.error(`Failed to set Vosk autostart: ${error.message}`)
-    return { success: false, error: error.message }
-  }
-})
-ipcMain.on('vosk-audio-chunk', (_event, chunk: ArrayBuffer, sampleRate: number, level: number) => {
-  try {
-    if (voskAddon) {
-      voskAddon.acceptAudio(Buffer.from(chunk), sampleRate, level)
-    }
-  } catch (error: any) {
-    debug.error(`Failed to process Vosk audio chunk: ${error.message}`)
-  }
-})
-// Whisper addon IPC handlers (engine-agnostic from the UI's perspective;
-// same shape as Vosk so the renderer page mirrors the Vosk UX 1:1)
+// Whisper addon IPC handlers (Vosk removed — Whisper is the only speech-recognition engine)
 ipcMain.handle('whisper-get-status', () => {
   if (whisperAddon) {
     return whisperAddon.getStatus()
   }
   return null
 })
-ipcMain.handle('whisper-preflight', () => {
-  // Same shape as vosk-preflight — the addon is constructed by the time the
-  // renderer calls this, but fall back gracefully if not.
-  try {
-    if (whisperAddon && typeof whisperAddon.preflight === 'function') {
-      return whisperAddon.preflight()
-    }
-  } catch (error: any) {
-    debug.error(`Whisper preflight (instance) failed: ${error.message}`)
-    return { ok: false, bundledLibsOk: false, dllPath: null, lastError: error.message }
+ipcMain.handle('whisper-preflight', async () => {
+  // Two-tier preflight:
+  //   1. Cheap — does the worker JS file exist at any known location?
+  //   2. Live — actually spawn a throwaway worker, ping it with
+  //      `{type:'preflight'}`, wait up to 3s for a response, then
+  //      terminate. This catches asar-path issues where the file
+  //      exists virtually but `new Worker()` hangs or silently fails.
+  //      Without tier 2, the user would see "Starting..." forever
+  //      in prod builds even though preflight reported ok.
+  if (!whisperAddon) {
+    return { ok: false, bundledLibsOk: false, dllPath: null, lastError: 'Whisper addon not yet initialised' }
   }
-  return {
-    ok: false,
-    bundledLibsOk: false,
-    dllPath: null,
-    lastError: 'Whisper addon not yet initialised; status will be available on the next refresh.'
+  try {
+    const cheap = whisperAddon.preflight()
+    if (!cheap.ok) {
+      return {
+        ok: cheap.ok,
+        bundledLibsOk: cheap.bundledLibsOk,
+        dllPath: cheap.bridgePath,
+        lastError: cheap.lastError
+      }
+    }
+    const live = await whisperAddon.runLivePreflight()
+    return {
+      ok: live.ok,
+      bundledLibsOk: live.bundledLibsOk,
+      dllPath: live.bridgePath,
+      lastError: live.lastError
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    debug.error(`Whisper preflight failed: ${message}`)
+    return { ok: false, bundledLibsOk: false, dllPath: null, lastError: message }
   }
 })
-ipcMain.handle('whisper-start', () => {
+ipcMain.handle('whisper-start', async () => {
   try {
     if (!whisperAddon) {
       return { success: false, error: 'Whisper addon not initialized' }
     }
-    const result = whisperAddon.start(oscService)
+    const result = await whisperAddon.start(oscService)
     return { success: result, error: result ? undefined : whisperAddon.getStatus().lastError }
   } catch (error: any) {
     debug.error(`Failed to start Whisper addon: ${error.message}`)
@@ -1716,13 +1603,19 @@ ipcMain.handle('whisper-set-autostart', (_event, enabled: boolean) => {
     return { success: false, error: error.message }
   }
 })
-ipcMain.on('whisper-audio-chunk', (_event, chunk: ArrayBuffer, sampleRate: number, level: number) => {
+// Renderer -> main: Int16 PCM chunks from the AudioWorklet. The
+// supervisor forwards them to the Node whisper worker_thread via
+// transferable ArrayBuffer (zero-copy). See
+// main/containers/whisper/whisper.ts for the worker supervisor and
+// main/containers/whisper/whisper-worker.js for the actual binding.
+ipcMain.on('whisper-audio-chunk', (_event, chunk: ArrayBuffer, sampleRate: number, level: number): void => {
   try {
-    if (whisperAddon) {
+    if (whisperAddon && whisperAddon.isEnabled()) {
       whisperAddon.acceptAudio(Buffer.from(chunk), sampleRate, level)
     }
-  } catch (error: any) {
-    debug.error(`Failed to process Whisper audio chunk: ${error.message}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    debug.error(`Failed to process Whisper audio chunk: ${message}`)
   }
 })
 // OSCLeash addon IPC handlers
@@ -2321,17 +2214,10 @@ ipcMain.handle('xsoverlay-set-autostart', (_event, enabled: boolean) => {
 // ────────── App Lifecycle ──────────
 app.whenReady().then(async () => {
   debug.logAppStartup()
-  // One-shot cleanup of the legacy `resources/bundledLibs/` tree from older
-  // builds (where the Vosk DLLs sat in a directory the Win32 loader didn't
-  // search). Fire-and-forget — a failure must never block app boot. Wrapped
-  // in `void` to satisfy the no-floating-promises lint rule.
-  void cleanupLegacyVoskBundledLibs().catch((err) =>
-    debug.logError(`[vosk] legacy bundledLibs cleanup failed: ${(err as Error).message}`)
-  )
   // Create splash window immediately after log cleanup
   createWindow()
 
-  // Auto-grant microphone (and related media) permissions so the Vosk addon can
+  // Auto-grant microphone (and related media) permissions so the speech bridge can
   // start capture without showing the OS permission prompt. This applies to every
   // renderer session the app creates — the user can still revoke mic access from
   // the OS settings if they want.
@@ -2356,8 +2242,23 @@ app.whenReady().then(async () => {
   // Initialize addons
   updateSplashProgress(20, 'Initializing addons')
   hyperateAddon = new HyperateAddon()
-  voskAddon = new VoskAddon()
   whisperAddon = new WhisperAddon()
+  // Surface the worker file path the addon resolved to. In prod this
+  // is the asar-unpacked path; if it points inside the asar (a
+  // regression), the asar-detection in resolveWorkerFile() logs a
+  // warning we want to see during startup.
+  {
+    const status = whisperAddon.getStatus()
+    const bridgePath = status.bridgePath ?? ''
+    const dir = bridgePath ? path.dirname(bridgePath) : '(none)'
+    debug.info(`[whisper] constructor: bridgePathDir=${dir}; bridgePath=${bridgePath || 'NOT FOUND'}`)
+    if (bridgePath && bridgePath.includes('.asar') && !bridgePath.includes('app.asar.unpacked')) {
+      debug.warn(
+        '[whisper] WARNING: bridgePath appears to point inside the asar virtual FS. ' +
+          'Worker spawn will likely fail silently. Run with --enable-logging to confirm.'
+      )
+    }
+  }
   oscLeashAddon = new OSCLeashAddon()
   vrchatApiContainer = new VRChatAPIContainer()
   oscGoesBrrrAddon = new OscGoesBrrrAddon()
@@ -2380,28 +2281,7 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('hyperate-update', data)
     }
   })
-  // Set up Vosk callbacks
-  voskAddon.setStatusChangeCallback((status: any) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('vosk-update', { type: 'status', ...status })
-    }
-  })
-  voskAddon.setResultCallback((result: any) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('vosk-update', { type: 'result', ...result })
-    }
-  })
-  voskAddon.setDownloadProgressCallback((progress: any) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('vosk-update', { type: 'download-progress', ...progress })
-    }
-  })
-  voskAddon.setCaptureControlCallback((control: any) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('vosk-capture-control', control)
-    }
-  })
-  // Set up Whisper callbacks (mirror Vosk shape exactly)
+  // Set up Whisper callbacks (mirror Vosk shape exactly — Vosk removed)
   whisperAddon.setStatusChangeCallback((status: any) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('whisper-update', { type: 'status', ...status })
@@ -2420,6 +2300,17 @@ app.whenReady().then(async () => {
   whisperAddon.setCaptureControlCallback((control: any) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('whisper-capture-control', control)
+    }
+  })
+  // Dedicated level channel. Previously levels were sent through
+  // whisper-capture-control {action:'update', gain:<level>}, which
+  // the renderer's whisperCapture.ts listener applied as a SETGAIN
+  // to the AudioWorklet — feedback loop with loud mics. Split
+  // into a separate IPC channel so capture-control and level
+  // reporting never mix.
+  whisperAddon.setLevelCallback((level: number) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'level', value: level })
     }
   })
   // Set up OSCLeash status and movement callbacks
@@ -2714,17 +2605,6 @@ function cleanup(source = 'unknown') {
     debug.error(`Error stopping HypeRate addon: ${error.message}`)
     debug.error(`HypeRate cleanup stack trace: ${error.stack}`)
     hyperateAddon = null
-  }
-  try {
-    if (voskAddon) {
-      debug.info('Stopping Vosk addon during cleanup...')
-      voskAddon.stop()
-      voskAddon = null
-      debug.info('Vosk addon cleanup completed')
-    }
-  } catch (error: any) {
-    debug.error(`Error stopping Vosk addon: ${error.message}`)
-    voskAddon = null
   }
   try {
     if (whisperAddon) {

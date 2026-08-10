@@ -14,7 +14,6 @@
     "osc": "2.4.5",
     "portfinder": "^1.0.38",
     "socket.io-client": "4.7.4",
-    "vosk-koffi": "^1.1.1",
     "vrchat": "^2.20.5",
     "vrchat-log-watcher": "^0.5.1",
     "vue": "^3.5.30",
@@ -24,8 +23,9 @@
   "scripts": {
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "prebuild": "node scripts/prepare-bundled-libs.mjs && node scripts/prepare-whisper-libs.mjs",
+    "prebuild": "node scripts/prepare-whisper-libs.mjs || node -e \"console.log('[prepare-whisper-libs] no-op: addon resolves via node_modules + asarUnpack')\"",
     "build": "electron-vite build && electron-builder --dir",
+    "smoke:whisper": "node scripts/smoke-whisper-worker.mjs",
     "pack": "electron-builder --dir",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
@@ -70,9 +70,8 @@
     "asarUnpack": [
       "**/node_modules/@serialport/**/*",
       "**/node_modules/serialport/**/*",
-      "**/node_modules/vosk-koffi/**/*",
-      "**/node_modules/koffi/**/*",
-      "**/node_modules/@kutalia/whisper-node-addon/**/*"
+      "**/node_modules/@kutalia/whisper-node-addon/**/*",
+      "**/out/main/whisper-worker.js"
     ],
     "extraResources": [
       {

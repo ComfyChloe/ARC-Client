@@ -29,7 +29,18 @@ export interface WhisperPreflightResult {
 
 export interface WhisperStatus {
   enabled: boolean
-  engineState: 'stopped' | 'loading-model' | 'running' | 'error'
+  // Mirrors main/containers/whisper/whisper.ts's WhisperEngineState
+  // union, including the new 'preparing' / 'starting' / 'stopping'
+  // phases. The renderer treats 'preparing' / 'loading-model' / 'starting'
+  // all as "not yet listening" (button disabled, label "Starting...").
+  engineState:
+    | 'stopped'
+    | 'preparing'
+    | 'loading-model'
+    | 'starting'
+    | 'running'
+    | 'stopping'
+    | 'error'
   modelState: 'missing' | 'invalid' | 'downloading' | 'extracting' | 'ready'
   modelDir: string | null
   usingDefaultModel: boolean

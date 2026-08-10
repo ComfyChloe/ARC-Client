@@ -1,4 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron'
+
+// ── Whisper IPC payload types ──
+//
+// Subset of WhisperConfig that the renderer is allowed to update.
+// Defined here (instead of imported from main/services/configManager.ts)
+// because the preload script must stay runtime-only — pulling in the
+// configManager pulls in electron + better-sqlite3, which would break
+// the build context isolation boundary.
+interface WhisperConfigUpdate {
+  modelDir?: string | null
+  inputDeviceId?: string | null
+  inputGain?: number
+  minInputLevel?: number
+  minUtteranceMs?: number
+}
+
 const api = {
   getConfig: () => ipcRenderer.invoke('get-config'),
   getServerConfig: () => ipcRenderer.invoke('get-server-config'),
@@ -62,30 +78,19 @@ const api = {
   hyperateSetHistoryConfig: (config: { retentionDays: number }) => ipcRenderer.invoke('hyperate-set-history-config', config),
   hyperateGetCaptureRate: () => ipcRenderer.invoke('hyperate-get-capture-rate'),
   hyperateSetCaptureRate: (config: { rateMs: number }) => ipcRenderer.invoke('hyperate-set-capture-rate', config),
-  // Vosk API
-  voskGetStatus: () => ipcRenderer.invoke('vosk-get-status'),
-  voskPreflight: () => ipcRenderer.invoke('vosk-preflight'),
-  voskStart: () => ipcRenderer.invoke('vosk-start'),
-  voskStop: () => ipcRenderer.invoke('vosk-stop'),
-  voskGetConfig: () => ipcRenderer.invoke('vosk-get-config'),
-  voskUpdateConfig: (config: any) => ipcRenderer.invoke('vosk-update-config', config),
-  voskDownloadModel: () => ipcRenderer.invoke('vosk-download-model'),
-  voskSetInputDevice: (deviceId: string | null) => ipcRenderer.invoke('vosk-set-input-device', deviceId),
-  voskGetAutostart: () => ipcRenderer.invoke('vosk-get-autostart'),
-  voskSetAutostart: (enabled: boolean) => ipcRenderer.invoke('vosk-set-autostart', enabled),
-  voskSendAudio: (chunk: ArrayBuffer, sampleRate: number, level: number) => ipcRenderer.send('vosk-audio-chunk', chunk, sampleRate, level),
-  // Whisper API (mirror of Vosk — separate engine, same UI affordances)
+  // Whisper API (Vosk removed — Whisper is the only speech-recognition engine)
   whisperGetStatus: () => ipcRenderer.invoke('whisper-get-status'),
   whisperPreflight: () => ipcRenderer.invoke('whisper-preflight'),
   whisperStart: () => ipcRenderer.invoke('whisper-start'),
   whisperStop: () => ipcRenderer.invoke('whisper-stop'),
   whisperGetConfig: () => ipcRenderer.invoke('whisper-get-config'),
-  whisperUpdateConfig: (config: any) => ipcRenderer.invoke('whisper-update-config', config),
   whisperDownloadModel: () => ipcRenderer.invoke('whisper-download-model'),
   whisperSetInputDevice: (deviceId: string | null) => ipcRenderer.invoke('whisper-set-input-device', deviceId),
   whisperGetAutostart: () => ipcRenderer.invoke('whisper-get-autostart'),
   whisperSetAutostart: (enabled: boolean) => ipcRenderer.invoke('whisper-set-autostart', enabled),
-  whisperSendAudio: (chunk: ArrayBuffer, sampleRate: number, level: number) => ipcRenderer.send('whisper-audio-chunk', chunk, sampleRate, level),
+  whisperSendAudio: (chunk: ArrayBuffer, sampleRate: number, level: number) =>
+    ipcRenderer.send('whisper-audio-chunk', chunk, sampleRate, level),
+  whisperUpdateConfig: (config: WhisperConfigUpdate) => ipcRenderer.invoke('whisper-update-config', config),
   // OSCLeash API
   oscleashGetStatus: () => ipcRenderer.invoke('oscleash-get-status'),
   oscleashStart: () => ipcRenderer.invoke('oscleash-start'),
@@ -260,17 +265,14 @@ const api = {
   onHyperateUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('hyperate-update', (_event, data) => callback(data))
   },
-  onVoskUpdate: (callback: (data: any) => void) => {
-    ipcRenderer.on('vosk-update', (_event, data) => callback(data))
-  },
-  onVoskCaptureControl: (callback: (data: any) => void) => {
-    ipcRenderer.on('vosk-capture-control', (_event, data) => callback(data))
-  },
   onWhisperUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('whisper-update', (_event, data) => callback(data))
   },
   onWhisperCaptureControl: (callback: (data: any) => void) => {
     ipcRenderer.on('whisper-capture-control', (_event, data) => callback(data))
+  },
+  onWhisperLevel: (callback: (level: number) => void) => {
+    ipcRenderer.on('whisper-level', (_event, level) => callback(level))
   },
   onOgbStatusUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('ogb-status-update', (_event, data) => callback(data))

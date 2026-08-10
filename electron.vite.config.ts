@@ -8,7 +8,13 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'main/index.ts')
+          index: resolve(__dirname, 'main/index.ts'),
+          // Whisper worker_thread entry point. Bundled as a separate
+          // chunk so `new Worker('./whisper-worker.js')` works after
+          // rollup emits it. The worker is listed in package.json
+          // asarUnpack because fs.readFileSync can't read files from
+          // inside the asar virtual FS.
+          'whisper-worker': resolve(__dirname, 'main/containers/whisper/whisper-worker.js')
         }
       }
     }
@@ -22,7 +28,7 @@ export default defineConfig({
           splash: resolve(__dirname, 'preload/splash.ts')
         }
       }
-    }
+    } 
   },
   renderer: {
     root: resolve(__dirname, 'renderer'),

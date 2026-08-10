@@ -12,7 +12,13 @@
         <span>{{ statusText }}</span>
       </div>
       <div class="whisper-action-row">
-        <button class="btn btn-primary" :disabled="busy || status.engineState === 'loading-model' || (!status.enabled && status.modelState !== 'ready')" @click="handleToggle">{{ toggleButtonLabel }}</button>
+        <button
+          class="btn btn-primary"
+          :disabled="busy || isStartingOrPreparing || (!status.enabled && status.modelState !== 'ready')"
+          @click="handleToggle"
+        >
+          {{ toggleButtonLabel }}
+        </button>
         <div class="autostart-toggle-container">
           <span class="autostart-label">Auto-start:</span>
           <div class="autostart-toggle-slider" role="button" tabindex="0" @click="handleToggleAutostart" @keyup.enter="handleToggleAutostart" @keyup.space.prevent="handleToggleAutostart">
@@ -362,20 +368,33 @@ const statusClass = computed(() => {
   const s = status.value
   if (s.engineState === 'error') return 'status-error'
   if (s.engineState === 'running') return 'status-connected'
-  if (s.engineState === 'loading-model') return 'status-connecting'
+  // preparing / loading-model / starting all show the "busy" indicator
+  if (s.engineState === 'preparing' || s.engineState === 'loading-model' || s.engineState === 'starting') {
+    return 'status-connecting'
+  }
   return 'status-disconnected'
+})
+
+const isStartingOrPreparing = computed(() => {
+  const e = status.value.engineState
+  return e === 'preparing' || e === 'loading-model' || e === 'starting'
 })
 
 const statusText = computed(() => {
   const s = status.value
   if (s.engineState === 'error') return `Error: ${s.lastError || 'Unknown error'}`
+  if (s.engineState === 'preparing') return 'Preparing engine...'
   if (s.engineState === 'loading-model') return 'Loading model...'
+  if (s.engineState === 'starting') return 'Starting worker...'
+  if (s.engineState === 'stopping') return 'Stopping...'
   if (s.engineState === 'running') return `Listening${s.sampleRate ? ` (${s.sampleRate} Hz)` : ''}`
   return 'Stopped'
 })
 
 const toggleButtonLabel = computed(() => {
-  if (status.value.engineState === 'loading-model') return 'Starting...'
+  const e = status.value.engineState
+  if (e === 'preparing' || e === 'loading-model' || e === 'starting') return 'Starting...'
+  if (e === 'stopping') return 'Stopping...'
   return status.value.enabled ? 'Stop Whisper' : 'Start Whisper'
 })
 
@@ -1015,57 +1034,3 @@ onMounted(async () => {
   margin-top: 12px;
 }
 </style>
-.whisper-commands-head h3 {
-  margin: 0;
-}
-.whisper-commands-head p {
-  margin: 0 0 12px;
-}
-.whisper-dirty-bar,
-.whisper-confirm-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  margin-bottom: 12px;
-  font-size: 13px;
-}
-.whisper-dirty-bar {
-  background: rgba(241, 196, 15, 0.12);
-  border: 1px solid rgba(241, 196, 15, 0.4);
-}
-.whisper-confirm-bar {
-  background: rgba(231, 76, 60, 0.12);
-  border: 1px solid rgba(231, 76, 60, 0.4);
-}
-.whisper-dirty-actions {
-  display: flex;
-  gap: 8px;
-}
-.whisper-categories-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.whisper-categories-filter,
-.whisper-categories-add {
-  margin: 0;
-}
-.whisper-new-category-row {
-  display: flex;
-  gap: 8px;
-}
-.whisper-new-category-row input {
-  flex: 1;
-}
-.whisper-category-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-.whisper-category-chip {
-  display: inline-flex;
