@@ -79,11 +79,6 @@ const router = createRouter({
       component: () => import('./pages/LovensePage.vue')
     },
     {
-      path: '/vosk',
-      name: 'vosk',
-      component: () => import('./pages/VoskPage.vue')
-    },
-    {
       path: '/whisper',
       name: 'whisper',
       component: () => import('./pages/WhisperPage.vue')
