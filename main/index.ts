@@ -2313,6 +2313,17 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('whisper-update', { type: 'level', value: level })
     }
   })
+  // Dedicated level channel. Previously levels were sent through
+  // whisper-capture-control {action:'update', gain:<level>}, which
+  // the renderer's whisperCapture.ts listener applied as a SETGAIN
+  // to the AudioWorklet — feedback loop with loud mics. Split
+  // into a separate IPC channel so capture-control and level
+  // reporting never mix.
+  whisperAddon.setLevelCallback((level: number) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'level', value: level })
+    }
+  })
   // Set up OSCLeash status and movement callbacks
   oscLeashAddon.setStatusChangeCallback((status: any) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
