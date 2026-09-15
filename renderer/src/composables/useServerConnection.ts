@@ -32,6 +32,8 @@ const isConnected = ref(false)
 const isAuthenticated = ref(false)
 const currentUser = ref<{ username: string } | null>(null)
 const currentAvatar = ref<AvatarInfo | null>(null)
+const localAvatarId = ref<string | null>(null)
+const confirmedAvatarId = ref<string | null>(null)
 const parameters = shallowRef<Record<string, any>>({})
 const panelConnectionsData = ref<Record<string, PanelInfo>>({})
 const wsForwardingEnabled = ref(false)
@@ -92,6 +94,8 @@ export function useServerConnection() {
     isAuthenticated.value = false
     currentUser.value = null
     currentAvatar.value = null
+    localAvatarId.value = null
+    confirmedAvatarId.value = null
     parameters.value = {}
     panelConnectionsData.value = {}
     connectionStatus.value = 'disconnected'
@@ -145,6 +149,8 @@ export function useServerConnection() {
           isAuthenticated.value = false
           currentUser.value = null
           currentAvatar.value = null
+          localAvatarId.value = null
+          confirmedAvatarId.value = null
           parameters.value = {}
           panelConnectionsData.value = {}
           debugLog('Disconnected from WebSocket server - performed memory cleanup')
@@ -173,6 +179,12 @@ export function useServerConnection() {
           username: data.username
         }
         debugLog(`Avatar changed: ${displayName} for user ${data.username ?? 'unknown'}`)
+      })
+      api.onVrchatAvatarChange((data: any) => {
+        localAvatarId.value = typeof data?.id === 'string' && data.id.length > 0 ? data.id : null
+      })
+      api.onWebSocketAvatarStateConfirmed((data: any) => {
+        confirmedAvatarId.value = typeof data?.id === 'string' && data.id.length > 0 ? data.id : null
       })
       api.onWebSocketParameterUpdate((data: any) => {
         if (data.parameters) {
@@ -221,6 +233,8 @@ export function useServerConnection() {
     isAuthenticated,
     currentUser,
     currentAvatar,
+    localAvatarId,
+    confirmedAvatarId,
     parameters,
     panelConnectionsData,
     pendingPanelToggles,

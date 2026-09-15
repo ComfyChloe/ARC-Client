@@ -244,6 +244,12 @@ const api = {
   onWebSocketAvatarChange: (callback: (data: any) => void) => {
     ipcRenderer.on('websocket-avatar-change', (_event, data) => callback(data))
   },
+  onWebSocketAvatarStateConfirmed: (callback: (data: any) => void) => {
+    ipcRenderer.on('websocket-avatar-state-confirmed', (_event, data) => callback(data))
+  },
+  onVrchatAvatarChange: (callback: (data: any) => void) => {
+    ipcRenderer.on('vrchat-avatar-change', (_event, data) => callback(data))
+  },
   onWebSocketParameterUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('websocket-parameter-update', (_event, data) => callback(data))
   },
@@ -295,12 +301,17 @@ const api = {
   onSplashProgress: (callback: (data: any) => void) => {
     ipcRenderer.on('splash-progress', (_event, data) => callback(data))
   },
+  onNoticeBanner: (callback: (data: any) => void) => {
+    ipcRenderer.on('notice-banner', (_event, data) => callback(data))
+  },
   removeAllListeners: (channel: string) => {
     ipcRenderer.removeAllListeners(channel)
   },
   // Shell and clipboard API for VRC Timeline
   openExternal: (url: string) => ipcRenderer.invoke('shell-open-external', url),
-  clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text)
+  clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
+  // Active page telemetry
+  setActivePage: (page: string) => ipcRenderer.send('set-active-page', page)
 }
 contextBridge.exposeInMainWorld('electronAPI', api)
 export type ElectronAPI = typeof api

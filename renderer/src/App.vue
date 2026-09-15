@@ -50,6 +50,36 @@ const {
 useOscLogs()
 useVRChatAPI()
 
+// ── Notice banner toast system ──────────────────────────────────
+interface Notice {
+  id: string
+  level: 'info' | 'warn' | 'error'
+  title: string
+  body: string
+  dismissible: boolean
+  ttlMs: number
+}
+const notices = ref<Notice[]>([])
+function removeNotice(id: string) {
+  const idx = notices.value.findIndex(n => n.id === id)
+  if (idx !== -1) notices.value.splice(idx, 1)
+}
+window.electronAPI.onNoticeBanner((data: Notice) => {
+  if (!data?.id || !data?.title || !data?.body) return
+  const notice: Notice = {
+    id: data.id,
+    level: data.level === 'warn' || data.level === 'error' ? data.level : 'info',
+    title: data.title,
+    body: data.body,
+    dismissible: data.dismissible !== false,
+    ttlMs: typeof data.ttlMs === 'number' && data.ttlMs > 0 ? data.ttlMs : 8000,
+  }
+  notices.value.push(notice)
+  if (notice.ttlMs < Infinity) {
+    setTimeout(() => removeNotice(notice.id), notice.ttlMs)
+  }
+})
+
 const username = ref('')
 const password = ref('')
 const vrchatPaths = ['/vrchat-api', '/auto-inviter', '/autostatus', '/calendar']
@@ -72,6 +102,16 @@ watch(() => route.path, (path) => {
   }
   if (vrchatPaths.includes(path)) {
     vrchatOpen.value = true
+  }
+}, { immediate: true })
+
+// Throttled active-page telemetry (500ms trailing, immediate initial)
+let lastPageEmit = 0
+watch(() => route.path, (path) => {
+  const now = Date.now()
+  if (now - lastPageEmit >= 500) {
+    lastPageEmit = now
+    window.electronAPI.setActivePage(path)
   }
 }, { immediate: true })
 
@@ -369,6 +409,27 @@ function linksBreakdown(panel: PanelInfo): string {
     </router-view>
   </div>
 
+  <!-- Notice toast banners -->
+  <div class="notice-container">
+    <div
+      v-for="notice in notices"
+      :key="notice.id"
+      class="notice-banner"
+      :class="[`notice-${notice.level}`]"
+    >
+      <div class="notice-content">
+        <strong class="notice-title">{{ notice.title }}</strong>
+        <span class="notice-body">{{ notice.body }}</span>
+      </div>
+      <button
+        v-if="notice.dismissible"
+        class="notice-dismiss"
+        type="button"
+        @click="removeNotice(notice.id)"
+      >×</button>
+    </div>
+  </div>
+
   <div class="snow-overlay" :class="{ hidden: !snowEnabled }">
     <div v-for="index in 50" :key="index" class="snow"></div>
   </div>
@@ -469,6 +530,81 @@ function linksBreakdown(panel: PanelInfo): string {
   width: auto;
   margin: 0;
   padding: 0;
+}
+
+/* ── Notice banner toast styles ─────────────────────────────── */
+.notice-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  min-width: 280px;
+  max-width: 360px;
+  pointer-events: all;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  font-size: 0.875rem;
+}
+
+.notice-info {
+  background: #1e3a5f;
+  border-left: 4px solid #3498db;
+  color: #ecf0f1;
+}
+
+.notice-warn {
+  background: #3d2e00;
+  border-left: 4px solid #f39c12;
+  color: #fde8a4;
+}
+
+.notice-error {
+  background: #3d0000;
+  border-left: 4px solid #e74c3c;
+  color: #fadbd8;
+}
+
+.notice-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.notice-title {
+  font-size: 0.9rem;
+}
+
+.notice-body {
+  opacity: 0.9;
+  line-height: 1.4;
+}
+
+.notice-dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.7;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.notice-dismiss:hover {
+  opacity: 1;
 }
 
 </style>
