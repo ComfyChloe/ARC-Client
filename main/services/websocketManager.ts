@@ -318,6 +318,14 @@ class WebSocketManager {
     }
     async connect(credentials: Credentials = {}): Promise<ConnectResult> {
         if (this.socket && this.isConnected) {
+            // Re-announce the current status so a renderer that (re)issues
+            // connect while we're already connected (e.g. after a renderer
+            // reload or login/logout cycle) doesn't get stuck waiting for a
+            // status push that will never come — pushes only fire on changes.
+            this.emit('connection-status', {
+                status: 'connected',
+                user: this.currentUser
+            })
             return { success: true, message: 'Already connected' }
         }
         if (this.socket) {
