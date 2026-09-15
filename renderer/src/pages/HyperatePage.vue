@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useHyperate, type HyperateTracker } from '../composables/useHyperate'
-import { useHeartRateChart } from '../composables/useHeartRateChart'
-import HeartRateChart from '../components/HeartRateChart.vue'
+// Logic lives in the sibling HyperatePage.ts factory — keep this block thin.
+import { createHyperatePageState } from './HyperatePage'
 const {
   status,
   trackers,
@@ -13,9 +11,6 @@ const {
   addTracker,
   removeTracker,
   setPrimary,
-  updateTrackerName
-} = useHyperate()
-const {
   chartData,
   stats,
   isLive,
@@ -24,7 +19,6 @@ const {
   isCustomRange,
   customFromInput,
   customToInput,
-  trackerId,
   loading,
   retentionDays,
   setRange,
@@ -39,118 +33,26 @@ const {
   captureRate,
   setCaptureRate,
   STEP_OPTIONS,
-  toDatetimeLocal
-} = useHeartRateChart()
-const newDeviceId = ref('')
-const newDeviceName = ref('')
-const editingTrackerId = ref<string | null>(null)
-const editName = ref('')
-const isDarkTheme = ref(false)
-let themeObserver: MutationObserver | null = null
-const primaryTracker = computed(() => trackers.value.find((tracker) => tracker.isPrimary) ?? null)
-watch(primaryTracker, (pt) => {
-  if (pt) trackerId.value = pt.deviceId
-}, { immediate: true })
-
-const statusClass = computed(() => {
-  const currentStatus = status.value
-  if (!currentStatus.hasApiKey) return 'status-error'
-  if (currentStatus.enabled && currentStatus.connected) return 'status-connected'
-  if (currentStatus.stopping) return 'status-stopping'
-  if (currentStatus.enabled && (currentStatus.reconnecting || currentStatus.lastError)) return 'status-error'
-  if (currentStatus.enabled) return 'status-connecting'
-  return 'status-disconnected'
-})
-
-const statusText = computed(() => {
-  const currentStatus = status.value
-  if (!currentStatus.hasApiKey) return 'No API Key - Check secrets.json'
-  if (currentStatus.enabled && currentStatus.connected) return 'Connected and Active'
-  if (currentStatus.stopping) return 'Stopping...'
-  if (currentStatus.enabled && currentStatus.reconnecting) {
-    let message = `Reconnecting (${currentStatus.reconnectAttempts}/${currentStatus.maxReconnectAttempts})...`
-    if (currentStatus.lastError) {
-      message += ` - ${currentStatus.lastError}`
-    }
-    return message
-  }
-  if (currentStatus.enabled && currentStatus.lastError) return `Error: ${currentStatus.lastError}`
-  if (currentStatus.enabled) return 'Connecting...'
-  return 'Stopped'
-})
-
-const toggleButtonLabel = computed(() => {
-  const currentStatus = status.value
-  if (!currentStatus.hasApiKey) return 'Missing API Key'
-  if (currentStatus.stopping) return 'Stopping...'
-  if (currentStatus.enabled) return 'Stop HypeRate'
-  return 'Start HypeRate'
-})
-
-const toggleButtonDisabled = computed(() => !status.value.hasApiKey || status.value.stopping)
-
-const currentHeartRate = computed(() => {
-  if (status.value.enabled && heartRate.value > 0) return String(heartRate.value)
-  if (status.value.enabled && primaryTracker.value && primaryTracker.value.lastHeartRate > 0) {
-    return String(primaryTracker.value.lastHeartRate)
-  }
-  return '--'
-})
-
-const primaryTrackerLabel = computed(() => {
-  if (!primaryTracker.value) return 'No primary tracker set'
-  return `Primary: ${primaryTracker.value.name || primaryTracker.value.deviceId}`
-})
-
-async function handleAddTracker() {
-  const deviceId = newDeviceId.value.trim()
-  if (!deviceId) {
-    return
-  }
-  await addTracker(deviceId, newDeviceName.value.trim() || undefined)
-  newDeviceId.value = ''
-  newDeviceName.value = ''
-}
-
-function openEditModal(tracker: HyperateTracker) {
-  editingTrackerId.value = tracker.deviceId
-  editName.value = tracker.name || ''
-}
-
-function closeEditModal() {
-  editingTrackerId.value = null
-  editName.value = ''
-}
-
-async function saveEdit() {
-  if (!editingTrackerId.value) {
-    return
-  }
-  await updateTrackerName(editingTrackerId.value, editName.value.trim())
-  closeEditModal()
-}
-
-function formatLastUpdate(tracker: HyperateTracker) {
-  return tracker.lastUpdate ? new Date(tracker.lastUpdate).toLocaleTimeString() : 'Never'
-}
-
-function syncThemeState() {
-  if (typeof document === 'undefined') {
-    return
-  }
-  isDarkTheme.value = document.body.classList.contains('dark-theme')
-}
-
-onMounted(() => {
-  syncThemeState()
-  themeObserver = new MutationObserver(syncThemeState)
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] })
-})
-
-onUnmounted(() => {
-  themeObserver?.disconnect()
-  themeObserver = null
-})
+  toDatetimeLocal,
+  isDarkTheme,
+  newDeviceId,
+  newDeviceName,
+  editingTrackerId,
+  editName,
+  primaryTracker,
+  trackerId,
+  statusClass,
+  statusText,
+  toggleButtonLabel,
+  toggleButtonDisabled,
+  currentHeartRate,
+  primaryTrackerLabel,
+  handleAddTracker,
+  openEditModal,
+  closeEditModal,
+  saveEdit,
+  formatLastUpdate
+} = createHyperatePageState()
 </script>
 
 <template>

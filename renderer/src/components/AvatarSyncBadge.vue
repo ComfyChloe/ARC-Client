@@ -1,20 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-
+// Logic lives in the sibling AvatarSyncBadge.ts factory — keep this block thin.
+import { createAvatarSyncBadgeState } from './AvatarSyncBadge'
 const props = defineProps<{
   localAvatarId: string | null
   confirmedAvatarId: string | null
 }>()
-
-const state = computed(() => {
-  if (!props.localAvatarId || !props.confirmedAvatarId) return 'unknown'
-  return props.localAvatarId === props.confirmedAvatarId ? 'matched' : 'mismatch'
-})
-
-function shortId(value: string | null): string {
-  if (!value) return 'Unknown'
-  return value.length > 16 ? `...${value.slice(-12)}` : value
-}
+const { state, shortId } = createAvatarSyncBadgeState(props)
 </script>
 
 <template>

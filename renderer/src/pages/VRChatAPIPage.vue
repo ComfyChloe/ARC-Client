@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useVRChatAPI } from '../composables/useVRChatAPI'
-
+// Logic lives in the sibling VRChatAPIPage.ts factory — keep this block thin.
+import { createVRChatAPIPageState } from './VRChatAPIPage'
 const {
   status,
   stats,
@@ -18,7 +18,7 @@ const {
   logout,
   shareWithARC,
   checkLinkStatus
-} = useVRChatAPI()
+} = createVRChatAPIPageState()
 </script>
 
 <template>
