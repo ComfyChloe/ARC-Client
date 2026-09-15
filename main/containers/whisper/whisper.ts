@@ -12,7 +12,7 @@
 //     resamples to 16 kHz mono, and calls
 //     @kutalia/whisper-node-addon's transcribe({pcmf32}) on flush
 //   * Worker posts back {type:'result', text}, {type:'level', value},
-//     {type:'command-fired', ...}, {type:'status', state}, {type:'error'}
+//     {type:'status', state}, {type:'result', ...}, {type:'error'}
 //   * WhisperAddon translates worker events into the existing
 //     whisper-update / whisper-capture-control IPC channels so the
 //     renderer composable (useWhisper.ts) doesn't need to change.
@@ -113,7 +113,6 @@ interface WorkerCommandInit {
   type: 'init'
   modelPath: string
   language?: string
-  commands?: ReadonlyArray<WorkerCommandBase>
 }
 interface WorkerCommandConfigure {
   type: 'configure'
@@ -140,15 +139,6 @@ type WorkerCommand =
   | WorkerCommandPreflight
   | WorkerCommandShutdown
 
-interface WorkerCommandBase {
-  id: string
-  name: string
-  phrase: string
-  reversePhrase?: string | null
-  matchType: 'exact' | 'contains'
-  enabled: boolean
-}
-
 interface WorkerEventReady {
   type: 'ready'
   modelPath: string
@@ -168,12 +158,6 @@ interface WorkerEventResult {
   text: string
   confidence: number
 }
-interface WorkerEventCommandFired {
-  type: 'command-fired'
-  commandId: string
-  commandName: string
-  direction: 'forward' | 'reverse'
-}
 interface WorkerEventError {
   type: 'error'
   message: string
@@ -183,7 +167,6 @@ type WorkerEvent =
   | WorkerEventStatus
   | WorkerEventLevel
   | WorkerEventResult
-  | WorkerEventCommandFired
   | WorkerEventError
 
 // ── Model constants (Node owns the model download) ──────────────────
@@ -272,7 +255,6 @@ function isWorkerEvent(value: unknown): value is WorkerEvent {
     evt.type === 'status' ||
     evt.type === 'level' ||
     evt.type === 'result' ||
-    evt.type === 'command-fired' ||
     evt.type === 'error'
   )
 }
@@ -656,21 +638,13 @@ export class WhisperAddon {
     // ── Step 5: send init, await 'ready' with 15s timeout ──
     const initOk = await new Promise<boolean>((resolve) => {
       this.pendingInitResolve = resolve
-      const commands: ReadonlyArray<WorkerCommandBase> = configManager
-        .getWhisperConfig()
-        .commands.map((c: WhisperCommand) => ({
-          id: c.id,
-          name: c.name,
-          phrase: c.phrase,
-          reversePhrase: c.reversePhrase ?? null,
-          matchType: c.matchType,
-          enabled: c.enabled
-        }))
+      // Commands are NOT sent to the worker — matching happens in main
+      // (see matchCommands) reading live config at fire time, so edits
+      // apply without an engine restart.
       this.sendWorker({
         type: 'init',
         modelPath,
-        language: 'en',
-        commands
+        language: 'en'
       })
       // Tightened from 60s → 15s: model load for tiny.en takes ~2-4s
       // on a warm disk; if the worker hasn't reported ready in 15s,
@@ -1090,44 +1064,85 @@ export class WhisperAddon {
           text: evt.text,
           confidence: evt.confidence
         })
+        // Command matching lives in MAIN (not the worker) so the worker
+        // stays a pure whisper.cpp transcription shim. Matching reads the
+        // live config at fire time, so command edits apply immediately
+        // without restarting the engine.
+        this.matchCommands(evt.text)
         break
-      case 'command-fired': {
-        // Fire OSC for the matched command via oscService.
-        const cfg = configManager.getWhisperConfig()
-        const cmd = cfg.commands.find((c: WhisperCommand) => c.id === evt.commandId)
-        if (cmd && this.oscService) {
-          for (const p of cmd.parameters) {
-            const value =
-              evt.direction === 'reverse' && p.reverseValue !== undefined && p.reverseValue !== null
-                ? p.reverseValue
-                : p.value
-            // Pass a fully-typed OSC arg list (matches the OscServiceLike
-            // interface). The concrete OscService.sendOscArgs sanitizes
-            // NaN/Infinity numeric values and maps bool args to T/F tags.
-            try {
-              this.oscService.sendOscArgs(p.address, [{ type: p.type, value: value as number | string | boolean }])
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err)
-              debug.warn(`[whisper] OSC send failed for ${p.address}: ${message}`)
-            }
-          }
-        }
-        this.onResult?.({
-          isFinal: true,
-          text: '',
-          confidence: 1.0,
-          matchedCommandId: evt.commandId,
-          matchedCommandName: evt.commandName,
-          matchedDirection: evt.direction
-        })
-        break
-      }
       case 'error':
         this.lastError = evt.message
         debug.error(`[whisper] worker: ${this.lastError}`)
         this.pushStatus()
         break
     }
+  }
+
+  // ── Command matching + firing (main process) ─────────────────────
+
+  // Match the utterance against enabled commands and fire the first hit.
+  // Match order follows config order; forward phrase takes precedence over
+  // reverse phrase within a command (same semantics the worker had).
+  private matchCommands(text: string): void {
+    const commands = configManager.getWhisperConfig().commands
+    for (const cmd of commands) {
+      if (!cmd || !cmd.enabled) continue
+      if (cmd.phrase && WhisperAddon.textMatches(text, cmd.phrase, cmd.matchType)) {
+        this.fireCommand(cmd, 'forward')
+        return
+      }
+      if (cmd.reversePhrase && WhisperAddon.textMatches(text, cmd.reversePhrase, cmd.matchType)) {
+        this.fireCommand(cmd, 'reverse')
+        return
+      }
+    }
+  }
+
+  private static textMatches(text: string, phrase: string, matchType: 'exact' | 'contains'): boolean {
+    if (matchType === 'contains') {
+      return text.toLowerCase().indexOf(phrase.toLowerCase()) >= 0
+    }
+    return text.toLowerCase().trim() === phrase.toLowerCase()
+  }
+
+  // Fire a matched command: send each parameter via oscService, then notify
+  // the renderer so the transcript shows the command badge.
+  private fireCommand(cmd: WhisperCommand, direction: 'forward' | 'reverse'): void {
+    if (!this.oscService) return
+    for (const p of cmd.parameters) {
+      // Reverse resolution: explicit reverseValue wins; otherwise bool
+      // params AUTO-INVERT the forward value (the UI's "Auto (inverted)"
+      // option promises this and previously lied — main sent the same
+      // value on reverse). Non-bool params fall back to the forward value.
+      let value: string | number | boolean = p.value
+      if (direction === 'reverse') {
+        if (p.reverseValue !== undefined && p.reverseValue !== null) {
+          value = p.reverseValue
+        } else if (p.type === 'bool' && typeof p.value === 'boolean') {
+          value = !p.value
+        }
+      }
+      debug.info(
+        `[whisper] OSC → ${p.address} = ${JSON.stringify(value)} (${direction}) [cmd: ${cmd.name}]`
+      )
+      // Pass a fully-typed OSC arg list (matches the OscServiceLike
+      // interface). The concrete OscService.sendOscArgs sanitizes
+      // NaN/Infinity numeric values and maps bool args to T/F tags.
+      try {
+        this.oscService.sendOscArgs(p.address, [{ type: p.type, value: value as number | string | boolean }])
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        debug.warn(`[whisper] OSC send failed for ${p.address}: ${message}`)
+      }
+    }
+    this.onResult?.({
+      isFinal: true,
+      text: '',
+      confidence: 1.0,
+      matchedCommandId: cmd.id,
+      matchedCommandName: cmd.name,
+      matchedDirection: direction
+    })
   }
 
   private pushStatus(): void {

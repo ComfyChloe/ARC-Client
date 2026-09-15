@@ -59,7 +59,6 @@ export interface WhisperCommand {
   reversePhrase?: string
   matchType: 'exact' | 'contains'
   enabled: boolean
-  category?: string
   parameters: WhisperCommandParam[]
 }
 
@@ -69,7 +68,6 @@ export interface WhisperConfig {
   minInputLevel: number
   inputGain: number
   minUtteranceMs: number
-  categories: string[]
   commands: WhisperCommand[]
   [key: string]: unknown
 }
@@ -586,13 +584,16 @@ class ConfigManager {
   // will fall off naturally on the next config write.
   getWhisperConfig(): WhisperConfig {
     const stored = (this.config.whisper || {}) as Partial<WhisperConfig>
+    // Legacy "categories" / per-command "category" keys from older configs
+    // are intentionally dropped here — categories were removed from the UI
+    // and data model. Rebuilding the object without them means the next
+    // config write purges them from userdata/config.json.
     this.config.whisper = {
       modelPath: stored.modelPath ?? null,
       inputDeviceId: stored.inputDeviceId ?? null,
       minInputLevel: typeof stored.minInputLevel === 'number' ? stored.minInputLevel : 0,
       inputGain: typeof stored.inputGain === 'number' ? stored.inputGain : 1,
       minUtteranceMs: typeof stored.minUtteranceMs === 'number' ? stored.minUtteranceMs : 350,
-      categories: Array.isArray(stored.categories) ? stored.categories : [],
       commands: Array.isArray(stored.commands) ? stored.commands : []
     }
     return { ...this.config.whisper }

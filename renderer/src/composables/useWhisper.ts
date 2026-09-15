@@ -16,7 +16,6 @@ export interface WhisperCommand {
   reversePhrase?: string
   matchType: 'exact' | 'contains'
   enabled: boolean
-  category?: string
   parameters: WhisperCommandParam[]
 }
 
@@ -100,7 +99,6 @@ const defaultStatus: WhisperStatus = {
 // transcript/status survive page navigation
 const status = ref<WhisperStatus>({ ...defaultStatus })
 const commands = ref<WhisperCommand[]>([])
-const categories = ref<string[]>([])
 const autostart = ref(false)
 // Whisper has no per-chunk partial results — emit a single placeholder string
 // the UI can show while the engine is "listening for an utterance"
@@ -109,7 +107,7 @@ const transcript = ref<WhisperTranscriptEntry[]>([])
 const inputLevel = ref(0)
 const downloadProgress = ref<WhisperDownloadProgress | null>(null)
 const devices = ref<WhisperInputDevice[]>([])
-const lastFired = ref<{ name: string; direction: 'forward' | 'reverse'; at: number } | null>(null)
+const lastFired = ref<{ id: string; name: string; direction: 'forward' | 'reverse'; at: number } | null>(null)
 const collapsedIds = ref<Set<string>>(new Set())
 const lastSavedAt = ref<number>(0)
 const dirtyCommandIds = ref<Set<string>>(new Set())
@@ -169,7 +167,15 @@ function registerListeners() {
           ...transcript.value
         ].slice(0, MAX_TRANSCRIPT_ENTRIES)
         if (data.matchedCommandName) {
-          lastFired.value = { name: data.matchedCommandName, direction: data.matchedDirection, at: Date.now() }
+          // Keyed by command ID (not name) so two commands that share a
+          // name don't both flash when only one fired. Falls back to name
+          // matching for old push payloads that lack matchedCommandId.
+          lastFired.value = {
+            id: typeof data.matchedCommandId === 'string' ? data.matchedCommandId : '',
+            name: data.matchedCommandName,
+            direction: data.matchedDirection,
+            at: Date.now()
+          }
         }
       }
     } else if (data.type === 'download-progress') {
@@ -210,7 +216,6 @@ async function refreshConfig() {
   const config = await api.whisperGetConfig()
   if (config) {
     commands.value = config.commands || []
-    categories.value = config.categories || []
     dirtyCommandIds.value = new Set()
     ensureCollapsedOnFirstLoad(commands.value)
   }
@@ -251,8 +256,7 @@ function coerceValue(raw: string | number | boolean | null | undefined, type: Wh
 
 function buildPayload() {
   return {
-    commands: JSON.parse(JSON.stringify(commands.value.map(normalizeCommand))),
-    categories: [...categories.value]
+    commands: JSON.parse(JSON.stringify(commands.value.map(normalizeCommand)))
   }
 }
 
@@ -271,7 +275,6 @@ export function normalizeCommand(command: WhisperCommand): WhisperCommand {
     reversePhrase: command.reversePhrase?.trim() || undefined,
     matchType: command.matchType,
     enabled: !!command.enabled,
-    category: command.category?.trim() || undefined,
     parameters: command.parameters
       .filter(param => param.address.trim())
       .map(param => ({
@@ -423,44 +426,6 @@ export function useWhisper() {
     await refreshConfig()
   }
 
-  async function addCategory(name: string): Promise<boolean> {
-    const trimmed = name.trim()
-    if (!trimmed) return false
-    if (categories.value.includes(trimmed)) return false
-    categories.value = [...categories.value, trimmed]
-    try {
-      await persistAll()
-      return true
-    } catch {
-      categories.value = categories.value.filter(c => c !== trimmed)
-      return false
-    }
-  }
-
-  async function removeCategory(name: string): Promise<void> {
-    const prevCategories = [...categories.value]
-    const prevCommands = commands.value.map(c => ({ ...c }))
-    categories.value = categories.value.filter(c => c !== name)
-    commands.value = commands.value.map(c => c.category === name ? { ...c, category: undefined } : c)
-    for (const c of commands.value) {
-      if (c.category === undefined && prevCommands.find(p => p.id === c.id)?.category === name) {
-        markDirty(c.id)
-      }
-    }
-    try {
-      await persistAll()
-      for (const c of commands.value) markClean(c.id)
-    } catch {
-      categories.value = prevCategories
-      commands.value = prevCommands
-    }
-  }
-
-  function setCommandCategory(commandId: string, category: string | undefined): void {
-    commands.value = commands.value.map(c => c.id === commandId ? { ...c, category } : c)
-    markDirty(commandId)
-  }
-
   function fireInput(commandId: string): void { markDirty(commandId) }
 
   async function commitCommands(next: WhisperCommand[]) {
@@ -481,7 +446,6 @@ export function useWhisper() {
   return {
     status,
     commands,
-    categories,
     autostart,
     partial,
     transcript,
@@ -509,9 +473,6 @@ export function useWhisper() {
     saveAllDirty,
     discardAllDirty,
     toggleCollapse,
-    addCategory,
-    removeCategory,
-    setCommandCategory,
     fireInput,
     isDirty,
     isSaving,

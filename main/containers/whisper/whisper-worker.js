@@ -15,7 +15,7 @@
 //     via transferable ArrayBuffer (zero-copy).
 //
 // Protocol (mirrors the Vosk-era worker pattern):
-//   main -> worker: {type:'init', modelPath, language, commands}
+//   main -> worker: {type:'init', modelPath, language}
 //                  {type:'waveform', chunk, sampleRate, level}  (transferable)
 //                  {type:'preflight'}
 //                  {type:'shutdown'}
@@ -23,8 +23,12 @@
 //                  {type:'status', state, message}
 //                  {type:'level', value}
 //                  {type:'result', text, confidence}
-//                  {type:'command-fired', commandId, commandName, direction}
 //                  {type:'error', message}
+//
+// NOTE: command matching is NOT done here. The worker is a pure
+// whisper.cpp transcription shim — main process owns matching + OSC
+// firing (see WhisperAddon.matchCommands/fireCommand in whisper.ts),
+// reading the live config so command edits apply without a restart.
 // =====================================================================
 
 'use strict';
@@ -47,7 +51,6 @@ if (!parentPort) {
 let transcribe = null;
 let modelPath = null;
 let language = 'en';
-let commands = [];
 
 function loadBinding() {
   if (transcribe !== null) return transcribe;
@@ -243,42 +246,9 @@ async function runInference(int16Pcm) {
     if (!text) return;
 
     post({ type: 'result', text, confidence: 1.0 });
-    matchCommand(text);
   } catch (err) {
     postError('transcribe() failed', err);
   }
-}
-
-function matchCommand(text) {
-  for (const cmd of commands) {
-    if (!cmd || !cmd.enabled) continue;
-    if (cmd.phrase && textMatches(text, cmd.phrase, cmd.matchType)) {
-      post({
-        type: 'command-fired',
-        commandId: cmd.id,
-        commandName: cmd.name,
-        direction: 'forward'
-      });
-      return;
-    }
-    if (cmd.reversePhrase && textMatches(text, cmd.reversePhrase, cmd.matchType)) {
-      post({
-        type: 'command-fired',
-        commandId: cmd.id,
-        commandName: cmd.name,
-        direction: 'reverse'
-      });
-      return;
-    }
-  }
-}
-
-function textMatches(text, phrase, matchType) {
-  if (!phrase) return false;
-  if (matchType === 'contains') {
-    return text.toLowerCase().indexOf(phrase.toLowerCase()) >= 0;
-  }
-  return text.toLowerCase().trim() === phrase.toLowerCase();
 }
 
 // ── Message dispatch ────────────────────────────────────────────────
@@ -293,7 +263,6 @@ parentPort.on('message', (msg) => {
         }
         modelPath = msg.modelPath;
         language = typeof msg.language === 'string' ? msg.language : 'en';
-        commands = Array.isArray(msg.commands) ? msg.commands : [];
         postStatus('ready', `model=${path.basename(modelPath)}`);
         post({ type: 'ready', modelPath, sampleRate: WHISPER_SAMPLE_RATE });
         return;
