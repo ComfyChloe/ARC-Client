@@ -282,7 +282,7 @@ function isWorkerEvent(value: unknown): value is WorkerEvent {
 export class WhisperAddon {
   private worker: Worker | null = null
   private workerFile: string | null = null
-  private modelDir: string | null = null
+  private modelPath: string | null = null
   private oscService: OscServiceLike | null = null
   private engineState: WhisperEngineState = 'stopped'
   private modelState: WhisperModelState = 'missing'
@@ -317,7 +317,7 @@ export class WhisperAddon {
 
   constructor() {
     const cfg = configManager.getWhisperConfig()
-    this.modelDir = cfg.modelDir ?? null
+    this.modelPath = cfg.modelPath ?? null
     this.currentInputDeviceId = cfg.inputDeviceId ?? null
     this.currentInputGain = cfg.inputGain ?? 1.0
     this.currentMinInputLevel = cfg.minInputLevel ?? 0
@@ -525,7 +525,6 @@ export class WhisperAddon {
       debug.error(`[whisper] start: failed at loading-model — ${this.lastError}`)
       return false
     }
-    this.modelDir = path.dirname(modelPath)
 
     // ── Step 3: spawn worker thread ──
     // Bump the generation so any handler bound to a previous worker
@@ -792,7 +791,7 @@ export class WhisperAddon {
       enabled: this.isRunning,
       engineState: this.engineState,
       modelState: this.modelState,
-      modelPath: this.modelDir,
+      modelPath: this.modelPath,
       lastError: this.lastError,
       bridgePath: this.workerFile,
       inputDeviceId: this.currentInputDeviceId,
@@ -809,7 +808,7 @@ export class WhisperAddon {
     const ok = configManager.updateWhisperConfig(config)
     if (ok) {
       const cfg = configManager.getWhisperConfig()
-      this.modelDir = cfg.modelDir ?? null
+      this.modelPath = cfg.modelPath ?? null
       this.currentInputDeviceId = cfg.inputDeviceId ?? null
       this.currentInputGain = cfg.inputGain ?? 1.0
       this.currentMinInputLevel = cfg.minInputLevel ?? 0
@@ -856,7 +855,7 @@ export class WhisperAddon {
   // ── Model download (Node-owned) ──
 
   async downloadModel(): Promise<{ success: boolean; error?: string; modelPath?: string }> {
-    const dest = this.modelDir ?? path.join(app.getPath('userData'), 'whisper-models')
+    const dest = path.join(app.getPath('userData'), 'whisper-models')
     try {
       await fsp.mkdir(dest, { recursive: true })
     } catch (err) {
@@ -864,7 +863,6 @@ export class WhisperAddon {
       return { success: false, error: `Failed to create model dir: ${message}` }
     }
     const modelPath = path.join(dest, MODEL_NAME)
-    this.modelDir = dest
     this.onDownloadProgress?.({ state: 'downloading', percent: 0, downloadedBytes: 0, totalBytes: 0 })
     try {
       await this.downloadFile(MODEL_URL, modelPath, (downloaded, total) => {
@@ -918,7 +916,8 @@ export class WhisperAddon {
       return { success: false, error: message }
     }
     this.modelState = 'ready'
-    configManager.updateWhisperConfig({ modelDir: dest })
+    this.modelPath = modelPath
+    configManager.updateWhisperConfig({ modelPath })
     this.onDownloadProgress?.({ state: 'ready', percent: 100, message: 'Model downloaded and verified' })
     this.pushStatus()
     return { success: true, modelPath }
@@ -1053,8 +1052,11 @@ export class WhisperAddon {
               evt.direction === 'reverse' && p.reverseValue !== undefined && p.reverseValue !== null
                 ? p.reverseValue
                 : p.value
+            // Pass a fully-typed OSC arg list (matches the OscServiceLike
+            // interface). The concrete OscService.sendOscArgs sanitizes
+            // NaN/Infinity numeric values and maps bool args to T/F tags.
             try {
-              this.oscService.sendMessage(p.address, [{ type: p.type, value: value as number | string | boolean }])
+              this.oscService.sendOscArgs(p.address, [{ type: p.type, value: value as number | string | boolean }])
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err)
               debug.warn(`[whisper] OSC send failed for ${p.address}: ${message}`)
@@ -1090,7 +1092,7 @@ export class WhisperAddon {
       enabled: this.isRunning,
       engineState: this.engineState,
       modelState: this.modelState,
-      modelPath: this.modelDir,
+      modelPath: this.modelPath,
       lastError: this.lastError,
       message: this.lastError,
       inputDeviceId: this.currentInputDeviceId,
@@ -1100,13 +1102,9 @@ export class WhisperAddon {
   }
 
   private resolveModelPath(): string | null {
-    if (this.modelDir) {
-      const p = path.join(this.modelDir, MODEL_NAME)
-      if (fs.existsSync(p)) return p
-    }
-    const p = path.join(app.getPath('userData'), 'whisper-models', MODEL_NAME)
-    if (fs.existsSync(p)) return p
-    return null
+    if (!this.modelPath) return null
+    if (!fs.existsSync(this.modelPath)) return null
+    return this.modelPath
   }
 }
 

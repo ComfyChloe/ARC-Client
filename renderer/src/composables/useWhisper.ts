@@ -42,8 +42,7 @@ export interface WhisperStatus {
     | 'stopping'
     | 'error'
   modelState: 'missing' | 'invalid' | 'downloading' | 'extracting' | 'ready'
-  modelDir: string | null
-  usingDefaultModel: boolean
+  modelPath: string | null
   modelListUrl: string
   sampleRate: number | null
   inputDeviceId: string | null
@@ -85,8 +84,7 @@ const defaultStatus: WhisperStatus = {
   enabled: false,
   engineState: 'stopped',
   modelState: 'missing',
-  modelDir: null,
-  usingDefaultModel: true,
+  modelPath: null,
   modelListUrl: 'https://github.com/ggerganov/whisper.cpp/tree/main/models',
   sampleRate: null,
   inputDeviceId: null,
@@ -348,7 +346,7 @@ export function useWhisper() {
     return result
   }
 
-  async function updateSettings(partialConfig: { minInputLevel?: number; inputGain?: number; modelDir?: string | null; minUtteranceMs?: number }) {
+  async function updateSettings(partialConfig: { minInputLevel?: number; inputGain?: number; modelPath?: string | null; minUtteranceMs?: number }) {
     const result = await api.whisperUpdateConfig(partialConfig)
     await refreshStatus()
     return result

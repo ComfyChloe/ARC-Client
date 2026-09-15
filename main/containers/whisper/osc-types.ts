@@ -22,5 +22,5 @@ export interface OscMessageArg {
 }
 
 export interface OscServiceLike {
-  sendMessage(address: string, args: ReadonlyArray<OscMessageArg>): void
+  sendOscArgs(address: string, args: ReadonlyArray<OscMessageArg>): void
 }

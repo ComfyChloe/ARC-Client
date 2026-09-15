@@ -87,6 +87,10 @@ class OSCQueryService extends EventEmitter {
     vrchatListenerPort: dgram.Socket | null
     bonjour: InstanceType<typeof Bonjour> | null
     bonjourService: Service | null
+    // Separate service for the OSC UDP port. VRChat's OSC UDP layer
+    // looks up _osc._udp.local to find where to send OSC data — without
+    // this, only the OSCQuery HTTP query path works.
+    oscUdpBonjourService: Service | null
     isRunning: boolean
     appName: string | null
     assignedAppName: string | null
@@ -125,6 +129,7 @@ class OSCQueryService extends EventEmitter {
         this.vrchatListenerPort = null // Passive listener on port 9001 (VRChat's default output)
         this.bonjour = null
         this.bonjourService = null
+        this.oscUdpBonjourService = null
         this.isRunning = false
         this.appName = null // Will be generated once and reused
         this.assignedAppName = null // Persistent service name (assigned once, reused on restart)
@@ -504,8 +509,10 @@ class OSCQueryService extends EventEmitter {
      */
     _getLocalIpAddress(): string | null {
         const interfaces = os.networkInterfaces()
-        // Skip known virtual/tunnel adapter name patterns; prefer physical NICs
-        const VIRTUAL_PATTERNS = /vEthernet|docker|Loopback|Pseudo|isatap|6to4|Teredo|tun\d|tap\d|vpn/i
+        // Skip known virtual/tunnel adapter name patterns; prefer physical NICs.
+        // Also skip Linux Docker/LXC bridges (bridge, br-*) — they have routable
+        // IPs that confuse mDNS advertising on Linux hosts.
+        const VIRTUAL_PATTERNS = /vEthernet|docker|Loopback|Pseudo|isatap|6to4|Teredo|tun\d|tap\d|vpn|^bridge|^br-/i
         for (const name of Object.keys(interfaces)) {
             if (VIRTUAL_PATTERNS.test(name)) continue
             for (const iface of interfaces[name]!) {
@@ -529,7 +536,7 @@ class OSCQueryService extends EventEmitter {
      */
     _getLocalIpAddresses(): string[] {
         const interfaces = os.networkInterfaces()
-        const VIRTUAL_PATTERNS = /vEthernet|docker|Loopback|Pseudo|isatap|6to4|Teredo|tun\d|tap\d|vpn/i
+        const VIRTUAL_PATTERNS = /vEthernet|docker|Loopback|Pseudo|isatap|6to4|Teredo|tun\d|tap\d|vpn|^bridge|^br-/i
         const addresses = []
         for (const name of Object.keys(interfaces)) {
             if (VIRTUAL_PATTERNS.test(name)) continue
@@ -625,16 +632,42 @@ class OSCQueryService extends EventEmitter {
                 console.log(`[OSCQuery] Binding mDNS to interface: ${this.bindAddress}`)
             }
             this.bonjour = new Bonjour(bonjourOpts)
-            // Advertise service via mDNS with error handling for name conflicts
+            // Advertise service via mDNS with error handling for name conflicts.
+            //
+            // We deliberately omit the `host` field on bonjour.publish(): the
+            // explicit IP string was forcing mdns-sd to use it as the SRV
+            // target, which on Windows produces a service with no A record
+            // (Bonjour Browser showed the service name but no IP), and on
+            // Linux leaks the bridge6 IPv6 link-local record alongside the
+            // IPv4 record. Letting mdns-sd auto-pick A records from local
+            // IPv4 interfaces resolves both. The HTTP host header for
+            // OSCQuery clients is still served explicitly via /HOST_INFO
+            // using oscAdvertisedIp — that's a separate mechanism.
             try {
                 this.bonjourService = this.bonjour.publish({
                     name: this.appName,
                     type: 'oscjson',
                     port: this.httpPort!,
                     protocol: 'tcp',
-                    host: this.oscAdvertisedIp ?? undefined  // Explicit IP for VLAN support
                 })
-                console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}'`)
+                console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}' (oscjson)`)
+                // Also advertise the OSC UDP service. VRChat's OSC layer
+                // looks up _osc._udp.local to find where to send OSC data;
+                // without this, only OSCQuery HTTP queries work, which
+                // breaks plain OSC UDP delivery for some clients.
+                // Non-fatal — OSCQuery HTTP path still works as fallback.
+                try {
+                    this.oscUdpBonjourService = this.bonjour.publish({
+                        name: this.appName,
+                        type: 'osc',
+                        port: this.oscPort!,
+                        protocol: 'udp',
+                    })
+                    console.log(`[OSCQuery] OSC UDP service advertised via mDNS as '${this.appName}' on port ${this.oscPort}`)
+                } catch (udpPublishError) {
+                    console.warn('[OSCQuery] Failed to advertise OSC UDP service (non-fatal):', udpPublishError)
+                    this.oscUdpBonjourService = null
+                }
             } catch (publishError: unknown) {
                 // If service name is already in use, try to destroy and retry once
                 if ((publishError as Error).message && (publishError as Error).message.includes('already in use')) {
@@ -656,9 +689,23 @@ class OSCQueryService extends EventEmitter {
                             type: 'oscjson',
                             port: this.httpPort!,
                             protocol: 'tcp',
-                            host: this.oscAdvertisedIp ?? undefined  // Explicit IP
                         })
-                        console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}' (after retry)`)
+                        console.log(`[OSCQuery] Service advertised via mDNS as '${this.appName}' (oscjson, after retry)`)
+                        // Re-publish the OSC UDP service against the new
+                        // Bonjour instance so we don't leak the previous
+                        // publisher.
+                        try {
+                            this.oscUdpBonjourService = this.bonjour.publish({
+                                name: this.appName,
+                                type: 'osc',
+                                port: this.oscPort!,
+                                protocol: 'udp',
+                            })
+                            console.log(`[OSCQuery] OSC UDP service advertised via mDNS as '${this.appName}' on port ${this.oscPort} (after retry)`)
+                        } catch (udpRetryError) {
+                            console.warn('[OSCQuery] Failed to advertise OSC UDP service after retry (non-fatal):', udpRetryError)
+                            this.oscUdpBonjourService = null
+                        }
                     } catch (retryError) {
                         console.error('[OSCQuery] Failed to publish service after retry:', retryError)
                         throw retryError
@@ -1144,6 +1191,17 @@ class OSCQueryService extends EventEmitter {
                     this.bonjourService = null
                 } catch (error) {
                     console.error('[OSCQuery] Error stopping Bonjour service:', error)
+                }
+            }
+            // Stop the OSC UDP mDNS service (advertised as _osc._udp).
+            // Tear it down before destroying the Bonjour instance so the
+            // unregister packet actually goes out.
+            if (this.oscUdpBonjourService) {
+                try {
+                    this.oscUdpBonjourService.stop?.()
+                    this.oscUdpBonjourService = null
+                } catch (error) {
+                    console.error('[OSCQuery] Error stopping OSC UDP Bonjour service:', error)
                 }
             }
             // Destroy Bonjour instance

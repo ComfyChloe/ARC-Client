@@ -331,11 +331,21 @@ class OscService extends EventEmitter {
       case 'f':
         oscType = 'f'
         oscValue = parseFloat(String(value))
+        // Never emit NaN to the OSC wire — coerce to 0 with a warning.
+        if (!Number.isFinite(oscValue as number)) {
+          debug.warn(`[oscService] NaN/Infinity float coerced to 0 for ${address}`)
+          oscValue = 0
+        }
         break
       case 'int':
       case 'i':
         oscType = 'i'
         oscValue = parseInt(String(value))
+        // Same guard for ints.
+        if (!Number.isFinite(oscValue as number)) {
+          debug.warn(`[oscService] NaN/Infinity int coerced to 0 for ${address}`)
+          oscValue = 0
+        }
         break
       case 'bool':
       case 'T':
@@ -351,6 +361,10 @@ class OscService extends EventEmitter {
       default:
         oscType = 'f'
         oscValue = parseFloat(String(value))
+        if (!Number.isFinite(oscValue as number)) {
+          debug.warn(`[oscService] NaN/Infinity default-coerced to 0 for ${address}`)
+          oscValue = 0
+        }
     }
     const message: OscMessage = {
       address: address,
@@ -382,6 +396,55 @@ class OscService extends EventEmitter {
       return false
     }
   }
+  /**
+   * Send a fully-constructed OSC arg list (the shape consumed by the
+   * `OscServiceLike` interface used by the whisper addon and any
+   * other caller that already has typed args). Each arg is validated:
+   * NaN/Infinity numeric values are coerced to 0 with a warning, and
+   * bool args become OSC `T`/`F` tags based on the truthiness of
+   * their value.
+   */
+  sendOscArgs(address: string, args: ReadonlyArray<{ type: 'f' | 'i' | 'bool' | 's'; value?: unknown }>): boolean {
+    if (!this.primaryUdpPort || !this.isListening) {
+      return false
+    }
+    if (!Array.isArray(args) || args.length === 0) {
+      debug.warn(`[oscService] sendOscArgs(${address}) called with empty args`)
+      return false
+    }
+    const sanitizedArgs = args.map((a) => {
+      if (a.type === 'bool') {
+        return { type: a.value ? 'T' : 'F' } as { type: 'T' | 'F' }
+      }
+      if (a.type === 'f' || a.type === 'i') {
+        const num = Number(a.value)
+        if (!Number.isFinite(num)) {
+          debug.warn(`[oscService] NaN/Infinity ${a.type} coerced to 0 for ${address}`)
+          return { type: a.type, value: 0 }
+        }
+        return { type: a.type, value: num }
+      }
+      return { type: 's' as const, value: String(a.value ?? '') }
+    })
+    const message: OscMessage = { address, args: sanitizedArgs as unknown as OscMessage['args'] }
+    try {
+      this.primaryUdpPort.send(message)
+      this.emit('messageSent', { address, value: args, type: 'args-array' })
+      return true
+    } catch (error) {
+      const err = error as Error
+      debug.error(`Error sending primary OSC message (args-array): ${err.message}`, {
+        address,
+        args,
+        stack: err.stack
+      })
+      this.emit('error', error)
+      return false
+    }
+  }
+  // The original 3-arg `sendMessage` overload body is retained above
+  // for the scalar (address, value, type) signature so non-whisper
+  // callers (OscPage test sender, etc.) keep working unchanged.
   setTargetConfig(targetAddress: string, targetPort: number): void {
     this.targetAddress = targetAddress
     this.targetPort = targetPort

@@ -12,6 +12,12 @@ interface AppSettings {
   ogbAutostart: boolean
   oscAutostart: boolean
   xsOverlayAutostart: boolean
+  // When true (default), ARC-Client batches + sends autostatus
+  // join/leave events to ARC-OSC. When false, the LocationTracker
+  // still collects events into its in-process queue (in order) but
+  // does NOT emit them on the wire until the toggle is re-enabled —
+  // at which point the backlog is flushed in arrival order.
+  telemetryEnabled: boolean
   theme: string
   lastUsername: string
   savedPassword: string
@@ -58,7 +64,7 @@ export interface WhisperCommand {
 }
 
 export interface WhisperConfig {
-  modelDir: string | null
+  modelPath: string | null
   inputDeviceId: string | null
   minInputLevel: number
   inputGain: number
@@ -186,6 +192,7 @@ class ConfigManager {
         ogbAutostart: false,
         oscAutostart: false,
         xsOverlayAutostart: false,
+        telemetryEnabled: true,
         theme: 'light',
         lastUsername: '',
         savedPassword: '',
@@ -356,6 +363,7 @@ class ConfigManager {
       ogbAutostart: this.config.appSettings?.ogbAutostart || false,
       oscAutostart: this.config.appSettings?.oscAutostart || false,
       xsOverlayAutostart: this.config.appSettings?.xsOverlayAutostart || false,
+      telemetryEnabled: this.config.appSettings?.telemetryEnabled ?? true,
       theme: this.config.appSettings?.theme || 'light',
       lastUsername: this.config.appSettings?.lastUsername || '',
       savedPassword: this.config.appSettings?.savedPassword || '',
@@ -391,6 +399,9 @@ class ConfigManager {
     }
     if (settings.xsOverlayAutostart !== undefined) {
       this.config.appSettings.xsOverlayAutostart = settings.xsOverlayAutostart
+    }
+    if (settings.telemetryEnabled !== undefined) {
+      this.config.appSettings.telemetryEnabled = settings.telemetryEnabled
     }
     if (settings.theme !== undefined) {
       this.config.appSettings.theme = settings.theme
@@ -576,7 +587,7 @@ class ConfigManager {
   getWhisperConfig(): WhisperConfig {
     const stored = (this.config.whisper || {}) as Partial<WhisperConfig>
     this.config.whisper = {
-      modelDir: stored.modelDir ?? null,
+      modelPath: stored.modelPath ?? null,
       inputDeviceId: stored.inputDeviceId ?? null,
       minInputLevel: typeof stored.minInputLevel === 'number' ? stored.minInputLevel : 0,
       inputGain: typeof stored.inputGain === 'number' ? stored.inputGain : 1,
