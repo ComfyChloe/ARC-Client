@@ -50,6 +50,7 @@ export function createWhisperPageState() {
   const modelDirDraft = ref('')
   const modelDirError = ref('')
   const modelPathDraft = ref('')
+  const advancedOpen = ref(false)
   watch(status, (s) => {
     minLevelDraft.value = s.minInputLevel
     gainDraft.value = Math.round(s.inputGain * 100)
@@ -116,6 +117,9 @@ export function createWhisperPageState() {
   const hasCommands = computed(() => commands.value.length > 0)
   function isCollapsed(commandId: string): boolean {
     return collapsedIds.value.has(commandId)
+  }
+  function toggleAdvanced() {
+    advancedOpen.value = !advancedOpen.value
   }
   function firedRecently(command: WhisperCommand): 'forward' | 'reverse' | null {
     const fired = lastFired.value
@@ -303,6 +307,7 @@ export function createWhisperPageState() {
     modelDirDraft,
     modelDirError,
     modelPathDraft,
+    advancedOpen,
     // computed
     anyDirty,
     dirtyCount,
@@ -316,6 +321,7 @@ export function createWhisperPageState() {
     hasCommands,
     // helpers
     isCollapsed,
+    toggleAdvanced,
     firedRecently,
     timeLabel,
     reverseBoolDisplay,

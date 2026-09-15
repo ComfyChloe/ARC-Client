@@ -62,13 +62,19 @@
         <label>Min input level: {{ minLevelDraft }}% <span class="whisper-hint">(Whisper only records above this level; 0 disables the gate)</span></label>
         <input type="range" min="0" max="100" step="1" v-model.number="minLevelDraft" @change="commitAudioSettings" />
       </div>
-      <div class="form-group whisper-slider-row">
-        <label>Input gain: {{ gainDraft }}%</label>
-        <input type="range" min="0" max="300" step="5" v-model.number="gainDraft" @change="commitAudioSettings" />
-      </div>
-      <div class="form-group whisper-slider-row">
-        <label>Min utterance: {{ minUtteranceDraft }} ms <span class="whisper-hint">(utterances shorter than this are dropped as noise blips; default 350 ms)</span></label>
-        <input type="range" min="0" max="2000" step="50" v-model.number="minUtteranceDraft" @change="commitAudioSettings" />
+      <button class="whisper-advanced-toggle" :class="{ expanded: advancedOpen }" type="button" @click="toggleAdvanced">
+        <span class="arrow">&#9656;</span>
+        <span>Advanced</span>
+      </button>
+      <div v-if="advancedOpen" class="whisper-advanced-section">
+        <div class="form-group whisper-slider-row">
+          <label>Input gain: {{ gainDraft }}% <span class="whisper-hint">(applied live to the mic signal)</span></label>
+          <input type="range" min="0" max="300" step="5" v-model.number="gainDraft" @change="commitAudioSettings" />
+        </div>
+        <div class="form-group whisper-slider-row">
+          <label>Min utterance: {{ minUtteranceDraft }} ms <span class="whisper-hint">(utterances shorter than this are dropped as noise blips; default 350 ms)</span></label>
+          <input type="range" min="0" max="2000" step="50" v-model.number="minUtteranceDraft" @change="commitAudioSettings" />
+        </div>
       </div>
     </div>
 
@@ -295,6 +301,7 @@ const {
   modelDirDraft,
   modelDirError,
   modelPathDraft,
+  advancedOpen,
   anyDirty,
   dirtyCount,
   statusClass,
@@ -306,6 +313,7 @@ const {
   downloadLabel,
   hasCommands,
   isCollapsed,
+  toggleAdvanced,
   firedRecently,
   timeLabel,
   reverseBoolDisplay,
@@ -661,6 +669,43 @@ const {
 }
 .whisper-collapse-toggle:not(.expanded) .arrow {
   transform: rotate(0deg);
+}
+/* Advanced settings section under the Audio Input card — same chevron
+   language as the command collapse toggles. */
+.whisper-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: inherit;
+  opacity: 0.7;
+  transition: opacity 100ms linear;
+}
+.whisper-advanced-toggle:hover {
+  opacity: 1;
+}
+.whisper-advanced-toggle .arrow {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1;
+  transform: rotate(90deg);
+  transition: transform 100ms linear;
+}
+.whisper-advanced-toggle:not(.expanded) .arrow {
+  transform: rotate(0deg);
+}
+.whisper-advanced-section {
+  border-left: 2px solid rgba(127, 127, 127, 0.25);
+  padding-left: 12px;
+  margin: 6px 0 4px 4px;
 }
 .whisper-command-meta {
   display: flex;

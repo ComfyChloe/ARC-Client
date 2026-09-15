@@ -196,11 +196,16 @@ export function registerWhisperCapture(): void {
         void startCapture(control.deviceId ?? null, control.gain ?? 1)
       } else if (control.action === 'stop') {
         stopCapture()
+      } else if (control.action === 'update') {
+        // Live gain changes from the settings UI. The historical
+        // feedback-loop bug was caused by the LEVEL value being routed
+        // through this action — that now flows over the dedicated
+        // onWhisperLevel channel below, so an 'update' here always
+        // carries an explicit, user-chosen gain multiplier.
+        if (typeof control.gain === 'number') {
+          setGain(control.gain)
+        }
       }
-      // The `update` action used to carry the live RMS level value
-      // in `gain`. We no longer treat that as a SETGAIN — see the
-      // note on the onWhisperLevel listener below. The capture-
-      // control IPC now only carries start/stop actions.
     })
     // Dedicated level channel — fires every AudioWorklet chunk
     // (every ~85ms at 48 kHz). Forwards to registered levelListeners

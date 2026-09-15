@@ -272,6 +272,7 @@ export class WhisperAddon {
   private currentInputDeviceId: string | null = null
   private currentInputGain = 1.0
   private currentMinInputLevel = 0
+  private currentMinUtteranceMs = 350
   private isRunning = false
   private pendingInitResolve: ((ok: boolean) => void) | null = null
   // Monotonically incremented on every start(). The 'exit' handler
@@ -303,6 +304,7 @@ export class WhisperAddon {
     this.currentInputDeviceId = cfg.inputDeviceId ?? null
     this.currentInputGain = cfg.inputGain ?? 1.0
     this.currentMinInputLevel = cfg.minInputLevel ?? 0
+    this.currentMinUtteranceMs = cfg.minUtteranceMs ?? 350
     this.workerFile = resolveWorkerFile()
     // Re-derive modelState from the persisted modelPath so a model
     // downloaded (or custom-applied) in a previous session is not
@@ -680,7 +682,7 @@ export class WhisperAddon {
     this.sendWorker({
       type: 'configure',
       minInputLevel: this.currentMinInputLevel,
-      minUtteranceMs: 350,
+      minUtteranceMs: this.currentMinUtteranceMs,
       maxUtteranceMs: 30_000
     })
 
@@ -823,10 +825,13 @@ export class WhisperAddon {
     if (ok) {
       const cfg = configManager.getWhisperConfig()
       const previousModelPath = this.modelPath
+      const previousGain = this.currentInputGain
+      const previousMinUtteranceMs = this.currentMinUtteranceMs
       this.modelPath = cfg.modelPath ?? null
       this.currentInputDeviceId = cfg.inputDeviceId ?? null
       this.currentInputGain = cfg.inputGain ?? 1.0
       this.currentMinInputLevel = cfg.minInputLevel ?? 0
+      this.currentMinUtteranceMs = cfg.minUtteranceMs ?? 350
       // When the model path changed (custom model applied or cleared),
       // re-validate the file and push the new state immediately.
       // Without this the UI kept showing the stale modelState until a
@@ -840,9 +845,19 @@ export class WhisperAddon {
         this.sendWorker({
           type: 'configure',
           minInputLevel: this.currentMinInputLevel,
-          minUtteranceMs: 350,
+          minUtteranceMs: this.currentMinUtteranceMs,
           maxUtteranceMs: 30_000
         })
+        // Live-apply a changed input gain to the running AudioWorklet.
+        // The renderer's capture handler treats action 'update' with an
+        // explicit gain as a setGain (level events flow over the
+        // dedicated onWhisperLevel channel, so no feedback loop).
+        if (previousGain !== this.currentInputGain) {
+          this.onCaptureControl?.({
+            action: 'update',
+            gain: this.currentInputGain
+          })
+        }
       }
     }
     return ok
