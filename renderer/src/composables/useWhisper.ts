@@ -143,8 +143,14 @@ function ensureCollapsedOnFirstLoad(list: WhisperCommand[]): void {
 
 function registerListeners() {
   if (listenersRegistered) return
-  listenersRegistered = true
   const api = useElectronAPI()
+  // Only mark registered AFTER the bridge is reachable and listeners
+  // are actually attached. Previously the flag was set before the
+  // onWhisperUpdate call — if useElectronAPI() threw on an early
+  // mount, the flag stayed true forever and every whisper-update push
+  // from the main process was silently dropped, leaving the UI stuck
+  // on whatever status was last pulled. Navigating away/back masked it
+  // because WhisperPage's onMounted calls refreshStatus() again.
   api.onWhisperUpdate((data: any) => {
     if (data.type === 'status') {
       const { type: _type, ...rest } = data
@@ -174,10 +180,13 @@ function registerListeners() {
         totalBytes: data.totalBytes ?? 0,
         error: data.error
       }
-      if (data.state === 'done') {
+      // Main process emits state:'ready' on successful download; the
+      // renderer's downloadProgress type only declared 'done'. Accept
+      // both so the bar auto-clears.
+      if (data.state === 'done' || data.state === 'ready') {
         void refreshStatus()
         setTimeout(() => {
-          if (downloadProgress.value?.state === 'done') downloadProgress.value = null
+          if (downloadProgress.value?.state === data.state) downloadProgress.value = null
         }, 1500)
       }
     }
@@ -185,6 +194,7 @@ function registerListeners() {
   onWhisperLevel((level: number) => {
     inputLevel.value = level
   })
+  listenersRegistered = true
 }
 
 async function refreshStatus() {
@@ -312,13 +322,15 @@ export function useWhisper() {
   async function toggle(): Promise<{ success: boolean; error?: string }> {
     if (status.value.enabled) {
       const result = await api.whisperStop()
+      // Always pull after a state change — the push event is the
+      // first-source signal, but a final pull guarantees the UI
+      // reflects truth even if the push was dropped (e.g. early mount
+      // before listeners were registered).
       await refreshStatus()
       return result ?? { success: false }
     }
     const result = await api.whisperStart()
-    if (!result?.success) {
-      await refreshStatus()
-    }
+    await refreshStatus()
     return result ?? { success: false }
   }
 

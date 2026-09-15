@@ -28,20 +28,18 @@ interface CaptureControlPayload {
 }
 
 interface ElectronAPI {
-  onWhisperCaptureControl(cb: (control: CaptureControlPayload) => void): () => void
+  onWhisperCaptureControl(cb: (control: CaptureControlPayload) => void): void
   whisperSendAudio(chunk: ArrayBuffer, sampleRate: number, level: number): void
   // Dedicated level channel. Level events used to flow through
   // onWhisperCaptureControl with action='update' and gain=<level>,
   // which we mistakenly applied as a SETGAIN to the AudioWorklet —
   // causing a feedback loop on loud mics. Split this out so the
   // UI level meter and the mic gain are independent.
-  onWhisperLevel(cb: (level: number) => void): () => void
-}
-
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI
-  }
+  onWhisperLevel(cb: (level: number) => void): void
+  // Note: the canonical Window.electronAPI global type lives in
+  // renderer/src/env.d.ts (auto-derived from preload). We declare a
+  // narrow local shape here so `api()` below is correctly typed
+  // without redeclaring the global.
 }
 
 let audioContext: AudioContext | null = null

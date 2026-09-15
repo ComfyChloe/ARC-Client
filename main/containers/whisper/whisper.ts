@@ -322,6 +322,46 @@ export class WhisperAddon {
     this.currentInputGain = cfg.inputGain ?? 1.0
     this.currentMinInputLevel = cfg.minInputLevel ?? 0
     this.workerFile = resolveWorkerFile()
+    // Re-derive modelState from the persisted modelPath so a model
+    // downloaded (or custom-applied) in a previous session is not
+    // reported as 'missing' on every fresh app start — which made the
+    // UI prompt a redownload even though the file was on disk.
+    this.refreshModelState()
+  }
+
+  // Validate the configured model file on disk and update modelState
+  // accordingly. Called from the constructor (persisted path from a
+  // previous session) and whenever the model path changes (download
+  // completion, custom model apply, clear).
+  private refreshModelState(): void {
+    if (!this.modelPath) {
+      this.modelState = 'missing'
+      return
+    }
+    if (!fs.existsSync(this.modelPath)) {
+      this.modelState = 'missing'
+      return
+    }
+    try {
+      const stat = fs.statSync(this.modelPath)
+      if (stat.size < MODEL_MIN_BYTES) {
+        this.modelState = 'invalid'
+        return
+      }
+      const fh = fs.openSync(this.modelPath, 'r')
+      try {
+        const buf = Buffer.alloc(4)
+        fs.readSync(fh, buf, 0, 4, 0)
+        const magic = buf.readUInt32LE(0)
+        this.modelState = magic === GGML_MAGIC ? 'ready' : 'invalid'
+      } finally {
+        fs.closeSync(fh)
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      debug.warn(`[whisper] refreshModelState: failed to validate ${this.modelPath}: ${message}`)
+      this.modelState = 'invalid'
+    }
   }
 
   // ── Callback registration (mirrors old addon's interface) ──
@@ -808,10 +848,19 @@ export class WhisperAddon {
     const ok = configManager.updateWhisperConfig(config)
     if (ok) {
       const cfg = configManager.getWhisperConfig()
+      const previousModelPath = this.modelPath
       this.modelPath = cfg.modelPath ?? null
       this.currentInputDeviceId = cfg.inputDeviceId ?? null
       this.currentInputGain = cfg.inputGain ?? 1.0
       this.currentMinInputLevel = cfg.minInputLevel ?? 0
+      // When the model path changed (custom model applied or cleared),
+      // re-validate the file and push the new state immediately.
+      // Without this the UI kept showing the stale modelState until a
+      // restart, and the applied path was never verified.
+      if (previousModelPath !== this.modelPath) {
+        this.refreshModelState()
+        this.pushStatus()
+      }
       // Push the updated gate configuration to the running worker.
       if (this.isRunning) {
         this.sendWorker({
