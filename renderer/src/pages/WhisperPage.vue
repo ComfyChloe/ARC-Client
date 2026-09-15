@@ -971,6 +971,33 @@ onMounted(async () => {
   font-weight: 600;
   font-size: 14px;
 }
+/* Bare inputs/selects in the command head + param table sit outside
+   .form-group, so they miss the global form styling and render as
+   default browser controls (white boxes) that clash with the page —
+   most visibly in dark theme. Mirror the .form-group look here. */
+.whisper-command-head input[type='text'],
+.whisper-command-head select {
+  padding: 8px 10px;
+  border: 2px solid #ecf0f1;
+  border-radius: 5px;
+  font-size: 13px;
+  background: #fff;
+  color: #2c3e50;
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+.whisper-command-head input[type='text']:focus,
+.whisper-command-head select:focus {
+  outline: none;
+  border-color: #3498db;
+}
+.whisper-command-head .whisper-command-name {
+  width: 100%;
+}
+.whisper-command-head .whisper-match-select,
+.whisper-command-head .whisper-category-select {
+  width: auto;
+  min-width: 110px;
+}
 .whisper-command-meta {
   display: flex;
   gap: 6px;
@@ -1030,7 +1057,17 @@ onMounted(async () => {
 .whisper-param-table select {
   width: 100%;
   font-size: 12px;
-  padding: 2px 4px;
+  padding: 6px 8px;
+  border: 2px solid #ecf0f1;
+  border-radius: 4px;
+  background: #fff;
+  color: #2c3e50;
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+.whisper-param-table input:focus,
+.whisper-param-table select:focus {
+  outline: none;
+  border-color: #3498db;
 }
 .whisper-add-param-row {
   margin-top: 6px;
@@ -1042,109 +1079,130 @@ onMounted(async () => {
 /* Dark-theme overrides — keep page styles co-located with their
    light-mode counterparts. Uses the same palette as `.card` +
    AutoStatus preset cards (bg #2b2b2b / border #454545 / text #ecf0f1). */
-:global(body.dark-theme) .whisper-commands-head h3 {
+/* NOTE: the whole selector must live INSIDE :global(...) — writing
+   `:global(body.dark-theme) .foo` makes the scoped-CSS compiler emit
+   `body.dark-theme { ... }` with the descendant part dropped, so the
+   overrides style <body> instead of the target elements and dark
+   theme silently never applies. Verified against the compiled CSS in
+   out/renderer/assets/WhisperPage-*.css. */
+:global(body.dark-theme .whisper-commands-head h3) {
   color: #ecf0f1;
 }
-:global(body.dark-theme) .whisper-commands-head p,
-:global(body.dark-theme) .whisper-hint,
-:global(body.dark-theme) .whisper-hint-block {
+:global(body.dark-theme .whisper-commands-head p),
+:global(body.dark-theme .whisper-hint),
+:global(body.dark-theme .whisper-hint-block) {
   color: #95a5a6;
 }
-:global(body.dark-theme) .whisper-field-text {
+:global(body.dark-theme .whisper-field-text) {
   color: #ecf0f1;
 }
-:global(body.dark-theme) .whisper-model-path {
+:global(body.dark-theme .whisper-model-path) {
   color: #95a5a6;
 }
-:global(body.dark-theme) .whisper-progress-label {
+:global(body.dark-theme .whisper-progress-label) {
   color: #95a5a6;
 }
-:global(body.dark-theme) .whisper-error-text,
-:global(body.dark-theme) .whisper-progress-error {
+:global(body.dark-theme .whisper-error-text),
+:global(body.dark-theme .whisper-progress-error) {
   color: #ff6b5b;
 }
-:global(body.dark-theme) .whisper-empty {
+:global(body.dark-theme .whisper-empty) {
   color: #95a5a6;
 }
-:global(body.dark-theme) .whisper-partial {
+:global(body.dark-theme .whisper-partial) {
   background: rgba(255, 255, 255, 0.05);
   color: #95a5a6;
 }
-:global(body.dark-theme) .whisper-partial.active {
+:global(body.dark-theme .whisper-partial.active) {
   background: rgba(46, 204, 113, 0.12);
   color: #2ecc71;
 }
-:global(body.dark-theme) .whisper-transcript {
+:global(body.dark-theme .whisper-transcript) {
   background: rgba(255, 255, 255, 0.02);
   border-color: #454545;
 }
-:global(body.dark-theme) .whisper-transcript-entry {
+:global(body.dark-theme .whisper-transcript-entry) {
   border-color: rgba(255, 255, 255, 0.06);
 }
-:global(body.dark-theme) .whisper-transcript-time {
+:global(body.dark-theme .whisper-transcript-time) {
   color: #95a5a6;
 }
-:global(body.dark-theme) .whisper-transcript-text {
+:global(body.dark-theme .whisper-transcript-text) {
   color: #ecf0f1;
 }
-:global(body.dark-theme) .whisper-meter {
+:global(body.dark-theme .whisper-meter) {
   background: rgba(255, 255, 255, 0.08);
 }
-:global(body.dark-theme) .whisper-meter-wrap > label {
+:global(body.dark-theme .whisper-meter-wrap > label) {
   color: #ecf0f1;
 }
-:global(body.dark-theme) .whisper-meter-caption {
+:global(body.dark-theme .whisper-meter-caption) {
   color: #95a5a6;
 }
-:global(body.dark-theme) .whisper-meter-threshold {
+:global(body.dark-theme .whisper-meter-threshold) {
   background: rgba(255, 255, 255, 0.35);
 }
-:global(body.dark-theme) .whisper-progress {
+:global(body.dark-theme .whisper-progress) {
   background: rgba(255, 255, 255, 0.08);
 }
-:global(body.dark-theme) .whisper-command {
+:global(body.dark-theme .whisper-command) {
   background: #2b2b2b;
   border-color: #454545;
 }
-:global(body.dark-theme) .whisper-command.fired {
+:global(body.dark-theme .whisper-command.fired) {
   background: rgba(46, 204, 113, 0.12);
   border-color: #2ecc71;
 }
-:global(body.dark-theme) .whisper-command.dirty {
+:global(body.dark-theme .whisper-command.dirty) {
   border-color: #f1c40f;
 }
-:global(body.dark-theme) .whisper-command-name {
+:global(body.dark-theme .whisper-command-name) {
   color: #ecf0f1;
 }
-:global(body.dark-theme) .whisper-command-category {
+:global(body.dark-theme .whisper-command-category) {
   color: #5dade2;
 }
-:global(body.dark-theme) .whisper-fired-badge {
+:global(body.dark-theme .whisper-fired-badge) {
   color: #58d68d;
 }
-:global(body.dark-theme) .whisper-dirty-badge {
+:global(body.dark-theme .whisper-dirty-badge) {
   color: #f4d03f;
 }
-:global(body.dark-theme) .whisper-inline-check {
+:global(body.dark-theme .whisper-inline-check) {
   color: #ecf0f1;
 }
-:global(body.dark-theme) .whisper-param-table th,
-:global(body.dark-theme) .whisper-param-table td {
+:global(body.dark-theme .whisper-command-head input[type='text']),
+:global(body.dark-theme .whisper-command-head select),
+:global(body.dark-theme .whisper-param-table input),
+:global(body.dark-theme .whisper-param-table select) {
+  background: #2c3e50;
+  color: #ecf0f1;
+  border-color: #34495e;
+}
+:global(body.dark-theme .whisper-command-head input[type='text']:focus),
+:global(body.dark-theme .whisper-command-head select:focus),
+:global(body.dark-theme .whisper-param-table input:focus),
+:global(body.dark-theme .whisper-param-table select:focus) {
+  border-color: #3498db;
+  background: #34495e;
+}
+:global(body.dark-theme .whisper-param-table th),
+:global(body.dark-theme .whisper-param-table td) {
   border-color: #454545;
 }
-:global(body.dark-theme) .whisper-param-table th {
+:global(body.dark-theme .whisper-param-table th) {
   background: rgba(255, 255, 255, 0.04);
   color: #ecf0f1;
 }
-:global(body.dark-theme) .whisper-dirty-bar {
+:global(body.dark-theme .whisper-dirty-bar) {
   background: rgba(241, 196, 15, 0.1);
   color: #f4d03f;
 }
-:global(body.dark-theme) .whisper-confirm-bar {
+:global(body.dark-theme .whisper-confirm-bar) {
   background: rgba(231, 76, 60, 0.1);
   color: #f1948a;
 }
-:global(body.dark-theme) .whisper-category-chip {
+:global(body.dark-theme .whisper-category-chip) {
   background: #2b2b2b;
   border-color: #454545;
   color: #ecf0f1;
