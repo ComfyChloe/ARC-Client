@@ -1,13 +1,13 @@
 import './bootstrap' // MUST be first — sets userData path before service constructors
 import { app, BrowserWindow, ipcMain, dialog, session, shell, clipboard } from 'electron'
 import path from 'node:path'
-import fs from 'node:fs'
 import { encryptData, decryptData } from './services/encryption'
 import osc from 'osc'
 import debug from './services/debugger'
 import OscService from './services/oscService'
 import { OSCQueryService } from './services/oscQueryService'
 import HyperateAddon from './containers/hyperate/hyperate'
+import WhisperAddon from './containers/whisper/whisper'
 import OSCLeashAddon from './containers/oscleash/oscleash'
 import VRChatAPIContainer from './containers/vrchat-api/vrchat-api'
 import OscGoesBrrrAddon from './containers/oscgoesbrrr/oscgoesbrrr'
@@ -29,6 +29,7 @@ let oscEnabled = false
 let wsManager: any
 let serverConfig: any = configManager.getServerConfig()
 let hyperateAddon: any
+let whisperAddon: any
 let oscLeashAddon: any
 let vrchatApiContainer: any
 let oscGoesBrrrAddon: any
@@ -269,6 +270,20 @@ function initWebSocket() {
     wsManager.setConfig({
       serverUrl: serverConfig.websocketServerUrl
     })
+    wsManager.setModuleAccessors({
+      getEnabledModules: () => {
+        const mods: string[] = []
+        if (xsOverlayAddon?.isEnabled?.()) mods.push('xs-overlay')
+        if (hyperateAddon?.isEnabled?.()) mods.push('hyperate')
+        if (whisperAddon?.isEnabled?.()) mods.push('whisper')
+        if (oscLeashAddon?.isEnabled?.()) mods.push('osc-leash')
+        if (oscGoesBrrrAddon?.isEnabled?.()) mods.push('osc-goes-brrr')
+        if (openShockContainer?.isEnabled?.()) mods.push('open-shock')
+        if (autoStatusContainer?.isEnabled?.()) mods.push('autostatus')
+        if (arcLinkContainer?.isEnabled?.()) mods.push('arclink')
+        return mods
+      }
+    })
     wsManager.on('connection-status', (data: any) => {
       sendToRenderer('websocket-status', data)
       if (data.status === 'connected') {
@@ -325,6 +340,9 @@ function initWebSocket() {
         xsOverlayAddon.handleAvatarChange(data)
       }
     })
+    wsManager.on('avatar-state-confirmed', (data: any) => {
+      sendToRenderer('websocket-avatar-state-confirmed', data)
+    })
     wsManager.on('parameter-update', (data: any) => {
       sendToRenderer('websocket-parameter-update', data)
     })
@@ -380,6 +398,26 @@ function initWebSocket() {
       debug.info(`Unsuppress denied for ${data?.address}: ${data?.reason}`)
       sendToRenderer('unsuppress-denied', data)
     })
+    // Handle server-sent notice/banner
+    wsManager.on('notice', (data: any) => {
+      sendToRenderer('notice-banner', data)
+    })
+    // Handle server config-sync delta (defaultAppSettings merge)
+    wsManager.on('config-sync', (data: any) => {
+      if (!data?.defaultAppSettings) return
+      const incoming = data.defaultAppSettings as Record<string, unknown>
+      const current = configManager.getAppSettings()
+      // Only fill keys that are currently undefined; never overwrite user-set values
+      const merged = { ...current }
+      for (const key of Object.keys(incoming)) {
+        if (merged[key] === undefined) {
+          merged[key] = incoming[key]
+        }
+      }
+      configManager.updateAppSettings(merged)
+      debug.info(`config-sync merged ${Object.keys(incoming).length} default(s) into appSettings`)
+      sendToRenderer('app-settings', configManager.getAppSettings())
+    })
   }
 }
 function initOscServer() {
@@ -399,7 +437,7 @@ function initOscServer() {
   }
   debug.info(`Initializing OSC service with port ${serverConfig.legacyOscPort}`)
   oscService = new OscService()
-  oscService.on('ready', (config: any) => {
+  oscService.on('ready', async (config: any) => {
     updateSplashProgress(80, 'OSC service ready')
     debug.logOscServiceReady(config)
     sendToRenderer('osc-server-status', {
@@ -417,11 +455,37 @@ function initOscServer() {
       oscLeashAddon.oscService = oscService
       debug.info('Updated OSCLeash addon with OSC service')
     }
+    // Update Whisper addon with OSC service if it's running
+    if (whisperAddon && whisperAddon.isEnabled()) {
+      whisperAddon.oscService = oscService
+      debug.info('Updated Whisper addon with OSC service')
+    }
     // Start autostart addons now that OSC service is ready
     const appSettings = configManager.getAppSettings()
+    // Apply the persisted autostatus telemetry toggle to the
+    // websocket manager so the engine-packet drain respects it.
+    // Backlog (events collected while telemetry was off) stays
+    // queued in the LocationTracker until the next drain trigger.
+    if (wsManager) {
+      wsManager.setTelemetryEnabled(appSettings.telemetryEnabled ?? true)
+    }
     if (appSettings.hyperateAutostart && hyperateAddon && !hyperateAddon.isEnabled()) {
       debug.info('Starting HypeRate addon based on autostart setting (OSC service ready)...')
       hyperateAddon.start(oscService)
+    }
+    if (appSettings.whisperAutostart && whisperAddon && !whisperAddon.isEnabled()) {
+      // Awaited + logged so prod-startup failures (asar path,
+      // worker spawn hang, init timeout) are visible in the
+      // Electron log. Without the await, the return value was
+      // silently dropped and the renderer would sit at
+      // "Starting..." forever with no diagnostic trail.
+      debug.info('[autostart] whisper: starting (oscService ready)')
+      const ok = await whisperAddon.start(oscService)
+      const status = whisperAddon.getStatus()
+      debug.info(
+        `[autostart] whisper: start returned ${ok}; engineState=${status.engineState}` +
+          (status.lastError ? `; lastError=${status.lastError}` : '')
+      )
     }
     if (appSettings.oscleashAutostart && oscLeashAddon && !oscLeashAddon.isEnabled()) {
       debug.info('Starting OSCLeash addon based on autostart setting (OSC-Query ready)...')
@@ -464,7 +528,7 @@ function initOscServer() {
     oscService.start()
     ;(global as any).oscService = oscService
     // Initialize OSC Query service for automatic VRChat discovery
-    initOscQueryService()
+    void initOscQueryService()
   }
 }
 async function initOscQueryService() {
@@ -544,6 +608,12 @@ async function initOscQueryService() {
             autoStatusContainer.recordAvatarChange()
           }
           autoStatusContainer.handleOscMessage(oscData)
+        }
+        if (oscData.address === '/avatar/change') {
+          const localAvatarId = typeof oscData.value === 'string' && oscData.value.length > 0
+            ? oscData.value
+            : null
+          sendToRenderer('vrchat-avatar-change', { id: localAvatarId })
         }
         // Send to renderer for logging
         sendToRenderer('osc-received', {
@@ -731,7 +801,7 @@ ipcMain.handle('set-config', (_event, newConfig: any) => {
   if (oscQueryBindAddressChanged) {
     debug.info('OSC-Query bind address changed, restarting OSC-Query service')
     sendToRenderer('oscquery-status', { status: 'restarting' })
-    initOscQueryService()
+    void initOscQueryService()
   }
   if (!portsChanged && oscService && oscEnabled && additionalConnectionsChanged) {
     debug.info('Only additional connections changed, updating without restarting OSC service')
@@ -753,6 +823,14 @@ ipcMain.handle('set-app-settings', (_event, newSettings: any) => {
   debug.info(`App settings updated`)
   if (!result) {
     debug.error('Failed to save app settings to config file')
+  }
+  // Push autostatus telemetry toggle immediately to the websocket
+  // manager so the next engine ping respects the new state and any
+  // backlog drains in arrival order (no restart required).
+  if (newSettings && Object.prototype.hasOwnProperty.call(newSettings, 'telemetryEnabled')) {
+    if (wsManager) {
+      wsManager.setTelemetryEnabled(!!newSettings.telemetryEnabled)
+    }
   }
   return configManager.getAppSettings()
 })
@@ -867,6 +945,11 @@ ipcMain.handle('websocket-disconnect', () => {
     return { success: true, message: 'Already disconnected' }
   } catch (error: any) {
     return { success: false, error: error.message }
+  }
+})
+ipcMain.on('set-active-page', (_e, page: unknown) => {
+  if (wsManager && typeof page === 'string' && page.length >= 1 && page.length <= 64) {
+    wsManager.setActivePage(page)
   }
 })
 ipcMain.handle('websocket-send-osc', (_event, data: any) => {
@@ -1285,6 +1368,7 @@ ipcMain.handle('hyperate-start', () => {
       return { success: false, error: 'HypeRate addon not initialized' }
     }
     const result = hyperateAddon.start(oscService)
+    wsManager?.notifyModuleToggled()
     return { success: result }
   } catch (error: any) {
     debug.error(`Failed to start HypeRate addon: ${error.message}`)
@@ -1296,6 +1380,7 @@ ipcMain.handle('hyperate-stop', () => {
     if (hyperateAddon) {
       hyperateAddon.stop()
     }
+    wsManager?.notifyModuleToggled()
     return { success: true }
   } catch (error: any) {
     debug.error(`Failed to stop HypeRate addon: ${error.message}`)
@@ -1454,6 +1539,152 @@ ipcMain.handle('hyperate-set-capture-rate', (_event, config: { rateMs: number })
     return { success: false, error: error.message }
   }
 })
+// Whisper addon IPC handlers (Vosk removed — Whisper is the only speech-recognition engine)
+ipcMain.handle('whisper-get-status', () => {
+  if (whisperAddon) {
+    return whisperAddon.getStatus()
+  }
+  return null
+})
+ipcMain.handle('whisper-preflight', async () => {
+  // Two-tier preflight:
+  //   1. Cheap — does the worker JS file exist at any known location?
+  //   2. Live — actually spawn a throwaway worker, ping it with
+  //      `{type:'preflight'}`, wait up to 3s for a response, then
+  //      terminate. This catches asar-path issues where the file
+  //      exists virtually but `new Worker()` hangs or silently fails.
+  //      Without tier 2, the user would see "Starting..." forever
+  //      in prod builds even though preflight reported ok.
+  if (!whisperAddon) {
+    return { ok: false, bundledLibsOk: false, dllPath: null, lastError: 'Whisper addon not yet initialised' }
+  }
+  try {
+    const cheap = whisperAddon.preflight()
+    if (!cheap.ok) {
+      return {
+        ok: cheap.ok,
+        bundledLibsOk: cheap.bundledLibsOk,
+        dllPath: cheap.bridgePath,
+        lastError: cheap.lastError
+      }
+    }
+    const live = await whisperAddon.runLivePreflight()
+    return {
+      ok: live.ok,
+      bundledLibsOk: live.bundledLibsOk,
+      dllPath: live.bridgePath,
+      lastError: live.lastError
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    debug.error(`Whisper preflight failed: ${message}`)
+    return { ok: false, bundledLibsOk: false, dllPath: null, lastError: message }
+  }
+})
+ipcMain.handle('whisper-start', async () => {
+  try {
+    if (!whisperAddon) {
+      return { success: false, error: 'Whisper addon not initialized' }
+    }
+    const result = await whisperAddon.start(oscService)
+    wsManager?.notifyModuleToggled()
+    return { success: result, error: result ? undefined : whisperAddon.getStatus().lastError }
+  } catch (error: any) {
+    debug.error(`Failed to start Whisper addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-stop', () => {
+  try {
+    if (whisperAddon) {
+      whisperAddon.stop()
+    }
+    wsManager?.notifyModuleToggled()
+    return { success: true }
+  } catch (error: any) {
+    debug.error(`Failed to stop Whisper addon: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-get-config', () => {
+  if (whisperAddon) {
+    return whisperAddon.getConfig()
+  }
+  return null
+})
+ipcMain.handle('whisper-update-config', (_event, config: any) => {
+  try {
+    if (!whisperAddon) {
+      return { success: false, error: 'Whisper addon not initialized' }
+    }
+    const result = whisperAddon.updateConfig(config)
+    return { success: result, error: result ? undefined : whisperAddon.getStatus().lastError }
+  } catch (error: any) {
+    debug.error(`Failed to update Whisper config: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-download-model', async () => {
+  try {
+    if (!whisperAddon) {
+      return { success: false, error: 'Whisper addon not initialized' }
+    }
+    return await whisperAddon.downloadModel()
+  } catch (error: any) {
+    debug.error(`Failed to download Whisper model: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-set-input-device', (_event, deviceId: string | null) => {
+  try {
+    if (!whisperAddon) {
+      return { success: false, error: 'Whisper addon not initialized' }
+    }
+    const result = whisperAddon.setInputDevice(deviceId)
+    return { success: result }
+  } catch (error: any) {
+    debug.error(`Failed to set Whisper input device: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+ipcMain.handle('whisper-get-autostart', () => {
+  try {
+    const appSettings = configManager.getAppSettings()
+    return { enabled: appSettings.whisperAutostart || false }
+  } catch (error: any) {
+    debug.error(`Failed to get Whisper autostart: ${error.message}`)
+    return { enabled: false }
+  }
+})
+ipcMain.handle('whisper-set-autostart', (_event, enabled: boolean) => {
+  try {
+    const result = configManager.updateAppSettings({ whisperAutostart: enabled })
+    if (result) {
+      debug.info(`Whisper autostart ${enabled ? 'enabled' : 'disabled'}`)
+      return { success: true, enabled }
+    } else {
+      throw new Error('Failed to save autostart setting')
+    }
+  } catch (error: any) {
+    debug.error(`Failed to set Whisper autostart: ${error.message}`)
+    return { success: false, error: error.message }
+  }
+})
+// Renderer -> main: Int16 PCM chunks from the AudioWorklet. The
+// supervisor forwards them to the Node whisper worker_thread via
+// transferable ArrayBuffer (zero-copy). See
+// main/containers/whisper/whisper.ts for the worker supervisor and
+// main/containers/whisper/whisper-worker.js for the actual binding.
+ipcMain.on('whisper-audio-chunk', (_event, chunk: ArrayBuffer, sampleRate: number, level: number): void => {
+  try {
+    if (whisperAddon && whisperAddon.isEnabled()) {
+      whisperAddon.acceptAudio(Buffer.from(chunk), sampleRate, level)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    debug.error(`Failed to process Whisper audio chunk: ${message}`)
+  }
+})
 // OSCLeash addon IPC handlers
 ipcMain.handle('oscleash-get-status', () => {
   if (oscLeashAddon) {
@@ -1473,6 +1704,7 @@ ipcMain.handle('oscleash-start', () => {
       return { success: false, error: 'OSC service not available' }
     }
     const result = oscLeashAddon.start(oscQueryService, oscService)
+    wsManager?.notifyModuleToggled()
     return { success: result }
   } catch (error: any) {
     debug.error(`Failed to start OSCLeash addon: ${error.message}`)
@@ -1484,6 +1716,7 @@ ipcMain.handle('oscleash-stop', () => {
     if (oscLeashAddon) {
       oscLeashAddon.stop()
     }
+    wsManager?.notifyModuleToggled()
     return { success: true }
   } catch (error: any) {
     debug.error(`Failed to stop OSCLeash addon: ${error.message}`)
@@ -1549,6 +1782,7 @@ ipcMain.handle('ogb-start', () => {
       return { success: false, error: 'OscGoesBrrr addon not initialized' }
     }
     const result = oscGoesBrrrAddon.start()
+    wsManager?.notifyModuleToggled()
     return result
   } catch (error: any) {
     debug.error(`Failed to start OscGoesBrrr addon: ${error.message}`)
@@ -1560,6 +1794,7 @@ ipcMain.handle('ogb-stop', () => {
     if (oscGoesBrrrAddon) {
       oscGoesBrrrAddon.stop()
     }
+    wsManager?.notifyModuleToggled()
     return { success: true }
   } catch (error: any) {
     debug.error(`Failed to stop OscGoesBrrr addon: ${error.message}`)
@@ -1815,11 +2050,15 @@ ipcMain.handle('openshock-get-status', async () => {
 })
 ipcMain.handle('openshock-start', async (_event, apiToken: string) => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
-  return openShockContainer.start(apiToken)
+  const result = await openShockContainer.start(apiToken)
+  wsManager?.notifyModuleToggled()
+  return result
 })
 ipcMain.handle('openshock-stop', async () => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
-  return openShockContainer.stop()
+  const result = await openShockContainer.stop()
+  wsManager?.notifyModuleToggled()
+  return result
 })
 ipcMain.handle('openshock-clear-saved-token', async () => {
   if (!openShockContainer) return { success: false, error: 'Not initialized' }
@@ -1903,7 +2142,7 @@ ipcMain.handle('openshock-send-control', async (_event, shocks: any[]) => {
       for (const shock of shocks) {
         insert.run(shock.id, shock.id, shock.type, shock.intensity ?? null, shock.duration ?? null, 0, error.message, Date.now())
       }
-    } catch (_dbErr) { /* ignore */ }
+    } catch { /* ignore DB logging failure */ }
     return { success: false, error: error.message }
   }
 })
@@ -1961,11 +2200,15 @@ ipcMain.handle('xsoverlay-get-notification-logs', async (_event, limit: number =
 // ARCLink IPC handlers
 ipcMain.handle('arclink-start', async () => {
   if (!arcLinkContainer) return { success: false, error: 'Not initialized' }
-  return arcLinkContainer.start()
+  const result = await arcLinkContainer.start()
+  wsManager?.notifyModuleToggled()
+  return result
 })
 ipcMain.handle('arclink-stop', async () => {
   if (!arcLinkContainer) return { success: false, error: 'Not initialized' }
-  return arcLinkContainer.stop()
+  const result = await arcLinkContainer.stop()
+  wsManager?.notifyModuleToggled()
+  return result
 })
 ipcMain.handle('arclink-get-status', async () => {
   if (!arcLinkContainer) return { success: false, error: 'Not initialized' }
@@ -1984,6 +2227,7 @@ ipcMain.handle('xsoverlay-start', () => {
       return { success: false, error: 'XS Overlay addon not initialized' }
     }
     const result = xsOverlayAddon.start()
+    wsManager?.notifyModuleToggled()
     return { success: result }
   } catch (error: any) {
     debug.error(`Failed to start XS Overlay addon: ${error.message}`)
@@ -1995,6 +2239,7 @@ ipcMain.handle('xsoverlay-stop', () => {
     if (xsOverlayAddon) {
       xsOverlayAddon.stop()
     }
+    wsManager?.notifyModuleToggled()
     return { success: true }
   } catch (error: any) {
     debug.error(`Failed to stop XS Overlay addon: ${error.message}`)
@@ -2052,15 +2297,59 @@ app.whenReady().then(async () => {
   debug.logAppStartup()
   // Create splash window immediately after log cleanup
   createWindow()
+
+  // Auto-grant microphone (and related media) permissions so the speech bridge can
+  // start capture without showing the OS permission prompt. This applies to every
+  // renderer session the app creates — the user can still revoke mic access from
+  // the OS settings if they want.
+  const grantMediaPermissions = (permission: string) => {
+    const allowed = permission === 'media' || permission === 'audioCapture' || permission === 'mediaKeySystem'
+    debug.info(`[permissions] ${permission} -> ${allowed ? 'granted' : 'denied'}`)
+    return allowed
+  }
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    try { callback(grantMediaPermissions(permission)) } catch (err) { debug.error(`[permissions] handler error: ${(err as Error).message}`); callback(false) }
+  })
+  // Some Chromium versions use the device-permission handler for media-device
+  // enumeration. Auto-grant on our own origin so navigator.mediaDevices.enumerateDevices
+  // returns full labels without prompting the user.
+  session.defaultSession.setDevicePermissionHandler?.((details) => {
+    debug.info(`[permissions] device-permission requested for ${details.deviceType} on ${details.origin}`)
+    return true
+  })
+
   // Start OSC IPC batching and memory management
   setupOscIpcBatching()
   // Initialize addons
   updateSplashProgress(20, 'Initializing addons')
   hyperateAddon = new HyperateAddon()
+  whisperAddon = new WhisperAddon()
+  // Surface the worker file path the addon resolved to. In prod this
+  // is the asar-unpacked path; if it points inside the asar (a
+  // regression), the asar-detection in resolveWorkerFile() logs a
+  // warning we want to see during startup.
+  {
+    const status = whisperAddon.getStatus()
+    const bridgePath = status.bridgePath ?? ''
+    const dir = bridgePath ? path.dirname(bridgePath) : '(none)'
+    debug.info(`[whisper] constructor: bridgePathDir=${dir}; bridgePath=${bridgePath || 'NOT FOUND'}`)
+    if (bridgePath && bridgePath.includes('.asar') && !bridgePath.includes('app.asar.unpacked')) {
+      debug.warn(
+        '[whisper] WARNING: bridgePath appears to point inside the asar virtual FS. ' +
+          'Worker spawn will likely fail silently. Run with --enable-logging to confirm.'
+      )
+    }
+  }
   oscLeashAddon = new OSCLeashAddon()
   vrchatApiContainer = new VRChatAPIContainer()
   oscGoesBrrrAddon = new OscGoesBrrrAddon()
   autoStatusContainer = new AutoStatusContainer()
+  // Expose the auto-status container as a global handle so the
+  // location tracker (lazy-loaded inside the autostatus module) can
+  // reach it without a circular import. Used by the clientInfo
+  // emitter to read the local VRChat user id + drain the queue
+  // after the WebSocket (re)connects.
+  ;(globalThis as any).__arc_auto_status_container = autoStatusContainer
   xsOverlayAddon = new XSOverlayAddon()
   calendarContainer = new Calendar()
   openShockContainer = new OpenShock()
@@ -2077,6 +2366,49 @@ app.whenReady().then(async () => {
   hyperateAddon.setHeartRateCallback((data: any) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('hyperate-update', data)
+    }
+  })
+  // Set up Whisper callbacks (mirror Vosk shape exactly — Vosk removed)
+  whisperAddon.setStatusChangeCallback((status: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'status', ...status })
+    }
+  })
+  whisperAddon.setResultCallback((result: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'result', ...result })
+    }
+  })
+  whisperAddon.setDownloadProgressCallback((progress: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'download-progress', ...progress })
+    }
+  })
+  whisperAddon.setCaptureControlCallback((control: any) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-capture-control', control)
+    }
+  })
+  // Dedicated level channel. Previously levels were sent through
+  // whisper-capture-control {action:'update', gain:<level>}, which
+  // the renderer's whisperCapture.ts listener applied as a SETGAIN
+  // to the AudioWorklet — feedback loop with loud mics. Split
+  // into a separate IPC channel so capture-control and level
+  // reporting never mix.
+  whisperAddon.setLevelCallback((level: number) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'level', value: level })
+    }
+  })
+  // Dedicated level channel. Previously levels were sent through
+  // whisper-capture-control {action:'update', gain:<level>}, which
+  // the renderer's whisperCapture.ts listener applied as a SETGAIN
+  // to the AudioWorklet — feedback loop with loud mics. Split
+  // into a separate IPC channel so capture-control and level
+  // reporting never mix.
+  whisperAddon.setLevelCallback((level: number) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('whisper-update', { type: 'level', value: level })
     }
   })
   // Set up OSCLeash status and movement callbacks
@@ -2249,7 +2581,7 @@ function setupMemoryManagement() {
               sendToRenderer('memory-pressure', { level: 'high', memoryMB: rendererPrivateMB })
             }
           }).catch(() => {})
-        } catch (_e) {
+        } catch {
           // Renderer may be unavailable during shutdown
         }
       }
@@ -2271,7 +2603,7 @@ function showCrashDialog(title: string, message: string): boolean {
       noLink: true
     })
     return result === 0
-  } catch (_dialogError) {
+  } catch {
     dialog.showErrorBox(title, message)
     return true
   }
@@ -2373,6 +2705,17 @@ function cleanup(source = 'unknown') {
     hyperateAddon = null
   }
   try {
+    if (whisperAddon) {
+      debug.info('Stopping Whisper addon during cleanup...')
+      whisperAddon.stop()
+      whisperAddon = null
+      debug.info('Whisper addon cleanup completed')
+    }
+  } catch (error: any) {
+    debug.error(`Error stopping Whisper addon: ${error.message}`)
+    whisperAddon = null
+  }
+  try {
     if (xsOverlayAddon) {
       debug.info('Stopping XS Overlay addon during cleanup...')
       xsOverlayAddon.destroy()
@@ -2440,6 +2783,11 @@ function cleanup(source = 'unknown') {
     debug.error(`Error stopping ARCLink container: ${error.message}`)
     arcLinkContainer = null
   }
+  // Remove the globalThis hook for the auto-status container.
+  // The container itself is already nulled above; this removes the
+  // global reference so locationTracker.ts and websocketManager.ts
+  // can no longer reach a stale handle.
+  delete (globalThis as any).__arc_auto_status_container
   if ((global as any).oscIpcBatchInterval) {
     clearInterval((global as any).oscIpcBatchInterval)
     ;(global as any).oscIpcBatchInterval = null
@@ -2454,12 +2802,30 @@ function cleanup(source = 'unknown') {
   }
 }
 app.on('window-all-closed', () => {
+  // Synchronously flush any pending clientInfo updates over the
+  // existing authenticated WebSocket BEFORE running the rest of
+  // shutdown cleanup. Lets the server mark the connection as a
+  // clean shutdown instead of a dropped socket.
+  try {
+    const result = wsManager.flushAndClose()
+    debug.info(`[main] flushed ${result.pending} clientInfo events on shutdown; ack=${result.flushed}`)
+  } catch (err) {
+    debug.warn(`[main] flushAndClose failed: ${(err as Error).message}`)
+  }
   cleanup('window-all-closed')
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 app.on('before-quit', () => {
+  // Same flush as window-all-closed — covers the user-quit path
+  // (menu Quit, Cmd+Q, dock quit, etc.).
+  try {
+    const result = wsManager.flushAndClose()
+    debug.info(`[main] flushed ${result.pending} clientInfo events on before-quit; ack=${result.flushed}`)
+  } catch (err) {
+    debug.warn(`[main] flushAndClose failed: ${(err as Error).message}`)
+  }
   cleanup('before-quit')
 })
 process.on('uncaughtException', (error) => {
@@ -2480,7 +2846,7 @@ process.on('uncaughtException', (error) => {
   } catch (cleanupError: any) {
     try {
       debug.error(`Error during cleanup: ${cleanupError.message}`)
-    } catch (_e) {
+    } catch {
       console.error('Cleanup error:', cleanupError)
     }
   }
@@ -2513,7 +2879,7 @@ process.on('unhandledRejection', (reason: any, _promise) => {
   } catch (cleanupError: any) {
     try {
       debug.error(`Error during cleanup: ${cleanupError.message}`)
-    } catch (_e) {
+    } catch {
       console.error('Cleanup error:', cleanupError)
     }
   }

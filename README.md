@@ -227,6 +227,8 @@ Built-in feedback system to communicate directly with the development team. Subm
 | **VRChat** | With OSC enabled in settings |
 | **Intiface Central** | (Optional) For OSCGoesBrrr haptic device support |
 
+> The Whisper speech-recognition engine ships as a Node `worker_threads` Worker using the `@kutalia/whisper-node-addon` N-API binding. No external runtime (.NET, Python, etc.) is required.
+
 ### Quick Start
 
 ```powershell
@@ -246,6 +248,13 @@ npm run dev
 ```powershell
 # Create unpacked Windows distribution
 npm run build
+```
+
+The build bundles `whisper-worker.js` as a separate rollup chunk and unpacks `@kutalia/whisper-node-addon` (the whisper.cpp N-API binding) so it ships beside the .exe. No extra build steps are required.
+
+```powershell
+# Smoke test the worker_thread binding without launching the app
+WHISPER_MODEL=path/to/ggml-tiny.en.bin npm run smoke:whisper
 ```
 
 The built application will be available in the `dist/win-unpacked/` folder. The normal build process does not create an all-in-one installer.

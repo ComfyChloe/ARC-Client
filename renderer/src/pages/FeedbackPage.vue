@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { useFeedback } from '../composables/useFeedback'
-import type { FeedbackType } from '../composables/useFeedback'
-
-const FEEDBACK_TYPES: FeedbackType[] = ['feature', 'bug', 'improvement', 'other']
-
+// Logic lives in the sibling FeedbackPage.ts factory — keep this block thin.
+import { createFeedbackPageState } from './FeedbackPage'
 const {
+  FEEDBACK_TYPES,
   filteredList,
   userStats,
   filterType,
@@ -19,15 +17,10 @@ const {
   submit,
   clearForm,
   vote,
-  refreshList
-} = useFeedback()
-
-function typeBadgeClass(type: string) {
-  return `badge badge-${type}`
-}
-function statusBadgeClass(status: string) {
-  return `badge badge-status-${status}`
-}
+  refreshList,
+  typeBadgeClass,
+  statusBadgeClass
+} = createFeedbackPageState()
 </script>
 
 <template>

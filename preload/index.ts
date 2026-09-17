@@ -1,4 +1,27 @@
 import { contextBridge, ipcRenderer } from 'electron'
+
+// ── Whisper IPC payload types ──
+//
+// Subset of WhisperConfig that the renderer is allowed to update.
+// Defined here (instead of imported from main/services/configManager.ts)
+// because the preload script must stay runtime-only — pulling in the
+// configManager pulls in electron + better-sqlite3, which would break
+// the build context isolation boundary.
+interface WhisperConfigUpdate {
+  modelDir?: string | null
+  inputDeviceId?: string | null
+  inputGain?: number
+  minInputLevel?: number
+  minUtteranceMs?: number
+  // Full command + category arrays are sent when the renderer
+  // persists the Voice Commands section. Loosely typed because the
+  // canonical WhisperCommand shape lives in the renderer + main
+  // configManager; main validates shape via getWhisperConfig's
+  // Array.isArray guard + per-field coercion in updateWhisperConfig.
+  commands?: unknown[]
+  categories?: string[]
+}
+
 const api = {
   getConfig: () => ipcRenderer.invoke('get-config'),
   getServerConfig: () => ipcRenderer.invoke('get-server-config'),
@@ -62,6 +85,19 @@ const api = {
   hyperateSetHistoryConfig: (config: { retentionDays: number }) => ipcRenderer.invoke('hyperate-set-history-config', config),
   hyperateGetCaptureRate: () => ipcRenderer.invoke('hyperate-get-capture-rate'),
   hyperateSetCaptureRate: (config: { rateMs: number }) => ipcRenderer.invoke('hyperate-set-capture-rate', config),
+  // Whisper API (Vosk removed — Whisper is the only speech-recognition engine)
+  whisperGetStatus: () => ipcRenderer.invoke('whisper-get-status'),
+  whisperPreflight: () => ipcRenderer.invoke('whisper-preflight'),
+  whisperStart: () => ipcRenderer.invoke('whisper-start'),
+  whisperStop: () => ipcRenderer.invoke('whisper-stop'),
+  whisperGetConfig: () => ipcRenderer.invoke('whisper-get-config'),
+  whisperDownloadModel: () => ipcRenderer.invoke('whisper-download-model'),
+  whisperSetInputDevice: (deviceId: string | null) => ipcRenderer.invoke('whisper-set-input-device', deviceId),
+  whisperGetAutostart: () => ipcRenderer.invoke('whisper-get-autostart'),
+  whisperSetAutostart: (enabled: boolean) => ipcRenderer.invoke('whisper-set-autostart', enabled),
+  whisperSendAudio: (chunk: ArrayBuffer, sampleRate: number, level: number) =>
+    ipcRenderer.send('whisper-audio-chunk', chunk, sampleRate, level),
+  whisperUpdateConfig: (config: WhisperConfigUpdate) => ipcRenderer.invoke('whisper-update-config', config),
   // OSCLeash API
   oscleashGetStatus: () => ipcRenderer.invoke('oscleash-get-status'),
   oscleashStart: () => ipcRenderer.invoke('oscleash-start'),
@@ -215,6 +251,12 @@ const api = {
   onWebSocketAvatarChange: (callback: (data: any) => void) => {
     ipcRenderer.on('websocket-avatar-change', (_event, data) => callback(data))
   },
+  onWebSocketAvatarStateConfirmed: (callback: (data: any) => void) => {
+    ipcRenderer.on('websocket-avatar-state-confirmed', (_event, data) => callback(data))
+  },
+  onVrchatAvatarChange: (callback: (data: any) => void) => {
+    ipcRenderer.on('vrchat-avatar-change', (_event, data) => callback(data))
+  },
   onWebSocketParameterUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('websocket-parameter-update', (_event, data) => callback(data))
   },
@@ -235,6 +277,15 @@ const api = {
   },
   onHyperateUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('hyperate-update', (_event, data) => callback(data))
+  },
+  onWhisperUpdate: (callback: (data: any) => void) => {
+    ipcRenderer.on('whisper-update', (_event, data) => callback(data))
+  },
+  onWhisperCaptureControl: (callback: (data: any) => void) => {
+    ipcRenderer.on('whisper-capture-control', (_event, data) => callback(data))
+  },
+  onWhisperLevel: (callback: (level: number) => void) => {
+    ipcRenderer.on('whisper-level', (_event, level) => callback(level))
   },
   onOgbStatusUpdate: (callback: (data: any) => void) => {
     ipcRenderer.on('ogb-status-update', (_event, data) => callback(data))
@@ -257,12 +308,17 @@ const api = {
   onSplashProgress: (callback: (data: any) => void) => {
     ipcRenderer.on('splash-progress', (_event, data) => callback(data))
   },
+  onNoticeBanner: (callback: (data: any) => void) => {
+    ipcRenderer.on('notice-banner', (_event, data) => callback(data))
+  },
   removeAllListeners: (channel: string) => {
     ipcRenderer.removeAllListeners(channel)
   },
   // Shell and clipboard API for VRC Timeline
   openExternal: (url: string) => ipcRenderer.invoke('shell-open-external', url),
-  clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text)
+  clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
+  // Active page telemetry
+  setActivePage: (page: string) => ipcRenderer.send('set-active-page', page)
 }
 contextBridge.exposeInMainWorld('electronAPI', api)
 export type ElectronAPI = typeof api

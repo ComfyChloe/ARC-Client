@@ -1,213 +1,62 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useAutoStatus, STATUS_TYPES, DAY_LABELS, INSTANCE_TYPES } from '../composables/useAutoStatus'
-import type { Preset, ScheduleEntry, LocationRule } from '../composables/useAutoStatus'
-
+// Logic lives in the sibling AutoStatusPage.ts factory — keep this block thin.
+import { createAutoStatusPageState } from './AutoStatusPage'
 const {
   presets,
   schedule,
   locationRules,
   settings,
   status,
+  localAvatarId,
+  confirmedAvatarId,
   createPreset,
   updatePreset,
-  deletePreset,
   testPreset,
-  addSchedule,
-  updateSchedule,
   deleteSchedule,
+  updateSchedule,
   createLocationRule,
-  updateLocationRule,
   deleteLocationRule,
-  updateSettings
-} = useAutoStatus()
-
-const activePreset = computed(() => {
-  if (!status.value.lastAppliedPresetId) return null
-  return presets.value.find((preset) => preset.id === status.value.lastAppliedPresetId) ?? null
-})
-
-const currentStatusType = computed(() => {
-  return STATUS_TYPES.find((type) => type.value === status.value.currentStatus) ?? null
-})
-
-const bannerTitle = computed(() => {
-  return activePreset.value?.name ?? currentStatusType.value?.label ?? 'No Active Preset'
-})
-
-const bannerSubtitle = computed(() => {
-  if (status.value.currentStatusDescription) return status.value.currentStatusDescription
-  if (currentStatusType.value) return currentStatusType.value.label
-  return 'Waiting for trigger...'
-})
-
-const newSchedule = ref({
-  name: '',
-  startTime: '09:00',
-  endTime: '17:00',
-  presetId: 0,
-  fallbackStatusType: ''
-})
-
-const newDays = ref<Set<number>>(new Set())
-const confirmDeleteId = ref<number | null>(null)
-const editingScheduleId = ref<string | null>(null)
-const editingScheduleName = ref('')
-const confirmDeleteLocationRuleId = ref<string | null>(null)
-const openAccessTypeDropdown = ref<string | null>(null)
-const isDarkTheme = ref(false)
-let themeObserver: MutationObserver | null = null
-
-function syncThemeState() {
-  if (typeof document === 'undefined') return
-  isDarkTheme.value = document.body.classList.contains('dark-theme')
-}
-
-function onPresetFieldChange(preset: Preset, field: keyof Preset, value: string | null) {
-  const updated = {
-    ...preset,
-    [field]: field === 'statusType' && value === '' ? null : value
-  }
-  void updatePreset(updated)
-}
-
-function toggleDay(day: number) {
-  const updated = new Set(newDays.value)
-  if (updated.has(day)) {
-    updated.delete(day)
-  } else {
-    updated.add(day)
-  }
-  newDays.value = updated
-}
-
-async function handleAddSchedule() {
-  if (newDays.value.size === 0) return
-  if (!newSchedule.value.startTime || !newSchedule.value.endTime) return
-
-  const presetId = newSchedule.value.presetId || (presets.value[0]?.id ?? 0)
-  if (!presetId) return
-
-  await addSchedule({
-    daysOfWeek: Array.from(newDays.value).sort(),
-    startTime: newSchedule.value.startTime,
-    endTime: newSchedule.value.endTime,
-    presetId,
-    name: newSchedule.value.name,
-    fallbackStatusType: newSchedule.value.fallbackStatusType || null
-  })
-
-  newSchedule.value = {
-    name: '',
-    startTime: '09:00',
-    endTime: '17:00',
-    presetId: 0,
-    fallbackStatusType: ''
-  }
-  newDays.value = new Set()
-}
-
-function beginDeletePreset(id: number) {
-  confirmDeleteId.value = id
-}
-
-async function executeDelete() {
-  if (confirmDeleteId.value === null) return
-  await deletePreset(confirmDeleteId.value)
-  confirmDeleteId.value = null
-}
-
-function cancelDelete() {
-  confirmDeleteId.value = null
-}
-
-function schedulePreset(entry: ScheduleEntry) {
-  return presets.value.find((preset) => preset.id === entry.presetId)
-}
-
-function scheduleStatusType(entry: ScheduleEntry) {
-  const preset = schedulePreset(entry)
-  return preset ? STATUS_TYPES.find((type) => type.value === preset.statusType) ?? null : null
-}
-
-function isOvernight(entry: ScheduleEntry) {
-  return entry.endTime <= entry.startTime
-}
-
-function startEditScheduleName(entryId: string, name: string) {
-  editingScheduleId.value = entryId
-  editingScheduleName.value = name || ''
-}
-
-async function saveScheduleName(entryId: string) {
-  await updateSchedule(entryId, { name: editingScheduleName.value.trim() })
-  editingScheduleId.value = null
-  editingScheduleName.value = ''
-}
-
-function locationRulePreset(rule: LocationRule) {
-  return presets.value.find((preset) => preset.id === rule.presetId)
-}
-
-function locationRuleStatusType(rule: LocationRule) {
-  const preset = locationRulePreset(rule)
-  return preset ? STATUS_TYPES.find((type) => type.value === preset.statusType) ?? null : null
-}
-
-function onLocationRuleFieldChange(rule: LocationRule, field: keyof LocationRule, value: string | number | boolean | null) {
-  void updateLocationRule(rule.id, { [field]: value })
-}
-
-function toggleAccessType(rule: LocationRule, typeValue: string) {
-  const current = rule.matchAccessTypes || []
-  const updated = current.includes(typeValue) ? current.filter(t => t !== typeValue) : [...current, typeValue]
-  void updateLocationRule(rule.id, { matchAccessTypes: updated })
-}
-
-function toggleAccessTypeDropdown(ruleId: string) {
-  openAccessTypeDropdown.value = openAccessTypeDropdown.value === ruleId ? null : ruleId
-}
-
-function closeAccessTypeDropdown() {
-  openAccessTypeDropdown.value = null
-}
-
-function onDocumentClick() {
-  openAccessTypeDropdown.value = null
-}
-
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
-  syncThemeState()
-  themeObserver = new MutationObserver(syncThemeState)
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] })
-})
-onUnmounted(() => {
-  document.removeEventListener('click', onDocumentClick)
-  themeObserver?.disconnect()
-})
-
-function beginDeleteLocationRule(id: string) {
-  confirmDeleteLocationRuleId.value = id
-}
-
-async function executeDeleteLocationRule() {
-  if (confirmDeleteLocationRuleId.value === null) return
-  await deleteLocationRule(confirmDeleteLocationRuleId.value)
-  confirmDeleteLocationRuleId.value = null
-}
-
-function cancelDeleteLocationRule() {
-  confirmDeleteLocationRuleId.value = null
-}
-
-function formatAccessType(types: string[] | null): string {
-  if (!types || types.length === 0) return 'Any'
-  return types.map(t => {
-    const found = INSTANCE_TYPES.find(it => it.value === t)
-    return found ? found.label : t
-  }).join(', ')
-}
+  updateSettings,
+  STATUS_TYPES,
+  DAY_LABELS,
+  INSTANCE_TYPES,
+  activePreset,
+  currentStatusType,
+  bannerTitle,
+  bannerSubtitle,
+  newSchedule,
+  newDays,
+  confirmDeleteId,
+  editingScheduleId,
+  editingScheduleName,
+  confirmDeleteLocationRuleId,
+  openAccessTypeDropdown,
+  telemetryEnabled,
+  telemetryBusy,
+  isDarkTheme,
+  toggleTelemetry,
+  onPresetFieldChange,
+  toggleDay,
+  handleAddSchedule,
+  beginDeletePreset,
+  executeDelete,
+  cancelDelete,
+  schedulePreset,
+  scheduleStatusType,
+  isOvernight,
+  startEditScheduleName,
+  saveScheduleName,
+  locationRulePreset,
+  locationRuleStatusType,
+  onLocationRuleFieldChange,
+  toggleAccessType,
+  toggleAccessTypeDropdown,
+  closeAccessTypeDropdown,
+  beginDeleteLocationRule,
+  executeDeleteLocationRule,
+  cancelDeleteLocationRule,
+  formatAccessType
+} = createAutoStatusPageState()
 </script>
 
 <template>
@@ -231,6 +80,14 @@ function formatAccessType(types: string[] | null): string {
         <span v-if="status.avatarGuardActive" class="autostatus-badge autostatus-badge-warn">Avatar Guard</span>
         <span class="autostatus-badge" :class="status.vrchatApiAvailable ? 'autostatus-badge-ok' : 'autostatus-badge-err'">{{ status.vrchatApiAvailable ? 'API Ready' : 'API Offline' }}</span>
         <span class="autostatus-badge autostatus-badge-info">OSC: {{ status.lastOscValue ?? 0 }}</span>
+        <button
+          type="button"
+          class="autostatus-badge autostatus-badge-toggle"
+          :class="telemetryEnabled ? 'autostatus-badge-ok' : 'autostatus-badge-warn'"
+          :disabled="telemetryBusy"
+          :title="telemetryEnabled ? 'Click to stop sending join/leave events to ARC-OSC. Events keep collecting locally in arrival order; re-enabling sends the backlog.' : 'Click to start sending join/leave events to ARC-OSC. Any locally-queued backlog is sent first, in order.'"
+          @click="toggleTelemetry"
+        >Telemetry: {{ telemetryEnabled ? 'ON' : 'OFF' }}</button>
       </div>
     </div>
 
@@ -322,6 +179,7 @@ function formatAccessType(types: string[] | null): string {
         <span v-if="status.currentAccessType" class="autostatus-badge autostatus-badge-info">{{ formatAccessType([status.currentAccessType]) }}</span>
         <span v-if="status.currentGroupName" class="autostatus-badge autostatus-badge-info">{{ status.currentGroupName }}</span>
       </div>
+      <AvatarSyncBadge :local-avatar-id="localAvatarId" :confirmed-avatar-id="confirmedAvatarId" />
 
       <div v-if="locationRules.length === 0" class="autostatus-presets-empty">
         <div class="autostatus-presets-empty-icon">&#127759;</div>
@@ -659,6 +517,26 @@ function formatAccessType(types: string[] | null): string {
 .autostatus-badge-info {
   background: rgba(52, 152, 219, 0.2);
   color: #3498db;
+}
+/* Interactive variant of .autostatus-badge used for the autostatus
+   telemetry toggle. Looks like a badge at rest, hover reveals
+   clickability, :disabled prevents reentry while the IPC is
+   in-flight. */
+.autostatus-badge-toggle {
+  cursor: pointer;
+  border: none;
+  font-weight: 700;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+.autostatus-badge-toggle:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+.autostatus-badge-toggle:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.autostatus-badge-toggle:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
 .autostatus-section {

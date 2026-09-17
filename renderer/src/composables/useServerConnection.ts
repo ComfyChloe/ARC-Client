@@ -32,6 +32,8 @@ const isConnected = ref(false)
 const isAuthenticated = ref(false)
 const currentUser = ref<{ username: string } | null>(null)
 const currentAvatar = ref<AvatarInfo | null>(null)
+const localAvatarId = ref<string | null>(null)
+const confirmedAvatarId = ref<string | null>(null)
 const parameters = shallowRef<Record<string, any>>({})
 const panelConnectionsData = ref<Record<string, PanelInfo>>({})
 const wsForwardingEnabled = ref(false)
@@ -75,6 +77,7 @@ export function useServerConnection() {
     const result = await api.authenticate({ username, password })
     loading.value = false
     if (result.success) {
+      connectionStatus.value = 'connected'
       isConnected.value = true
       isAuthenticated.value = true
       currentUser.value = result.user ?? { username }
@@ -92,6 +95,8 @@ export function useServerConnection() {
     isAuthenticated.value = false
     currentUser.value = null
     currentAvatar.value = null
+    localAvatarId.value = null
+    confirmedAvatarId.value = null
     parameters.value = {}
     panelConnectionsData.value = {}
     connectionStatus.value = 'disconnected'
@@ -145,6 +150,8 @@ export function useServerConnection() {
           isAuthenticated.value = false
           currentUser.value = null
           currentAvatar.value = null
+          localAvatarId.value = null
+          confirmedAvatarId.value = null
           parameters.value = {}
           panelConnectionsData.value = {}
           debugLog('Disconnected from WebSocket server - performed memory cleanup')
@@ -174,6 +181,12 @@ export function useServerConnection() {
         }
         debugLog(`Avatar changed: ${displayName} for user ${data.username ?? 'unknown'}`)
       })
+      api.onVrchatAvatarChange((data: any) => {
+        localAvatarId.value = typeof data?.id === 'string' && data.id.length > 0 ? data.id : null
+      })
+      api.onWebSocketAvatarStateConfirmed((data: any) => {
+        confirmedAvatarId.value = typeof data?.id === 'string' && data.id.length > 0 ? data.id : null
+      })
       api.onWebSocketParameterUpdate((data: any) => {
         if (data.parameters) {
           Object.assign(parameters.value, data.parameters)
@@ -189,7 +202,16 @@ export function useServerConnection() {
       api.onWebSocketServerMessage((data: any) => {
         debugLog(`Server message: ${data.message || JSON.stringify(data)}`)
       })
-      if (savedUsername.value && savedPassword.value) {
+      const wsStatus = await api.getWebSocketStatus()
+      if (wsStatus?.isConnected) {
+        connectionStatus.value = 'connected'
+        isConnected.value = true
+        if (wsStatus.isAuthenticated && wsStatus.currentUser) {
+          isAuthenticated.value = true
+          currentUser.value = wsStatus.currentUser
+        }
+        debugLog('Synced connection state from main process (already connected)')
+      } else if (savedUsername.value && savedPassword.value) {
         debugLog('Auto-connecting with saved credentials...')
         setTimeout(() => {
           authenticate(savedUsername.value, savedPassword.value)
@@ -221,6 +243,8 @@ export function useServerConnection() {
     isAuthenticated,
     currentUser,
     currentAvatar,
+    localAvatarId,
+    confirmedAvatarId,
     parameters,
     panelConnectionsData,
     pendingPanelToggles,

@@ -1,91 +1,30 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useOscLeash } from '../composables/useOscLeash'
+// Logic lives in the sibling OscLeashPage.ts factory — keep this block thin.
+import { createOscLeashPageState } from './OscLeashPage'
 const {
-  status, movement, physbone, config, autostart,
-  toggle, toggleAutostart, saveConfig, resetConfig
-} = useOscLeash()
-const activeTab = ref<'movement' | 'timing' | 'advanced'>('movement')
-const saving = ref(false)
-const configDraft = ref<Record<string, any>>({})
-const isDarkTheme = ref(false)
-let themeObserver: MutationObserver | null = null
-const statusLabel = computed(() => {
-  if (status.value.enabled) return 'Running'
-  return 'Stopped'
-})
-const runStateColor = computed(() => (movement.value.run ? '#e74c3c' : '#95a5a6'))
-const runStateLabel = computed(() => (movement.value.run ? 'RUNNING' : 'IDLE'))
-const configPreview = computed(() => {
-  if (!config.value) {
-    return 'Configuration will appear here when OSC Leash is enabled'
-  }
-  return [
-    `runDeadzone=${config.value.runDeadzone}`,
-    `walkDeadzone=${config.value.walkDeadzone}`,
-    `strengthMultiplier=${config.value.strengthMultiplier}`,
-    `upCompensation=${config.value.upCompensation}`,
-    `downCompensation=${config.value.downCompensation}`,
-    `upDeadzone=${config.value.upDeadzone}`,
-    `downDeadzone=${config.value.downDeadzone}`,
-    `activeDelay=${config.value.activeDelay}`,
-    `inactiveDelay=${config.value.inactiveDelay}`,
-    `logging=${config.value.logging}`
-  ].join('\n')
-})
-function initDraft() {
-  if (config.value) {
-    configDraft.value = { ...config.value }
-  }
-}
-watch(config, () => {
-  initDraft()
-}, { immediate: true })
-function onTabChange(tab: 'movement' | 'timing' | 'advanced') {
-  activeTab.value = tab
-}
-async function handleSave() {
-  saving.value = true
-  await saveConfig(configDraft.value)
-  saving.value = false
-  initDraft()
-}
-async function handleReset() {
-  await resetConfig()
-  initDraft()
-}
-function toPercent(value: number): string {
-  return `${Math.round(value * 100)}%`
-}
-function formatRateValue(value: number): string {
-  return `${value.toFixed(0)}ms`
-}
-function setSharedCompensation(value: number) {
-  configDraft.value.upCompensation = value
-  configDraft.value.downCompensation = value
-}
-function setSharedDeadzone(value: number) {
-  configDraft.value.upDeadzone = value
-  configDraft.value.downDeadzone = value
-}
-
-function syncThemeState() {
-  if (typeof document === 'undefined') {
-    return
-  }
-  isDarkTheme.value = document.body.classList.contains('dark-theme')
-}
-
-onMounted(() => {
-  syncThemeState()
-  themeObserver = new MutationObserver(syncThemeState)
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] })
-})
-
-onUnmounted(() => {
-  themeObserver?.disconnect()
-  themeObserver = null
-})
+  status,
+  movement,
+  physbone,
+  config,
+  autostart,
+  toggle,
+  toggleAutostart,
+  isDarkTheme,
+  activeTab,
+  saving,
+  configDraft,
+  statusLabel,
+  runStateColor,
+  runStateLabel,
+  configPreview,
+  onTabChange,
+  handleSave,
+  handleReset,
+  toPercent,
+  formatRateValue,
+  setSharedCompensation,
+  setSharedDeadzone
+} = createOscLeashPageState()
 </script>
 
 <template>
